@@ -3,215 +3,200 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (移动端适配版)</title>
+    <title>估值透视 (PC/Mobile 双端完美版)</title>
     <!-- Chart.js & Plugins -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+    <!-- Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
-        :root { --primary: #2980b9; --danger: #c0392b; --bg: #f4f6f9; --text: #2c3e50; --success: #27ae60; --white: #ffffff; }
+        :root { --primary: #2980b9; --danger: #c0392b; --bg: #f4f6f9; --text: #2c3e50; --success: #27ae60; --border: #e0e0e0; }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         
         body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-            background: var(--bg); color: var(--text); margin: 0; padding: 10px; font-size: 13px; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            background: var(--bg); color: var(--text); margin: 0; padding: 20px; font-size: 13px; 
         }
         
         .container { 
-            max-width: 1200px; margin: 0 auto; background: var(--white); 
-            border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); 
-            overflow: hidden; display: flex; flex-direction: column;
+            max-width: 1200px; margin: 0 auto; background: #fff; 
+            border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
+            display: flex; flex-direction: column; overflow: hidden;
         }
         
-        /* --- 顶部区域适配 --- */
+        /* --- 顶部工具栏 (PC端优先设计) --- */
         header { 
-            padding: 12px 15px; border-bottom: 1px solid #eee; background: #fff;
+            padding: 15px 20px; border-bottom: 1px solid var(--border); background: #fff; 
+            display: flex; align-items: center; justify-content: space-between;
         }
         
-        .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        h2 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; }
+        .header-left { display: flex; align-items: center; gap: 20px; }
+        h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
         
-        /* 控件区域网格布局 */
-        .controls { 
-            display: flex; gap: 8px; flex-wrap: wrap; align-items: center; 
-        }
+        /* 控件区域 (PC端单行排列) */
+        .controls { display: flex; align-items: center; gap: 10px; }
         
-        .input-group { position: relative; display: flex; align-items: center; }
+        .input-group { position: relative; }
         .input-group input { 
-            padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; outline: none; 
-            width: 100%; transition: border 0.2s; -webkit-appearance: none;
+            padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; 
+            height: 32px;
         }
-        .input-group input:focus { border-color: var(--primary); }
+        .input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
+        .input-group input[type="text"] { width: 120px; font-weight: 600; }
+        .input-group input[type="date"] { width: 130px; color: #555; font-family: inherit; }
         
-        /* 按钮通用样式 */
+        /* 按钮 */
         button { 
-            padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; 
-            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 4px; 
-            white-space: nowrap; transition: 0.2s;
+            height: 32px; padding: 0 15px; border: none; border-radius: 4px; cursor: pointer; 
+            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; 
+            white-space: nowrap; transition: background 0.2s;
         }
-        .btn-primary { background: var(--primary); color: #fff; }
-        .btn-success { background: var(--success); color: #fff; }
-        .btn-outline { background: #fff; border: 1px solid #ddd; color: #666; }
-        .btn-outline:active { background: #f0f0f0; }
-        button:disabled { background: #eee; color: #aaa; border-color: #eee; cursor: not-allowed; }
+        .btn-primary { background: var(--primary); color: #fff; } .btn-primary:hover { background: #1f618d; }
+        .btn-success { background: var(--success); color: #fff; } .btn-success:hover { background: #219150; }
+        .btn-outline { background: #fff; border: 1px solid #ccc; color: #666; } .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
+        button:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
 
-        /* 同步状态小组件 */
+        /* 同步状态 */
+        .header-right { display: flex; align-items: center; }
         .sync-info { 
             font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; 
-            padding: 4px 8px; background: #f8f9fa; border-radius: 12px; cursor: pointer;
+            padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.2s;
         }
+        .sync-info:hover { background: #f0f0f0; }
         .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
         .sync-dot.online { background: var(--success); box-shadow: 0 0 4px var(--success); }
         .sync-dot.syncing { background: var(--primary); animation: pulse 1s infinite; }
         .sync-dot.error { background: var(--danger); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
 
-        /* --- 手机端特有样式 (Media Query) --- */
+        /* --- 手机端适配 (Media Query) --- */
         @media (max-width: 768px) {
-            body { padding: 0; background: #fff; }
+            body { padding: 0; }
             .container { border-radius: 0; box-shadow: none; min-height: 100vh; }
             
-            /* 手机端控件布局：分行显示 */
-            .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+            header { display: block; padding: 12px; }
+            .header-left { display: block; width: 100%; }
+            .header-right { position: absolute; top: 12px; right: 12px; }
             
-            /* 搜索行：独占一行 */
-            .search-row { grid-column: 1 / -1; display: flex; gap: 8px; }
-            .search-row .input-group { flex: 1; }
+            h2 { margin-bottom: 12px; font-size: 16px; }
             
-            /* 日期行：自动并排 */
+            /* 手机端控件折行显示 */
+            .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
             
-            /* 按钮行：独占一行 */
-            .action-row { grid-column: 1 / -1; display: flex; gap: 8px; }
-            .action-row button { flex: 1; padding: 10px; font-size: 14px; }
+            /* 搜索行独占一行 */
+            .search-box { grid-column: 1 / -1; display: flex; gap: 8px; }
+            .search-box .input-group { flex: 1; }
+            .search-box input { width: 100% !important; }
             
-            h2 { font-size: 15px; }
+            /* 日期行自动并排 (无需特殊CSS，grid自动处理) */
+            .input-group input { width: 100% !important; }
             
-            /* 图表高度适应 */
+            /* 按钮行独占一行 */
+            .action-box { grid-column: 1 / -1; display: flex; gap: 8px; }
+            .action-box button { flex: 1; height: 36px; font-size: 14px; }
+            
             .chart-container { height: 350px !important; padding: 5px 10px; }
         }
 
-        /* --- 桌面端样式微调 --- */
-        @media (min-width: 769px) {
-            .search-row, .action-row { display: contents; } /* 取消Grid分组 */
-            .input-group input[type="text"] { width: 120px; }
-            .input-group input[type="date"] { width: 115px; }
-        }
-
-        /* --- 图表区域 --- */
-        .chart-container { position: relative; height: 500px; padding: 10px 20px; width: 100%; }
+        /* --- 图表与提示 --- */
+        .chart-container { position: relative; height: 500px; padding: 15px 20px; width: 100%; }
         .chart-tip { 
-            position: absolute; top: 10px; right: 10px; font-size: 10px; 
+            position: absolute; top: 10px; right: 15px; font-size: 11px; 
             color: #999; background: rgba(255,255,255,0.8); padding: 2px 6px; 
             border-radius: 4px; pointer-events: none; z-index: 10;
         }
 
-        /* --- 表格区域 (重点优化) --- */
+        /* --- 表格区域 (横向滚动适配) --- */
         .table-wrap { 
-            border-top: 1px solid #eee; 
-            overflow-x: auto; /* 允许横向滚动 */
-            -webkit-overflow-scrolling: touch; /* 流畅滚动 */
+            border-top: 1px solid var(--border); 
+            overflow-x: auto; -webkit-overflow-scrolling: touch; 
             background: #fff;
-            position: relative;
         }
-        
         table { 
-            width: 100%; 
-            border-collapse: separate; /* 必须为separate才能支持sticky */
-            border-spacing: 0; 
-            font-size: 12px; 
-            text-align: right; 
-            min-width: 600px; /* 保证最小宽度，强制滚动 */
+            width: 100%; border-collapse: separate; border-spacing: 0; 
+            font-size: 12px; text-align: right; min-width: 600px; 
         }
-        
-        th, td { 
-            padding: 10px 8px; 
-            border-bottom: 1px solid #f0f0f0; 
-            white-space: nowrap; /* 不换行 */
-        }
-        
+        th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
         th { background: #f8f9fa; color: #555; font-weight: 600; position: sticky; top: 0; z-index: 20; }
         
-        /* 首列固定 (日期列) */
+        /* 固定首列 */
         th:first-child, td:first-child {
-            position: sticky; 
-            left: 0; 
-            background: #fff; 
-            z-index: 10; 
-            text-align: left;
-            border-right: 1px solid #eee;
+            position: sticky; left: 0; background: #fff; z-index: 10; 
+            text-align: left; border-right: 1px solid #f0f0f0;
             box-shadow: 2px 0 5px rgba(0,0,0,0.02);
         }
-        th:first-child { z-index: 30; background: #f8f9fa; } /* 表头首列层级最高 */
+        th:first-child { z-index: 30; background: #f8f9fa; }
 
-        /* 数据颜色 */
+        /* 标签颜色 */
         .val-pe { color: var(--danger); font-weight: bold; }
         .val-ps { color: var(--primary); font-weight: bold; }
-        .tag { padding: 1px 4px; border-radius: 3px; font-size: 10px; display: inline-block; transform: scale(0.9); }
+        .tag { padding: 1px 5px; border-radius: 3px; font-size: 10px; display: inline-block; transform: scale(0.95); }
         .tag-real { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
-        .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; }
+        .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; cursor: pointer; }
         .loss { color: #27ae60; font-style: italic; }
 
-        /* 状态提示条 */
+        /* 消息提示 (Toast) */
         .status-msg { 
-            display: none; padding: 8px 16px; border-radius: 20px; font-size: 13px; 
-            position: fixed; top: 60px; left: 50%; transform: translateX(-50%); 
+            display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; 
+            position: fixed; top: 70px; left: 50%; transform: translateX(-50%); 
             z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500;
-            backdrop-filter: blur(5px);
+            background: #fff; border: 1px solid #eee;
         }
-        .status-msg.ok { background: rgba(246, 255, 237, 0.95); color: #389e0d; border: 1px solid #b7eb8f; }
-        .status-msg.error { background: rgba(255, 241, 240, 0.95); color: #cf1322; border: 1px solid #ffa39e; }
-        .status-msg.warn { background: rgba(255, 251, 230, 0.95); color: #d48806; border: 1px solid #ffe58f; }
+        .status-msg.ok { color: #389e0d; border-color: #b7eb8f; background: #f6ffed; }
+        .status-msg.error { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
+        .status-msg.warn { color: #d48806; border-color: #ffe58f; background: #fffbe6; }
 
-        /* 模态框 */
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
-        .modal-box { background: #fff; padding: 20px; border-radius: 12px; width: 85%; max-width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-        .modal-header { font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #333; display: flex; justify-content: space-between; align-items: center; }
+        /* 模态框 (通用) */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
+        .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); animation: popIn 0.2s ease-out; }
+        @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .modal-header { font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #333; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; }
         .modal-body { display: flex; flex-direction: column; gap: 12px; }
-        .form-row label { display: block; margin-bottom: 5px; font-size: 12px; color: #666; }
-        .form-row input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+        .form-row label { display: block; margin-bottom: 5px; font-size: 12px; color: #666; font-weight: 600; }
+        .form-row input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+        .form-row input:focus { border-color: var(--primary); outline: none; }
         .modal-footer { margin-top: 20px; display: flex; gap: 10px; }
-        .btn-block { flex: 1; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+        .btn-block { flex: 1; padding: 10px; border-radius: 4px; font-weight: 600; cursor: pointer; border:none; }
         .btn-cancel { background: #f5f5f5; color: #666; border: 1px solid #eee; }
-        .btn-confirm { background: var(--primary); color: #fff; border: none; }
+        .btn-confirm { background: var(--primary); color: #fff; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <header>
-        <div class="header-top">
+        <div class="header-left">
             <h2>📈 估值透视</h2>
-            <div class="sync-info" onclick="showSettings()">
-                <div id="syncDot" class="sync-dot"></div>
-                <span id="statusTxt" onclick="event.stopPropagation(); autoSyncFromCloud()">未连接</span>
-                <i class="fas fa-cog" style="opacity:0.5; margin-left:4px;"></i>
+            
+            <!-- 电脑端：一行显示 -->
+            <div class="controls">
+                <div class="search-box">
+                    <div class="input-group">
+                        <input type="text" id="stockInput" value="贵州茅台" placeholder="代码/名称">
+                    </div>
+                    <button class="btn-primary" id="btnSearch">🔍 搜索</button>
+                </div>
+
+                <div style="width:1px; height:20px; background:#ddd; margin:0 5px;" class="divider"></div>
+
+                <div class="input-group"><input type="date" id="startDate" value="2020-01-01"></div>
+                <div class="input-group"><input type="date" id="endDate"></div>
+
+                <div class="action-box">
+                    <button class="btn-success" id="btn-run" disabled>⚡ 计算</button>
+                    <button class="btn-outline" onclick="resetZoom()">🔄 重置</button>
+                </div>
             </div>
         </div>
 
-        <div class="controls">
-            <!-- 搜索行 -->
-            <div class="search-row">
-                <div class="input-group">
-                    <input type="text" id="stockInput" value="贵州茅台" placeholder="代码/名称">
-                </div>
-                <button class="btn-primary" id="btnSearch"><i class="fas fa-search"></i></button>
-            </div>
-
-            <!-- 日期行 -->
-            <div class="input-group" style="flex:1">
-                <input type="date" id="startDate" value="2020-01-01">
-            </div>
-            <div class="input-group" style="flex:1">
-                <input type="date" id="endDate">
-            </div>
-
-            <!-- 操作行 -->
-            <div class="action-row">
-                <button class="btn-success" id="btn-run" disabled><i class="fas fa-bolt"></i> 计算</button>
-                <button class="btn-outline" onclick="resetZoom()"><i class="fas fa-sync-alt"></i> 重置</button>
+        <div class="header-right">
+            <div class="sync-info" onclick="showSettings()" title="GitHub 配置">
+                <div id="syncDot" class="sync-dot"></div>
+                <span id="statusTxt">未连接</span>
+                <i class="fas fa-cog" style="opacity:0.5; margin-left:4px;"></i>
             </div>
         </div>
     </header>
@@ -220,18 +205,17 @@
 
     <div class="chart-container">
         <canvas id="valuationChart"></canvas>
-        <div class="chart-tip">双指缩放 / 拖拽</div>
+        <div class="chart-tip">滚轮缩放 / 拖拽</div>
     </div>
 
-    <!-- 表格：支持横向滚动，日期列固定 -->
     <div class="table-wrap">
         <table id="dataTable">
             <thead>
                 <tr>
                     <th>日期</th>
                     <th>股价</th>
-                    <th>财报来源</th>
-                    <th>总市值(亿)</th>
+                    <th>财报/预测</th>
+                    <th>市值(亿)</th>
                     <th>营收(亿)</th>
                     <th>净利(亿)</th>
                     <th style="color:var(--danger)">PE(倍)</th>
@@ -243,14 +227,14 @@
     </div>
 </div>
 
-<!-- 录入数据弹窗 -->
+<!-- 录入弹窗 -->
 <div id="inputModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-header">
-            <span>✍️ 录入数据：<span id="modalYear"></span>年</span>
+            <span>✍️ 录入 <span id="modalYear"></span>年 数据</span>
         </div>
-        <div style="font-size:13px; color:#c0392b; background:#fff1f0; padding:10px; border-radius:6px; margin-bottom:15px;">
-            ⚠️ 缺失该年财报数据，需手动录入预测值以继续。
+        <div style="font-size:12px; color:#c0392b; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:12px;">
+            ⚠️ 缺失当前年份数据，请手动补充以继续。
         </div>
         <div class="modal-body">
             <div class="form-row">
@@ -274,24 +258,28 @@
     <div class="modal-box">
         <div class="modal-header">
             <span><i class="fab fa-github"></i> 云同步配置</span>
-            <i class="fas fa-times" onclick="closeSettings()" style="color:#999; padding:5px;"></i>
+            <i class="fas fa-times" onclick="closeSettings()" style="cursor:pointer; color:#999;"></i>
         </div>
         <div class="modal-body">
             <div class="form-row">
-                <label>Token (ghp_...)</label>
-                <input type="password" id="cfgToken">
+                <label>GitHub Token (必填)</label>
+                <input type="password" id="cfgToken" placeholder="ghp_...">
             </div>
             <div class="form-row">
-                <label>用户名</label>
-                <input type="text" id="cfgUser">
+                <label>用户名 (已预设)</label>
+                <input type="text" id="cfgUser" value="dlezywj-cell">
             </div>
             <div class="form-row">
-                <label>仓库名</label>
-                <input type="text" id="cfgRepo">
+                <label>仓库名 (已预设)</label>
+                <input type="text" id="cfgRepo" value="pepsdata">
+            </div>
+            <div class="form-row">
+                <label>文件名 (已预设)</label>
+                <input type="text" id="cfgFile" value="data.json" disabled style="background:#f9f9f9">
             </div>
         </div>
         <div class="modal-footer">
-            <button class="btn-block btn-confirm" onclick="saveConfig()">连接云端</button>
+            <button class="btn-block btn-confirm" onclick="saveConfig()">保存并连接</button>
         </div>
     </div>
 </div>
@@ -308,11 +296,12 @@
     const PROXY_URL = "https://corsproxy.io/?";
     const DB_KEY = "stock_valuation_db_v1";
 
+    // GitHub 配置 (默认值已更新)
     let ghConfig = {
         token: localStorage.getItem('gh_token') || '',
-        user: localStorage.getItem('gh_user') || '',
-        repo: localStorage.getItem('gh_repo') || '',
-        file: 'stock_valuation.json'
+        user: localStorage.getItem('gh_user') || 'dlezywj-cell',
+        repo: localStorage.getItem('gh_repo') || 'pepsdata',
+        file: 'data.json'
     };
 
     // 初始化
@@ -321,8 +310,9 @@
     document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
     document.getElementById('stockInput').addEventListener('keydown', e => { if(e.keyCode===13) runSearch(); });
 
+    // 尝试同步
     if(ghConfig.token) autoSyncFromCloud();
-    else updateStatus('ready', '本地');
+    else updateStatus('ready', '本地模式');
 
     // --- 搜索 ---
     async function runSearch() {
@@ -347,7 +337,7 @@
             }
         } catch(e) { showToast("❌ 搜索失败", 'error'); 
         } finally {
-            document.getElementById('btnSearch').innerHTML = '<i class="fas fa-search"></i>';
+            document.getElementById('btnSearch').innerHTML = '🔍 搜索';
         }
     }
 
@@ -385,8 +375,8 @@
                 if(!silent) showToast(`已加载 ${checkYear} 预测数据`, 'ok');
             } 
             else if (!hasRealReport) {
+                // 仅非静默模式且缺数据时弹窗
                 if (!silent) {
-                    // 必须弹窗
                     const manual = await openInputModal(checkYear);
                     if (manual) {
                         await saveToDB(currentStock.code, checkYear, manual.rev, manual.prof);
@@ -411,7 +401,7 @@
             console.error(e);
             if(!silent) showToast(e.message || "运行出错", 'error');
         } finally {
-            if(!silent) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-bolt"></i> 计算'; }
+            if(!silent) { btn.disabled = false; btn.innerHTML = '⚡ 计算'; }
         }
     }
 
@@ -439,6 +429,56 @@
             }
             return item;
         });
+    }
+
+    // --- GitHub & DB ---
+    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
+    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
+    function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
+    function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
+
+    async function autoSyncFromCloud() {
+        if (!ghConfig.token) return;
+        updateStatus('syncing', '同步中');
+        try {
+            const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
+            const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+            if (res.ok) {
+                const data = await res.json();
+                const cloudDB = JSON.parse(b64_to_utf8(data.content));
+                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
+                updateStatus('online', '已同步');
+                if (currentStock.code) runAnalysis(true);
+            } else if(res.status === 404) updateStatus('online', '新文件');
+            else updateStatus('error', '失败');
+        } catch (e) { updateStatus('error', '错误'); }
+    }
+
+    async function saveToDB(code, year, rev, prof) {
+        let db = getLocalDB();
+        if (!db[code]) db[code] = {};
+        db[code][year] = { rev, prof, timestamp: Date.now() };
+        localStorage.setItem(DB_KEY, JSON.stringify(db));
+        
+        if (ghConfig.token) {
+            clearTimeout(syncTimer);
+            syncTimer = setTimeout(async () => {
+                updateStatus('syncing', '上传中');
+                try {
+                    const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
+                    const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+                    let sha = getRes.ok ? (await getRes.json()).sha : null;
+                    await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: `Update ${code} ${year}`, content: utf8_to_b64(JSON.stringify(getLocalDB())), sha: sha })
+                    });
+                    updateStatus('online', '已保存');
+                } catch(e) { updateStatus('error', '上传失败'); }
+            }, 1000);
+        } else {
+            showToast('已保存至本地 (未配置Token)', 'ok');
+        }
     }
 
     // --- 数据获取 ---
@@ -507,54 +547,6 @@
         }
     }
 
-    // --- GitHub & DB ---
-    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
-    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
-    function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
-    function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
-
-    async function autoSyncFromCloud() {
-        if (!ghConfig.token) return;
-        updateStatus('syncing', '同步');
-        try {
-            const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
-            const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-            if (res.ok) {
-                const data = await res.json();
-                const cloudDB = JSON.parse(b64_to_utf8(data.content));
-                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
-                updateStatus('online', '在线');
-                if (currentStock.code) runAnalysis(true);
-            } else if(res.status === 404) updateStatus('online', '新库');
-            else updateStatus('error', '失败');
-        } catch (e) { updateStatus('error', '错'); }
-    }
-
-    async function saveToDB(code, year, rev, prof) {
-        let db = getLocalDB();
-        if (!db[code]) db[code] = {};
-        db[code][year] = { rev, prof, timestamp: Date.now() };
-        localStorage.setItem(DB_KEY, JSON.stringify(db));
-        
-        if (ghConfig.token) {
-            clearTimeout(syncTimer);
-            syncTimer = setTimeout(async () => {
-                updateStatus('syncing', '上传');
-                try {
-                    const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
-                    const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-                    let sha = getRes.ok ? (await getRes.json()).sha : null;
-                    await fetch(url, {
-                        method: 'PUT',
-                        headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: `Update ${code} ${year}`, content: utf8_to_b64(JSON.stringify(getLocalDB())), sha: sha })
-                    });
-                    updateStatus('online', '已存');
-                } catch(e) { updateStatus('error', '失败'); }
-            }, 1000);
-        }
-    }
-
     // --- UI Utils ---
     function updateStatus(status, text) {
         document.getElementById('syncDot').className = 'sync-dot ' + status;
@@ -573,9 +565,9 @@
     };
     window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
     window.saveConfig = () => {
-        ghConfig.token = document.getElementById('cfgToken').value;
-        ghConfig.user = document.getElementById('cfgUser').value;
-        ghConfig.repo = document.getElementById('cfgRepo').value;
+        ghConfig.token = document.getElementById('cfgToken').value.trim();
+        ghConfig.user = document.getElementById('cfgUser').value.trim();
+        ghConfig.repo = document.getElementById('cfgRepo').value.trim();
         localStorage.setItem('gh_token', ghConfig.token);
         localStorage.setItem('gh_user', ghConfig.user);
         localStorage.setItem('gh_repo', ghConfig.repo);
