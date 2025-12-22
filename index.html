@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (时序严格版)</title>
+    <title>估值透视 (最终完美版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
@@ -170,7 +170,7 @@
     let currentStock = { code: '', name: '', secId: '' };
     let globalData = [];
     let currentTotalShares = 0;
-    let splitIdxGlobal = -1; 
+    let splitIdxGlobal = -1;
     const PROXY = "https://corsproxy.io/?";
     const DB_KEY = "stock_valuation_db_v2";
     
@@ -225,19 +225,18 @@
             if(!silent || !globalData.length) await Promise.all([fetchShares(), fetchKline(beg, end)]);
             let finMap = await fetchFinancials(currentStock.code);
 
-            // --- 核心修复: 真实数据绝对优先 ---
+            // --- 优先级: 真实 > 录入 ---
             const dbData = getLocal()[currentStock.code] || {};
             
-            // 只有当 finMap 中不存在该年份时，才使用本地录入
             Object.keys(dbData).forEach(yStr => {
                 const y = parseInt(yStr);
                 const saved = dbData[y];
+                // 只有当finMap中不存在该年份(没真实财报)时，才用录入值
                 if (!finMap[y] && saved) {
                     finMap[y] = { year: y, rev: saved.rev, prof: saved.prof, source: 'manual', name: `★${y}录入` };
                 }
             });
 
-            // 检查当前年份（仅当没有真实财报且没有录入时弹窗）
             if(!finMap[checkYear] && !silent) {
                 const manual = await openInput(checkYear);
                 if(manual) {
@@ -255,7 +254,6 @@
         finally { if(!silent) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-bolt"></i> 计算'; } }
     }
 
-    // --- 计算逻辑修正: 严格时序 ---
     function calculate(finMap) {
         const years = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
         if(!years.length) return;
@@ -263,16 +261,9 @@
         globalData = globalData.map(d => {
             const y = new Date(d.date).getFullYear();
             
-            // 修正：找到小于等于当前日期的最大可用财报年份
-            // 防止 2024年的日期 用到 2025年的数据
-            const availableYears = years.filter(year => year <= y);
-            
-            let targetYear;
-            if (availableYears.length > 0) {
-                targetYear = availableYears[availableYears.length - 1]; // 取最近的过去年份
-            } else {
-                targetYear = years[0]; // 如果日期太早，用最早的数据兜底
-            }
+            // 严谨的时序匹配：只能往回找，不能穿越未来
+            const availYears = years.filter(year => year <= y);
+            const targetYear = availYears.length > 0 ? availYears[availYears.length-1] : years[0];
             
             let fin = finMap[targetYear];
             
@@ -461,10 +452,11 @@
     async function fetchFinancials(code) {
         let map = {};
         try {
-            const r = await fetch(PROXY + encodeURIComponent(`https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&filter=(SECURITY_CODE="${code}")&columns=ALL&pageSize=500&pageNumber=1`));
-            const j = await r.json();
-            if(j?.result?.data) {
-                j.result.data.forEach(i => {
+            const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&filter=(SECURITY_CODE="${code}")&columns=ALL&pageSize=500&pageNumber=1`;
+            const res = await fetch(PROXY + encodeURIComponent(url));
+            const json = await res.json();
+            if(json?.result?.data) {
+                json.result.data.forEach(i => {
                     if(i.REPORT_DATE && i.REPORT_DATE.includes("-12-31")) {
                         const y = parseInt(i.REPORT_DATE.substring(0,4));
                         const rev = i.TOTAL_OPERATE_INCOME || i.OPERATE_INCOME;
