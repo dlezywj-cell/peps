@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (最终完美版)</title>
+    <title>估值透视 (布局修复+动态轴)</title>
+    <!-- ECharts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <!-- Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
@@ -17,30 +19,66 @@
             display: flex; flex-direction: column; overflow: hidden;
         }
 
-        /* Header */
+        /* --- 顶部 Header (PC端强制单行) --- */
         header { 
             padding: 12px 20px; border-bottom: 1px solid var(--border); background: #fff; 
-            display: flex; align-items: center; justify-content: space-between; height: 40px; 
+            display: flex; align-items: center; justify-content: space-between;
+            height: 40px; /* 固定高度防止抖动 */
         }
-        .header-left { display: flex; align-items: center; gap: 15px; flex: 1; overflow: hidden; }
-        h2 { margin: 0; font-size: 16px; font-weight: 700; white-space: nowrap; display: flex; align-items: center; gap: 6px; color: #333; }
 
-        /* Controls */
-        .controls { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+        .header-left { 
+            display: flex; align-items: center; gap: 15px; 
+            flex: 1; overflow: hidden; /* 防止溢出 */
+        }
+
+        h2 { 
+            margin: 0; font-size: 16px; font-weight: 700; white-space: nowrap; 
+            display: flex; align-items: center; gap: 6px; color: #333;
+        }
+
+        /* 核心控件区：强制不换行 */
+        .controls { 
+            display: flex; align-items: center; gap: 8px; 
+            flex-wrap: nowrap; /* 关键：禁止换行 */
+        }
+
+        /* 搜索组合 */
         .search-group { display: flex; align-items: center; gap: 0; border: 1px solid #ccc; border-radius: 4px; overflow: hidden; }
-        #stockInput { border: none; padding: 6px 8px; font-size: 13px; width: 100px; outline: none; font-weight: 600; }
-        #btnSearch { border: none; background: var(--primary); color: #fff; padding: 0 10px; height: 28px; cursor: pointer; font-size: 12px; border-radius: 0; }
+        #stockInput { 
+            border: none; padding: 6px 8px; font-size: 13px; width: 100px; outline: none; font-weight: 600;
+        }
+        #btnSearch {
+            border: none; background: var(--primary); color: #fff; 
+            padding: 0 10px; height: 28px; cursor: pointer; font-size: 12px;
+            border-radius: 0; /* 贴合输入框 */
+        }
         #btnSearch:hover { opacity: 0.9; }
-        .date-inp { border: 1px solid #ccc; border-radius: 4px; padding: 4px 6px; font-size: 12px; width: 110px; font-family: inherit; color: #555; }
-        .action-btn { border: none; border-radius: 4px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; height: 28px; }
+
+        /* 日期选择器 */
+        .date-inp { 
+            border: 1px solid #ccc; border-radius: 4px; padding: 4px 6px; 
+            font-size: 12px; width: 110px; font-family: inherit; color: #555;
+        }
+
+        /* 操作按钮 */
+        .action-btn {
+            border: none; border-radius: 4px; padding: 5px 12px; 
+            font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px;
+            white-space: nowrap; height: 28px;
+        }
         .btn-calc { background: #f2f2f7; color: #333; } .btn-calc:hover { background: #e5e5ea; }
         .btn-calc:disabled { color: #ccc; cursor: not-allowed; }
         .btn-reset { background: transparent; color: #666; border: 1px solid #eee; } .btn-reset:hover { border-color: #ccc; }
+
+        /* 分隔线 */
         .divider { width: 1px; height: 16px; background: #ddd; margin: 0 2px; }
 
-        /* Sync Status */
+        /* 右侧同步状态 */
         .header-right { display: flex; align-items: center; }
-        .sync-badge { font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: 0.2s; }
+        .sync-badge {
+            font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px;
+            cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: 0.2s;
+        }
         .sync-badge:hover { background: #f5f5f5; }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
         .dot.ok { background: var(--success); box-shadow: 0 0 4px var(--success); }
@@ -48,7 +86,7 @@
         .dot.err { background: var(--danger); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
 
-        /* Mobile */
+        /* --- 响应式：手机端样式 --- */
         @media (max-width: 768px) {
             body { padding: 0; }
             .container { border-radius: 0; min-height: 100vh; }
@@ -56,32 +94,38 @@
             .header-left { display: block; width: 100%; }
             .header-right { position: absolute; top: 12px; right: 12px; }
             h2 { margin-bottom: 10px; }
+            
+            /* 手机端切回 Grid 布局 */
             .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex-wrap: wrap; }
             .search-group { grid-column: 1 / -1; width: 100%; }
             #stockInput { width: 100%; }
             .date-inp { width: 100%; box-sizing: border-box; }
             .divider { display: none; }
             .action-btn { justify-content: center; height: 32px; font-size: 13px; }
+            
             .chart-wrapper { height: 350px !important; }
         }
 
-        /* Chart & Table */
+        /* --- 图表 & 表格 --- */
         .chart-wrapper { height: 520px; width: 100%; position: relative; }
         #chart-container { width: 100%; height: 100%; }
+        
         .table-box { overflow-x: auto; border-top: 1px solid #eee; background: #fff; }
         table { width: 100%; border-collapse: collapse; min-width: 600px; font-size: 13px; text-align: right; }
         th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
         th { background: #f9f9fb; color: #666; font-weight: 600; position: sticky; top: 0; z-index: 20; font-size: 12px; }
-        th:first-child, td:first-child { position: sticky; left: 0; background: #fff; z-index: 10; text-align: left; border-right: 1px solid #f0f0f0; box-shadow: 2px 0 5px rgba(0,0,0,0.02); font-family: "SF Mono", monospace; }
+        /* 首列固定 */
+        th:first-child, td:first-child { 
+            position: sticky; left: 0; background: #fff; z-index: 10; text-align: left;
+            border-right: 1px solid #f0f0f0; box-shadow: 2px 0 5px rgba(0,0,0,0.02); font-family: "SF Mono", monospace;
+        }
         th:first-child { z-index: 30; background: #f9f9fb; }
 
         .tag-real { background: #e6f7ff; color: #1890ff; padding: 1px 4px; border-radius: 3px; font-size: 10px; }
         .tag-man { background: #fff1f0; color: #ff4d4f; padding: 1px 4px; border-radius: 3px; font-size: 10px; cursor: pointer; }
         .loss { color: #27ae60; font-style: italic; }
-        .val-pe { color: var(--danger); font-weight: 600; font-family: "SF Mono", monospace; }
-        .val-ps { color: var(--primary); font-weight: 600; font-family: "SF Mono", monospace; }
 
-        /* Modal & Toast */
+        /* 弹窗 & Toast */
         .toast { position: fixed; top: 15%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #fff; padding: 8px 16px; border-radius: 4px; font-size: 13px; z-index: 9999; display: none; }
         .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10000; display: none; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
         .modal { background: #fff; width: 300px; border-radius: 8px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
@@ -102,18 +146,24 @@
         <div class="header-left">
             <h2>📈 估值透视</h2>
             <div class="controls">
+                <!-- 紧凑的搜索栏 (PC端不换行) -->
                 <div class="search-group">
                     <input type="text" id="stockInput" value="贵州茅台" placeholder="代码/名称">
                     <button id="btnSearch"><i class="fas fa-search"></i> 搜索</button>
                 </div>
+
                 <div class="divider"></div>
+
                 <input type="date" id="startDate" class="date-inp" value="2020-01-01">
                 <input type="date" id="endDate" class="date-inp">
+
                 <div class="divider"></div>
+
                 <button class="action-btn btn-calc" id="btn-run" disabled><i class="fas fa-bolt"></i> 计算</button>
                 <button class="action-btn btn-reset" onclick="resetZoom()"><i class="fas fa-sync-alt"></i> 重置</button>
             </div>
         </div>
+
         <div class="header-right">
             <div class="sync-badge" onclick="showSettings()" title="GitHub 配置">
                 <div id="syncDot" class="dot"></div>
@@ -144,8 +194,8 @@
     <div class="modal">
         <div class="modal-tt">✍️ 录入 <span id="modalYear"></span>年 数据</div>
         <div style="font-size:12px; color:#c0392b; background:#fff2f0; padding:8px; border-radius:4px; margin-bottom:10px;">⚠️ 财报缺失，请手动补充预测值</div>
-        <div class="inp-row"><label>预测营业收入 (亿)</label><input type="number" id="inRev"></div>
-        <div class="inp-row"><label>预测净利润 (亿)</label><input type="number" id="inProf"></div>
+        <div class="inp-row"><label>预测营收 (亿)</label><input type="number" id="inRev"></div>
+        <div class="inp-row"><label>预测净利 (亿)</label><input type="number" id="inProf"></div>
         <div class="btn-row">
             <button class="btn-full btn-cancel" onclick="closeInput(false)">取消</button>
             <button class="btn-full btn-ok" onclick="closeInput(true)">保存</button>
@@ -166,39 +216,43 @@
 </div>
 
 <script>
+    // 1. 核心变量
     let myChart = null;
     let currentStock = { code: '', name: '', secId: '' };
     let globalData = [];
     let currentTotalShares = 0;
-    let splitIdxGlobal = -1;
     const PROXY = "https://corsproxy.io/?";
     const DB_KEY = "stock_valuation_db_v2";
     
     let ghConfig = {
         token: localStorage.getItem('gh_token') || '',
-        user: localStorage.getItem('gh_user') || 'dlezywj-cell',
-        repo: localStorage.getItem('gh_repo') || 'pepsdata',
+        user: localStorage.getItem('gh_user') || 'dlezywj-cell', // 默认用户名
+        repo: localStorage.getItem('gh_repo') || 'pepsdata',     // 默认仓库
         file: 'data.json'
     };
 
     let inputResolve = null;
     let syncTimer = null;
 
+    // 初始化
     document.getElementById('endDate').value = new Date().toISOString().split('T')[0];
     myChart = echarts.init(document.getElementById('chart-container'));
     window.addEventListener('resize', () => myChart.resize());
-
-    myChart.on('dataZoom', updateDynamicMarks);
 
     document.getElementById('btnSearch').addEventListener('click', runSearch);
     document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
     document.getElementById('stockInput').addEventListener('keydown', e => { if(e.keyCode===13) runSearch(); });
 
-    if(ghConfig.token) syncCloud(); else setStatus('ready', '本地');
+    // 自动连接
+    if(ghConfig.token) syncCloud();
+    else setStatus('ready', '本地');
+
+    // --- 核心逻辑 ---
 
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if(!val) return;
+        
         try {
             document.getElementById('btnSearch').innerHTML = '...';
             const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14&token=D43BF722C8E33BD5D50F639205545E43`;
@@ -206,7 +260,10 @@
             const json = await res.json();
             if(json?.QuotationCodeTable?.Data?.length > 0) {
                 const item = json.QuotationCodeTable.Data[0];
-                currentStock = { code: item.Code, name: item.Name, secId: (item.MarketType == "1" || item.Code.startsWith('6')) ? `1.${item.Code}` : `0.${item.Code}` };
+                currentStock = { 
+                    code: item.Code, name: item.Name, 
+                    secId: (item.MarketType == "1" || item.Code.startsWith('6')) ? `1.${item.Code}` : `0.${item.Code}` 
+                };
                 document.getElementById('btn-run').disabled = false;
                 toast(`✅ 锁定: ${item.Name}`);
             } else toast('❌ 未找到');
@@ -217,6 +274,7 @@
     async function runAnalysis(silent) {
         const btn = document.getElementById('btn-run');
         if(!silent) { btn.disabled = true; btn.innerText = '...'; }
+
         try {
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
@@ -225,31 +283,23 @@
             if(!silent || !globalData.length) await Promise.all([fetchShares(), fetchKline(beg, end)]);
             let finMap = await fetchFinancials(currentStock.code);
 
-            // --- 优先级: 真实 > 录入 ---
-            const dbData = getLocal()[currentStock.code] || {};
-            
-            Object.keys(dbData).forEach(yStr => {
-                const y = parseInt(yStr);
-                const saved = dbData[y];
-                // 只有当finMap中不存在该年份(没真实财报)时，才用录入值
-                if (!finMap[y] && saved) {
-                    finMap[y] = { year: y, rev: saved.rev, prof: saved.prof, source: 'manual', name: `★${y}录入` };
-                }
-            });
-
-            if(!finMap[checkYear] && !silent) {
+            // 检查数据
+            const saved = getDB(currentStock.code, checkYear);
+            if(saved) {
+                finMap[checkYear] = { year: checkYear, rev: saved.rev, prof: saved.prof, source: 'manual', name: `★${checkYear}录入` };
+                if(!silent) toast('已加载录入数据');
+            } else if(!finMap[checkYear] && !silent) {
                 const manual = await openInput(checkYear);
                 if(manual) {
                     await saveDB(currentStock.code, checkYear, manual.rev, manual.prof);
                     finMap[checkYear] = { year: checkYear, rev: manual.rev, prof: manual.prof, source: 'manual', name: `★${checkYear}录入` };
                 }
-            } else if (finMap[checkYear] && finMap[checkYear].source === 'manual' && !silent) {
-                toast(`已加载 ${checkYear} 录入数据`);
             }
 
             calculate(finMap);
             renderChart();
             renderTable();
+
         } catch(e) { console.error(e); if(!silent) toast('运行出错'); } 
         finally { if(!silent) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-bolt"></i> 计算'; } }
     }
@@ -257,16 +307,11 @@
     function calculate(finMap) {
         const years = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
         if(!years.length) return;
-        
+        const [minY, maxY] = [years[0], years[years.length-1]];
+
         globalData = globalData.map(d => {
             const y = new Date(d.date).getFullYear();
-            
-            // 严谨的时序匹配：只能往回找，不能穿越未来
-            const availYears = years.filter(year => year <= y);
-            const targetYear = availYears.length > 0 ? availYears[availYears.length-1] : years[0];
-            
-            let fin = finMap[targetYear];
-            
+            let fin = finMap[y] || finMap[y>maxY?maxY : (y<minY?minY:y-1)];
             if(fin) {
                 const mk = d.price * currentTotalShares;
                 return { 
@@ -279,116 +324,46 @@
         });
     }
 
+    // --- 图表渲染 (ECharts 动态缩放) ---
     function renderChart() {
         if(!globalData.length) return;
         const dates = globalData.map(d => d.date);
-        
-        splitIdxGlobal = globalData.findIndex(d => d.sourceType === 'manual');
-        if(splitIdxGlobal === -1) splitIdxGlobal = globalData.length;
-
-        const peReal = globalData.map((d, i) => (i <= splitIdxGlobal && d.pe > 0) ? d.pe.toFixed(2) : null);
-        const pePred = globalData.map((d, i) => (i >= splitIdxGlobal && d.pe > 0) ? d.pe.toFixed(2) : null);
-        if(splitIdxGlobal < globalData.length && splitIdxGlobal > 0 && globalData[splitIdxGlobal].pe > 0) pePred[splitIdxGlobal] = globalData[splitIdxGlobal].pe.toFixed(2);
-
-        const psReal = globalData.map((d, i) => (i <= splitIdxGlobal) ? d.ps.toFixed(2) : null);
-        const psPred = globalData.map((d, i) => (i >= splitIdxGlobal) ? d.ps.toFixed(2) : null);
-        if(splitIdxGlobal < globalData.length && splitIdxGlobal > 0) psPred[splitIdxGlobal] = globalData[splitIdxGlobal].ps.toFixed(2);
+        const pe = globalData.map(d => d.pe>0 ? d.pe.toFixed(2) : null);
+        const ps = globalData.map(d => d.ps.toFixed(2));
 
         const option = {
-            animation: false,
+            animation: true,
             tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-            legend: { data: ['PE', 'PS'], top: 5 },
+            legend: { top: 5 },
             grid: { left: '3%', right: '3%', bottom: '15%', top: '15%', containLabel: true },
-            dataZoom: [ { type: 'inside', start: 0, end: 100 }, { type: 'slider', bottom: 5, height: 20 } ],
+            dataZoom: [
+                { type: 'inside', start: 0, end: 100 },
+                { type: 'slider', bottom: 5, height: 20 }
+            ],
             xAxis: { type: 'category', data: dates, boundaryGap: false },
             yAxis: [
-                { type: 'value', name: 'PS', position: 'left', scale: true, axisLine: { show: true, lineStyle: { color: '#007aff' } }, splitLine: { show: false } },
-                { type: 'value', name: 'PE', position: 'right', scale: true, axisLine: { show: true, lineStyle: { color: '#ff3b30' } }, splitLine: { lineStyle: { type: 'dashed', color: '#eee' } } }
+                { 
+                    type: 'value', name: 'PS(左)', position: 'left', 
+                    scale: true, // 关键：动态缩放
+                    axisLine: { show: true, lineStyle: { color: '#007aff' } },
+                    splitLine: { show: false }
+                },
+                { 
+                    type: 'value', name: 'PE(右)', position: 'right', 
+                    scale: true, // 关键：动态缩放
+                    axisLine: { show: true, lineStyle: { color: '#ff3b30' } },
+                    splitLine: { lineStyle: { type: 'dashed', color: '#eee' } }
+                }
             ],
             series: [
-                { name: 'PS', type: 'line', yAxisIndex: 0, data: psReal, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2 }, itemStyle: { color: '#007aff' } },
-                { name: 'PS', type: 'line', yAxisIndex: 0, data: psPred, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2, type: 'dashed' }, itemStyle: { color: '#007aff' }, showInLegend: false },
-                { name: 'PE', type: 'line', yAxisIndex: 1, data: peReal, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2 }, itemStyle: { color: '#ff3b30' }, connectNulls: true },
-                { name: 'PE', type: 'line', yAxisIndex: 1, data: pePred, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2, type: 'dashed' }, itemStyle: { color: '#ff3b30' }, connectNulls: true, showInLegend: false }
+                { name: 'PS', type: 'line', yAxisIndex: 0, data: ps, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2 }, itemStyle: { color: '#007aff' } },
+                { name: 'PE', type: 'line', yAxisIndex: 1, data: pe, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2 }, itemStyle: { color: '#ff3b30' }, connectNulls: true }
             ]
         };
-        myChart.setOption(option, true);
-        updateDynamicMarks();
+        myChart.setOption(option);
     }
 
-    function updateDynamicMarks() {
-        if (!myChart || !globalData.length) return;
-        const opt = myChart.getOption();
-        const start = opt.dataZoom[0].start;
-        const end = opt.dataZoom[0].end;
-        const len = globalData.length;
-        
-        const sIdx = Math.floor(len * start / 100);
-        const eIdx = Math.ceil(len * end / 100);
-        
-        const viewData = globalData.slice(sIdx, eIdx);
-        if(viewData.length === 0) return;
-
-        let psMaxVal = -Infinity, psMinVal = Infinity, psMaxIdx = -1, psMinIdx = -1;
-        let peMaxVal = -Infinity, peMinVal = Infinity, peMaxIdx = -1, peMinIdx = -1;
-
-        viewData.forEach((d, i) => {
-            const realIdx = sIdx + i;
-            if(d.ps !== null) {
-                if(d.ps > psMaxVal) { psMaxVal = d.ps; psMaxIdx = realIdx; }
-                if(d.ps < psMinVal) { psMinVal = d.ps; psMinIdx = realIdx; }
-            }
-            if(d.pe > 0) {
-                if(d.pe > peMaxVal) { peMaxVal = d.pe; peMaxIdx = realIdx; }
-                if(d.pe < peMinVal) { peMinVal = d.pe; peMinIdx = realIdx; }
-            }
-        });
-
-        const createMP = (idx, type) => {
-            if(idx === -1) return null;
-            let seriesIndex = 0;
-            if (type === 'PS') seriesIndex = idx <= splitIdxGlobal ? 0 : 1;
-            else               seriesIndex = idx <= splitIdxGlobal ? 2 : 3;
-            
-            return {
-                seriesIndex: seriesIndex,
-                coord: [idx, type==='PS'?globalData[idx].ps : globalData[idx].pe],
-                value: (type==='PS'?globalData[idx].ps:globalData[idx].pe).toFixed(2),
-                itemStyle: { color: type==='PS'?'#007aff':'#ff3b30' }
-            };
-        };
-
-        const mpDataPS = [createMP(psMaxIdx, 'PS'), createMP(psMinIdx, 'PS')].filter(x=>x);
-        const mpDataPE = [createMP(peMaxIdx, 'PE'), createMP(peMinIdx, 'PE')].filter(x=>x);
-
-        const mp0 = mpDataPS.filter(d => d.seriesIndex === 0).map(d => ({...d, name: d.coord[1]===psMaxVal?'Max':'Min'}));
-        const mp1 = mpDataPS.filter(d => d.seriesIndex === 1).map(d => ({...d, name: d.coord[1]===psMaxVal?'Max':'Min'}));
-        const mp2 = mpDataPE.filter(d => d.seriesIndex === 2).map(d => ({...d, name: d.coord[1]===peMaxVal?'Max':'Min'}));
-        const mp3 = mpDataPE.filter(d => d.seriesIndex === 3).map(d => ({...d, name: d.coord[1]===peMaxVal?'Max':'Min'}));
-
-        myChart.setOption({
-            series: [
-                { markPoint: { data: mp0, symbolSize: 35, label: { fontSize: 10 } } },
-                { markPoint: { data: mp1, symbolSize: 35, label: { fontSize: 10 } } },
-                { markPoint: { data: mp2, symbolSize: 35, label: { fontSize: 10 } } },
-                { markPoint: { data: mp3, symbolSize: 35, label: { fontSize: 10 } } }
-            ]
-        });
-    }
-
-    function renderTable() {
-        const t = document.querySelector('#dataTable tbody'); t.innerHTML = '';
-        [...globalData].reverse().slice(0,300).forEach(d => {
-            if(!d.pe) return;
-            const cls = d.sourceType==='real'?'tag-real':'tag-man';
-            const act = d.sourceType==='manual'?`onclick="editYearData(${d.year})"`:'';
-            t.innerHTML += `<tr><td>${d.date}</td><td>${d.price.toFixed(2)}</td>
-                <td><span class="tag ${cls}" ${act}>${d.sourceName} ${d.sourceType==='manual'?'✎':''}</span></td>
-                <td>${(d.mktCap/1e8).toFixed(2)}</td><td>${(d.rev/1e8).toFixed(2)}</td><td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td>
-                <td class="val-pe">${d.pe>0?d.pe.toFixed(2):'亏'}</td><td class="val-ps">${d.ps.toFixed(2)}</td></tr>`;
-        });
-    }
-
+    // --- GitHub 同步 ---
     function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
     function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
     function getLocal() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
@@ -404,10 +379,11 @@
                 const d = await res.json();
                 const cloud = JSON.parse(b64_to_utf8(d.content));
                 localStorage.setItem(DB_KEY, JSON.stringify({...getLocal(), ...cloud}));
-                setStatus('ok', '在线');
+                setStatus('ok', '已同步');
                 if(currentStock.code) runAnalysis(true);
-            } else if(res.status === 404) setStatus('ok', '新库'); 
-            else setStatus('err', '失败');
+            } else if(res.status === 404) {
+                setStatus('ok', '新库'); // 文件不存在，准备创建
+            } else setStatus('err', '连接失败');
         } catch(e) { setStatus('err', '网络错'); }
     }
 
@@ -420,11 +396,13 @@
         if(ghConfig.token) {
             clearTimeout(syncTimer);
             syncTimer = setTimeout(async () => {
-                setStatus('sync', '上传');
+                setStatus('sync', '上传中');
                 try {
                     const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
+                    // 获取SHA（如果存在）
                     const get = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
                     let sha = get.ok ? (await get.json()).sha : null;
+                    
                     await fetch(url, {
                         method: 'PUT',
                         headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
@@ -436,6 +414,7 @@
         } else toast('仅保存本地');
     }
 
+    // --- 基础数据获取 ---
     async function fetchShares() {
         try {
             const r = await fetch(PROXY + encodeURIComponent(`https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`));
@@ -452,11 +431,10 @@
     async function fetchFinancials(code) {
         let map = {};
         try {
-            const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&filter=(SECURITY_CODE="${code}")&columns=ALL&pageSize=500&pageNumber=1`;
-            const res = await fetch(PROXY + encodeURIComponent(url));
-            const json = await res.json();
-            if(json?.result?.data) {
-                json.result.data.forEach(i => {
+            const r = await fetch(PROXY + encodeURIComponent(`https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&filter=(SECURITY_CODE="${code}")&columns=ALL&pageSize=500&pageNumber=1`));
+            const j = await r.json();
+            if(j?.result?.data) {
+                j.result.data.forEach(i => {
                     if(i.REPORT_DATE && i.REPORT_DATE.includes("-12-31")) {
                         const y = parseInt(i.REPORT_DATE.substring(0,4));
                         const rev = i.TOTAL_OPERATE_INCOME || i.OPERATE_INCOME;
@@ -469,9 +447,14 @@
         return map;
     }
 
+    // --- UI工具 ---
     function toast(m) { const t=document.getElementById('toast'); t.innerText=m; t.style.display='block'; setTimeout(()=>t.style.display='none',3000); }
-    function setStatus(s, t) { document.getElementById('syncDot').className = 'dot ' + s; document.getElementById('syncTxt').innerText = t; }
+    function setStatus(s, t) { 
+        document.getElementById('syncDot').className = 'dot ' + s; 
+        document.getElementById('syncTxt').innerText = t; 
+    }
     
+    // 弹窗
     function openInput(y, r='', p='') {
         return new Promise(res => {
             document.getElementById('modalYear').innerText = y;
@@ -495,6 +478,7 @@
         if(m) { await saveDB(currentStock.code, y, m.rev, m.prof); runAnalysis(true); }
     }
 
+    // 设置
     window.showSettings = () => {
         document.getElementById('settingModal').style.display = 'flex';
         document.getElementById('cfgToken').value = ghConfig.token;
@@ -511,7 +495,20 @@
         localStorage.setItem('gh_repo', ghConfig.repo);
         closeSettings(); syncCloud();
     };
+    
     window.resetZoom = () => myChart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
+    function renderTable() {
+        const t = document.querySelector('#dataTable tbody'); t.innerHTML = '';
+        [...globalData].reverse().slice(0,300).forEach(d => {
+            if(!d.pe) return;
+            const cls = d.sourceType==='real'?'tag-real':'tag-man';
+            const act = d.sourceType==='manual'?`onclick="editYearData(${d.year})"`:'';
+            t.innerHTML += `<tr><td>${d.date}</td><td>${d.price.toFixed(2)}</td>
+                <td><span class="tag ${cls}" ${act}>${d.sourceName} ${d.sourceType==='manual'?'✎':''}</span></td>
+                <td>${(d.mktCap/1e8).toFixed(2)}</td><td>${(d.rev/1e8).toFixed(2)}</td><td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td>
+                <td class="val-pe">${d.pe>0?d.pe.toFixed(2):'亏'}</td><td class="val-ps">${d.ps.toFixed(2)}</td></tr>`;
+        });
+    }
 </script>
 </body>
 </html>
