@@ -2,166 +2,149 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (PC/Mobile 双端完美版)</title>
-    <!-- Chart.js & Plugins -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
-    <!-- Icons -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>估值透视 (ECharts 旗舰版)</title>
+    <!-- 引入 ECharts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <!-- 引入 FontAwesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
-        :root { --primary: #2980b9; --danger: #c0392b; --bg: #f4f6f9; --text: #2c3e50; --success: #27ae60; --border: #e0e0e0; }
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
-            background: var(--bg); color: var(--text); margin: 0; padding: 20px; font-size: 13px; 
+        :root {
+            --bg: #f5f5f7; --card: #ffffff; --text-main: #1d1d1f; --text-sec: #86868b;
+            --primary: #007aff; --success: #34c759; --danger: #ff3b30; --warn: #ff9500;
+            --border: #e5e5e5; --radius: 8px;
         }
-        
-        .container { 
-            max-width: 1200px; margin: 0 auto; background: #fff; 
-            border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
-            display: flex; flex-direction: column; overflow: hidden;
-        }
-        
-        /* --- 顶部工具栏 (PC端优先设计) --- */
-        header { 
-            padding: 15px 20px; border-bottom: 1px solid var(--border); background: #fff; 
-            display: flex; align-items: center; justify-content: space-between;
-        }
-        
-        .header-left { display: flex; align-items: center; gap: 20px; }
-        h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-        
-        /* 控件区域 (PC端单行排列) */
-        .controls { display: flex; align-items: center; gap: 10px; }
-        
-        .input-group { position: relative; }
-        .input-group input { 
-            padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; 
-            height: 32px;
-        }
-        .input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
-        .input-group input[type="text"] { width: 120px; font-weight: 600; }
-        .input-group input[type="date"] { width: 130px; color: #555; font-family: inherit; }
-        
-        /* 按钮 */
-        button { 
-            height: 32px; padding: 0 15px; border: none; border-radius: 4px; cursor: pointer; 
-            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; 
-            white-space: nowrap; transition: background 0.2s;
-        }
-        .btn-primary { background: var(--primary); color: #fff; } .btn-primary:hover { background: #1f618d; }
-        .btn-success { background: var(--success); color: #fff; } .btn-success:hover { background: #219150; }
-        .btn-outline { background: #fff; border: 1px solid #ccc; color: #666; } .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
-        button:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
 
-        /* 同步状态 */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif; 
+            background: var(--bg); color: var(--text-main); margin: 0; padding: 15px; 
+            display: flex; flex-direction: column; align-items: center; min-height: 100vh;
+        }
+
+        .container { 
+            width: 100%; max-width: 1200px; background: var(--card); 
+            border-radius: var(--radius); box-shadow: 0 4px 20px rgba(0,0,0,0.04); 
+            overflow: hidden; display: flex; flex-direction: column;
+        }
+
+        /* --- 顶部 Header (参考参考代码风格) --- */
+        header { 
+            padding: 12px 20px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.95);
+            display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+        }
+
+        .header-left { display: flex; align-items: center; gap: 15px; flex: 1; min-width: 0; }
+        .app-title { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; white-space: nowrap; color: #000; }
+        
+        /* 核心控制区：PC端强制不换行 */
+        .controls { 
+            display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; overflow-x: auto; 
+            padding-bottom: 2px; /* 防止滚动条遮挡 */
+        }
+        
+        /* 输入框组样式优化 */
+        .input-group { position: relative; display: flex; align-items: center; }
+        .input-group input { 
+            background: #f2f2f7; border: 1px solid transparent; border-radius: 6px; 
+            padding: 6px 10px; font-size: 13px; outline: none; transition: all 0.2s; color: var(--text-main);
+        }
+        .input-group input:focus { background: #fff; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
+        
+        /* PC端宽度控制 */
+        #stockInput { width: 120px; font-weight: 600; }
+        .date-inp { width: 115px; font-family: -apple-system, monospace; letter-spacing: -0.5px; }
+
+        /* 按钮样式优化 */
+        button { 
+            padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; 
+            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 4px; 
+            white-space: nowrap; transition: 0.2s; height: 30px;
+        }
+        .btn-primary { background: var(--primary); color: #fff; } .btn-primary:hover { opacity: 0.9; }
+        .btn-success { background: var(--success); color: #fff; } .btn-success:hover { opacity: 0.9; }
+        .btn-icon { background: #f2f2f7; color: var(--text-main); width: 30px; padding: 0; border-radius: 50%; } .btn-icon:hover { background: #e5e5ea; }
+        button:disabled { background: #f2f2f7; color: #ccc; cursor: not-allowed; }
+
+        /* 分隔符 */
+        .divider { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+
+        /* 右侧同步状态 */
         .header-right { display: flex; align-items: center; }
         .sync-info { 
-            font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; 
-            padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.2s;
+            font-size: 12px; color: var(--text-sec); display: flex; align-items: center; gap: 6px; 
+            padding: 4px 10px; background: #f9f9f9; border-radius: 12px; cursor: pointer; transition: 0.2s;
         }
-        .sync-info:hover { background: #f0f0f0; }
-        .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
+        .sync-info:hover { background: #f0f0f0; color: var(--text-main); }
+        .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: #ccc; }
         .sync-dot.online { background: var(--success); box-shadow: 0 0 4px var(--success); }
         .sync-dot.syncing { background: var(--primary); animation: pulse 1s infinite; }
         .sync-dot.error { background: var(--danger); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
 
-        /* --- 手机端适配 (Media Query) --- */
-        @media (max-width: 768px) {
-            body { padding: 0; }
-            .container { border-radius: 0; box-shadow: none; min-height: 100vh; }
-            
-            header { display: block; padding: 12px; }
-            .header-left { display: block; width: 100%; }
-            .header-right { position: absolute; top: 12px; right: 12px; }
-            
-            h2 { margin-bottom: 12px; font-size: 16px; }
-            
-            /* 手机端控件折行显示 */
-            .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
-            
-            /* 搜索行独占一行 */
-            .search-box { grid-column: 1 / -1; display: flex; gap: 8px; }
-            .search-box .input-group { flex: 1; }
-            .search-box input { width: 100% !important; }
-            
-            /* 日期行自动并排 (无需特殊CSS，grid自动处理) */
-            .input-group input { width: 100% !important; }
-            
-            /* 按钮行独占一行 */
-            .action-box { grid-column: 1 / -1; display: flex; gap: 8px; }
-            .action-box button { flex: 1; height: 36px; font-size: 14px; }
-            
-            .chart-container { height: 350px !important; padding: 5px 10px; }
-        }
+        /* --- 图表区域 (ECharts) --- */
+        .chart-wrapper { position: relative; height: 550px; width: 100%; border-bottom: 1px solid var(--border); }
+        #chart-container { width: 100%; height: 100%; }
 
-        /* --- 图表与提示 --- */
-        .chart-container { position: relative; height: 500px; padding: 15px 20px; width: 100%; }
-        .chart-tip { 
-            position: absolute; top: 10px; right: 15px; font-size: 11px; 
-            color: #999; background: rgba(255,255,255,0.8); padding: 2px 6px; 
-            border-radius: 4px; pointer-events: none; z-index: 10;
-        }
-
-        /* --- 表格区域 (横向滚动适配) --- */
-        .table-wrap { 
-            border-top: 1px solid var(--border); 
-            overflow-x: auto; -webkit-overflow-scrolling: touch; 
-            background: #fff;
-        }
-        table { 
-            width: 100%; border-collapse: separate; border-spacing: 0; 
-            font-size: 12px; text-align: right; min-width: 600px; 
-        }
-        th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
-        th { background: #f8f9fa; color: #555; font-weight: 600; position: sticky; top: 0; z-index: 20; }
+        /* --- 表格区域 --- */
+        .table-wrap { overflow-x: auto; background: #fff; padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: right; min-width: 600px; }
+        th, td { padding: 10px 15px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+        th { background: #f9f9fb; color: var(--text-sec); font-weight: 600; position: sticky; top: 0; z-index: 20; font-size: 12px; }
         
         /* 固定首列 */
         th:first-child, td:first-child {
             position: sticky; left: 0; background: #fff; z-index: 10; 
             text-align: left; border-right: 1px solid #f0f0f0;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.02);
+            box-shadow: 2px 0 5px rgba(0,0,0,0.02); font-family: "SF Mono", monospace;
         }
-        th:first-child { z-index: 30; background: #f8f9fa; }
+        th:first-child { z-index: 30; background: #f9f9fb; }
 
-        /* 标签颜色 */
-        .val-pe { color: var(--danger); font-weight: bold; }
-        .val-ps { color: var(--primary); font-weight: bold; }
-        .tag { padding: 1px 5px; border-radius: 3px; font-size: 10px; display: inline-block; transform: scale(0.95); }
-        .tag-real { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
-        .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; cursor: pointer; }
-        .loss { color: #27ae60; font-style: italic; }
+        .tag { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 500; display: inline-block; }
+        .tag-real { background: rgba(0,122,255,0.1); color: var(--primary); }
+        .tag-manual { background: rgba(255,59,48,0.1); color: var(--danger); cursor: pointer; }
+        .val-pe { color: var(--danger); font-weight: 600; font-family: "SF Mono", monospace; }
+        .val-ps { color: var(--primary); font-weight: 600; font-family: "SF Mono", monospace; }
 
-        /* 消息提示 (Toast) */
-        .status-msg { 
-            display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; 
-            position: fixed; top: 70px; left: 50%; transform: translateX(-50%); 
-            z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500;
-            background: #fff; border: 1px solid #eee;
+        /* --- 响应式适配 --- */
+        @media (max-width: 768px) {
+            body { padding: 0; background: #fff; }
+            .container { border-radius: 0; box-shadow: none; min-height: 100vh; }
+            
+            header { padding: 10px 12px; display: block; }
+            .header-left { display: block; width: 100%; }
+            .app-title { margin-bottom: 10px; justify-content: space-between; }
+            .header-right { position: absolute; top: 12px; right: 12px; }
+            
+            /* 手机端 Grid 布局：两列 */
+            .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; overflow: visible; }
+            
+            /* 搜索行：全宽 */
+            .search-row { grid-column: 1 / -1; display: flex; gap: 8px; }
+            .search-row .input-group { flex: 1; }
+            #stockInput { width: 100%; } /* 覆盖PC宽度 */
+            
+            .date-inp { width: 100%; text-align: center; } /* 覆盖PC宽度 */
+            
+            .btn-action { grid-column: 1 / -1; width: 100%; height: 36px; font-size: 14px; }
+            .divider { display: none; }
+            .chart-wrapper { height: 380px; }
         }
-        .status-msg.ok { color: #389e0d; border-color: #b7eb8f; background: #f6ffed; }
-        .status-msg.error { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
-        .status-msg.warn { color: #d48806; border-color: #ffe58f; background: #fffbe6; }
 
-        /* 模态框 (通用) */
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
-        .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); animation: popIn 0.2s ease-out; }
-        @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .modal-header { font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #333; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        .modal-body { display: flex; flex-direction: column; gap: 12px; }
-        .form-row label { display: block; margin-bottom: 5px; font-size: 12px; color: #666; font-weight: 600; }
-        .form-row input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
-        .form-row input:focus { border-color: var(--primary); outline: none; }
-        .modal-footer { margin-top: 20px; display: flex; gap: 10px; }
-        .btn-block { flex: 1; padding: 10px; border-radius: 4px; font-weight: 600; cursor: pointer; border:none; }
-        .btn-cancel { background: #f5f5f5; color: #666; border: 1px solid #eee; }
-        .btn-confirm { background: var(--primary); color: #fff; }
+        /* 模态框 & Toast (沿用) */
+        .toast { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 8px 16px; border-radius: 20px; font-size: 13px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 9999; }
+        .toast.show { opacity: 1; }
+        
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10000; display: none; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
+        .modal-box { background: #fff; width: 85%; max-width: 320px; border-radius: 12px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .modal-title { font-weight: 700; font-size: 16px; margin-bottom: 15px; display: flex; justify-content: space-between; }
+        .form-label { font-size: 12px; color: #666; margin-bottom: 5px; display: block; font-weight: 500; }
+        .modal-inp { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px; font-size: 14px; }
+        .modal-inp:focus { border-color: var(--primary); outline: none; }
+        .modal-btns { display: flex; gap: 10px; margin-top: 10px; }
+        .modal-btn { flex: 1; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; font-size: 13px; }
+        .btn-cancel { background: #f5f5f7; color: #666; }
+        .btn-ok { background: var(--primary); color: #fff; }
     </style>
 </head>
 <body>
@@ -169,43 +152,49 @@
 <div class="container">
     <header>
         <div class="header-left">
-            <h2>📈 估值透视</h2>
+            <div class="app-title">
+                <i class="fas fa-chart-line" style="color:var(--danger)"></i> 估值透视
+                <!-- 手机端显示同步状态在右侧 -->
+            </div>
             
-            <!-- 电脑端：一行显示 -->
             <div class="controls">
-                <div class="search-box">
-                    <div class="input-group">
-                        <input type="text" id="stockInput" value="贵州茅台" placeholder="代码/名称">
+                <!-- 搜索组 -->
+                <div class="search-row">
+                    <div class="input-group" style="flex-grow: 1;">
+                        <input type="text" id="stockInput" value="贵州茅台" placeholder="代码/名称" onfocus="this.select()">
                     </div>
-                    <button class="btn-primary" id="btnSearch">🔍 搜索</button>
+                    <button class="btn-primary" id="btnSearch"><i class="fas fa-search"></i> 搜索</button>
                 </div>
 
-                <div style="width:1px; height:20px; background:#ddd; margin:0 5px;" class="divider"></div>
+                <div class="divider"></div>
 
-                <div class="input-group"><input type="date" id="startDate" value="2020-01-01"></div>
-                <div class="input-group"><input type="date" id="endDate"></div>
-
-                <div class="action-box">
-                    <button class="btn-success" id="btn-run" disabled>⚡ 计算</button>
-                    <button class="btn-outline" onclick="resetZoom()">🔄 重置</button>
+                <!-- 日期组 -->
+                <div class="input-group">
+                    <input type="date" id="startDate" class="date-inp" value="2020-01-01">
                 </div>
+                <div class="input-group">
+                    <input type="date" id="endDate" class="date-inp">
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- 按钮组 -->
+                <button class="btn-success btn-action" id="btn-run" disabled><i class="fas fa-bolt"></i> 计算</button>
+                <button class="btn-icon" onclick="resetZoom()" title="重置图表"><i class="fas fa-sync-alt"></i></button>
             </div>
         </div>
 
         <div class="header-right">
-            <div class="sync-info" onclick="showSettings()" title="GitHub 配置">
+            <div class="sync-info" onclick="showSettings()" title="GitHub设置">
                 <div id="syncDot" class="sync-dot"></div>
                 <span id="statusTxt">未连接</span>
-                <i class="fas fa-cog" style="opacity:0.5; margin-left:4px;"></i>
+                <i class="fas fa-cog" style="opacity:0.4;"></i>
             </div>
         </div>
     </header>
-    
-    <div id="toastMsg" class="status-msg"></div>
 
-    <div class="chart-container">
-        <canvas id="valuationChart"></canvas>
-        <div class="chart-tip">滚轮缩放 / 拖拽</div>
+    <div class="chart-wrapper">
+        <div id="chart-container"></div>
     </div>
 
     <div class="table-wrap">
@@ -214,12 +203,12 @@
                 <tr>
                     <th>日期</th>
                     <th>股价</th>
-                    <th>财报/预测</th>
-                    <th>市值(亿)</th>
+                    <th>财报来源</th>
+                    <th>总市值(亿)</th>
                     <th>营收(亿)</th>
                     <th>净利(亿)</th>
-                    <th style="color:var(--danger)">PE(倍)</th>
-                    <th style="color:var(--primary)">PS(倍)</th>
+                    <th style="color:var(--danger)">PE(TTM)</th>
+                    <th style="color:var(--primary)">PS(TTM)</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -227,76 +216,67 @@
     </div>
 </div>
 
-<!-- 录入弹窗 -->
+<!-- 提示框 -->
+<div id="toast" class="toast">消息提示</div>
+
+<!-- 录入数据弹窗 -->
 <div id="inputModal" class="modal-overlay">
     <div class="modal-box">
-        <div class="modal-header">
+        <div class="modal-title">
             <span>✍️ 录入 <span id="modalYear"></span>年 数据</span>
         </div>
-        <div style="font-size:12px; color:#c0392b; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:12px;">
-            ⚠️ 缺失当前年份数据，请手动补充以继续。
+        <div style="font-size:13px; color:#c0392b; background:#fff1f0; padding:10px; border-radius:6px; margin-bottom:15px;">
+            ⚠️ 缺失该年财报数据，需手动录入预测值。
         </div>
-        <div class="modal-body">
-            <div class="form-row">
-                <label>预测营业收入 (亿元)</label>
-                <input type="number" id="inRev" placeholder="例如: 1500" inputmode="decimal">
-            </div>
-            <div class="form-row">
-                <label>预测净利润 (亿元)</label>
-                <input type="number" id="inProf" placeholder="例如: 800" inputmode="decimal">
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn-block btn-cancel" onclick="closeInputModal(false)">取消</button>
-            <button class="btn-block btn-confirm" onclick="closeInputModal(true)">保存</button>
+        <label class="form-label">预测营业收入 (亿元)</label>
+        <input type="number" id="inRev" class="modal-inp" placeholder="例如: 1500">
+        
+        <label class="form-label">预测净利润 (亿元)</label>
+        <input type="number" id="inProf" class="modal-inp" placeholder="例如: 800">
+        
+        <div class="modal-btns">
+            <button class="modal-btn btn-cancel" onclick="closeInputModal(false)">取消</button>
+            <button class="modal-btn btn-ok" onclick="closeInputModal(true)">保存</button>
         </div>
     </div>
 </div>
 
 <!-- GitHub 设置弹窗 -->
-<div class="modal-overlay" id="settingModal">
+<div id="settingModal" class="modal-overlay">
     <div class="modal-box">
-        <div class="modal-header">
+        <div class="modal-title">
             <span><i class="fab fa-github"></i> 云同步配置</span>
-            <i class="fas fa-times" onclick="closeSettings()" style="cursor:pointer; color:#999;"></i>
+            <i class="fas fa-times" style="color:#999; cursor:pointer;" onclick="closeSettings()"></i>
         </div>
-        <div class="modal-body">
-            <div class="form-row">
-                <label>GitHub Token (必填)</label>
-                <input type="password" id="cfgToken" placeholder="ghp_...">
-            </div>
-            <div class="form-row">
-                <label>用户名 (已预设)</label>
-                <input type="text" id="cfgUser" value="dlezywj-cell">
-            </div>
-            <div class="form-row">
-                <label>仓库名 (已预设)</label>
-                <input type="text" id="cfgRepo" value="pepsdata">
-            </div>
-            <div class="form-row">
-                <label>文件名 (已预设)</label>
-                <input type="text" id="cfgFile" value="data.json" disabled style="background:#f9f9f9">
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn-block btn-confirm" onclick="saveConfig()">保存并连接</button>
+        
+        <label class="form-label">Token (ghp_...)</label>
+        <input type="password" id="cfgToken" class="modal-inp">
+        
+        <label class="form-label">用户名 (User)</label>
+        <input type="text" id="cfgUser" class="modal-inp" value="dlezywj-cell">
+        
+        <label class="form-label">仓库名 (Repo)</label>
+        <input type="text" id="cfgRepo" class="modal-inp" value="pepsdata">
+        
+        <label class="form-label">文件名 (Path)</label>
+        <input type="text" id="cfgFile" class="modal-inp" value="data.json" disabled style="background:#f5f5f7">
+        
+        <div class="modal-btns">
+            <button class="modal-btn btn-ok" onclick="saveConfig()">连接云端</button>
         </div>
     </div>
 </div>
 
 <script>
-    // --- 全局变量 ---
+    // --- 核心变量 ---
+    let myChart = null;
     let currentStock = { code: '', name: '', secId: '' };
     let globalData = [];
     let currentTotalShares = 0;
-    let chartInstance = null;
-    let inputModalResolve = null;
-    let syncTimer = null;
-
+    
+    // 代理与配置
     const PROXY_URL = "https://corsproxy.io/?";
     const DB_KEY = "stock_valuation_db_v1";
-
-    // GitHub 配置 (默认值已更新)
     let ghConfig = {
         token: localStorage.getItem('gh_token') || '',
         user: localStorage.getItem('gh_user') || 'dlezywj-cell',
@@ -304,23 +284,35 @@
         file: 'data.json'
     };
 
-    // 初始化
+    let inputModalResolve = null;
+    let syncTimer = null;
+
+    // --- 初始化 ---
     document.getElementById('endDate').value = new Date().toISOString().split('T')[0];
+    
+    // 初始化 ECharts 实例
+    myChart = echarts.init(document.getElementById('chart-container'));
+    window.addEventListener('resize', () => myChart.resize());
+
+    // 绑定事件
     document.getElementById('btnSearch').addEventListener('click', runSearch);
     document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
     document.getElementById('stockInput').addEventListener('keydown', e => { if(e.keyCode===13) runSearch(); });
 
-    // 尝试同步
+    // 自动同步
     if(ghConfig.token) autoSyncFromCloud();
     else updateStatus('ready', '本地模式');
 
-    // --- 搜索 ---
+    // --- 1. 搜索股票 ---
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
         
+        const btn = document.getElementById('btnSearch');
+        const originHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        
         try {
-            document.getElementById('btnSearch').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14&token=D43BF722C8E33BD5D50F639205545E43`;
             const res = await fetch(PROXY_URL + encodeURIComponent(url));
             const json = await res.json();
@@ -333,25 +325,26 @@
                 document.getElementById('btn-run').disabled = false;
                 showToast(`✅ 已锁定: ${item.Name}`, 'ok');
             } else {
-                showToast("❌ 未找到股票", 'error');
+                showToast("❌ 未找到股票");
             }
-        } catch(e) { showToast("❌ 搜索失败", 'error'); 
+        } catch(e) { 
+            showToast("❌ 网络错误"); 
         } finally {
-            document.getElementById('btnSearch').innerHTML = '🔍 搜索';
+            btn.innerHTML = originHtml;
         }
     }
 
-    // --- 分析主流程 ---
+    // --- 2. 核心分析 ---
     async function runAnalysis(silent = false) {
         const btn = document.getElementById('btn-run');
-        if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+        if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 计算中'; }
         
         try {
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
             const checkYear = new Date().getFullYear();
 
-            // 1. 获取基础数据
+            // 1. 并行获取基础数据 (如果是第一次或非静默)
             if(!silent || globalData.length === 0) {
                 await Promise.all([fetchShares(), fetchKline(beg, end)]);
             }
@@ -359,7 +352,7 @@
             // 2. 获取财报
             let finMap = await fetchHistoricalFinancials(currentStock.code);
 
-            // 3. 检查缺失
+            // 3. 检查当前年份数据缺失
             const savedData = getFromDB(currentStock.code, checkYear);
             let hasRealReport = !!finMap[checkYear];
             let hasSavedPredict = !!savedData;
@@ -372,40 +365,141 @@
                     source: 'manual', 
                     name: `★${checkYear}录入` 
                 };
-                if(!silent) showToast(`已加载 ${checkYear} 预测数据`, 'ok');
-            } 
-            else if (!hasRealReport) {
-                // 仅非静默模式且缺数据时弹窗
-                if (!silent) {
-                    const manual = await openInputModal(checkYear);
-                    if (manual) {
-                        await saveToDB(currentStock.code, checkYear, manual.rev, manual.prof);
-                        finMap[checkYear] = { 
-                            year: checkYear, 
-                            rev: manual.rev, 
-                            prof: manual.prof, 
-                            source: 'manual', 
-                            name: `★${checkYear}录入` 
-                        };
-                    } else {
-                        showToast('取消录入，数据不完整', 'warn');
-                    }
+                if(!silent) showToast(`已加载 ${checkYear} 预测数据`);
+            } else if (!hasRealReport && !silent) {
+                // 只有在非静默且缺数据时才弹窗
+                const manual = await openInputModal(checkYear);
+                if (manual) {
+                    await saveToDB(currentStock.code, checkYear, manual.rev, manual.prof);
+                    finMap[checkYear] = { 
+                        year: checkYear, 
+                        rev: manual.rev, 
+                        prof: manual.prof, 
+                        source: 'manual', 
+                        name: `★${checkYear}录入` 
+                    };
+                } else {
+                    showToast('取消录入，仅展示历史数据');
                 }
             }
 
+            // 4. 计算指标
             calculate(finMap);
-            drawChart();
+            
+            // 5. 渲染图表和表格
+            renderEChart();
             renderTable();
             
         } catch(e) {
             console.error(e);
-            if(!silent) showToast(e.message || "运行出错", 'error');
+            if(!silent) showToast(e.message || "运行错误");
         } finally {
-            if(!silent) { btn.disabled = false; btn.innerHTML = '⚡ 计算'; }
+            if(!silent) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-bolt"></i> 计算'; }
         }
     }
 
-    // --- 计算逻辑 (严格保持) ---
+    // --- 3. ECharts 渲染 (核心升级) ---
+    function renderEChart() {
+        if (!globalData.length) return;
+
+        // 准备数据
+        const dates = globalData.map(d => d.date);
+        const peData = globalData.map(d => d.pe > 0 ? d.pe.toFixed(2) : null);
+        const psData = globalData.map(d => d.ps.toFixed(2));
+        
+        // 识别数据源，用于 Tooltip
+        const sources = globalData.map(d => d.sourceName);
+
+        const option = {
+            animation: true,
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'cross', label: { backgroundColor: '#6a7985' } },
+                formatter: function (params) {
+                    // 自定义 Tooltip 显示
+                    let date = params[0].axisValue;
+                    // 找到对应的数据索引
+                    let index = params[0].dataIndex;
+                    let sourceName = sources[index] || '';
+                    
+                    let html = `<div style="font-size:12px;margin-bottom:4px;">${date} <span style="background:#eee;color:#333;padding:1px 4px;border-radius:2px;font-size:10px">${sourceName}</span></div>`;
+                    
+                    params.forEach(item => {
+                        if (item.value !== null) {
+                            html += `<div style="color:${item.color};font-weight:600">
+                                ${item.marker} ${item.seriesName}: ${item.value}
+                            </div>`;
+                        }
+                    });
+                    return html;
+                }
+            },
+            legend: { data: ['PE (右轴)', 'PS (左轴)'], top: 5 },
+            grid: { left: '3%', right: '3%', bottom: '15%', top: '15%', containLabel: true },
+            dataZoom: [
+                { type: 'inside', start: 0, end: 100 },
+                { type: 'slider', show: true, bottom: 5, height: 20, borderColor: 'transparent', handleSize: '100%' }
+            ],
+            xAxis: {
+                type: 'category',
+                boundaryGap: false,
+                data: dates,
+                axisLine: { lineStyle: { color: '#ccc' } },
+                axisLabel: { color: '#666' }
+            },
+            yAxis: [
+                {
+                    type: 'value',
+                    name: 'PS (倍)',
+                    position: 'left',
+                    axisLine: { show: true, lineStyle: { color: '#007aff' } },
+                    axisLabel: { color: '#007aff' },
+                    splitLine: { show: false } // PS 不显示横线，保持干净
+                },
+                {
+                    type: 'value',
+                    name: 'PE (倍)',
+                    position: 'right',
+                    axisLine: { show: true, lineStyle: { color: '#ff3b30' } },
+                    axisLabel: { color: '#ff3b30' },
+                    splitLine: { lineStyle: { type: 'dashed', color: '#eee' } }
+                }
+            ],
+            series: [
+                {
+                    name: 'PS (左轴)',
+                    type: 'line',
+                    yAxisIndex: 0,
+                    data: psData,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { width: 2, color: '#007aff' },
+                    itemStyle: { color: '#007aff' },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(0,122,255,0.1)' },
+                            { offset: 1, color: 'rgba(0,122,255,0.01)' }
+                        ])
+                    }
+                },
+                {
+                    name: 'PE (右轴)',
+                    type: 'line',
+                    yAxisIndex: 1,
+                    data: peData,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { width: 2, color: '#ff3b30' },
+                    itemStyle: { color: '#ff3b30' },
+                    connectNulls: true // 连接空值（亏损年份）
+                }
+            ]
+        };
+
+        myChart.setOption(option);
+    }
+
+    // --- 4. 计算逻辑 (保持不变) ---
     function calculate(finMap) {
         const years = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
         if(!years.length) return;
@@ -413,6 +507,7 @@
 
         globalData = globalData.map(item => {
             const y = new Date(item.date).getFullYear();
+            // 上帝视角逻辑: 优先取当年，其次取最新
             let fin = finMap[y] || finMap[y > maxYear ? maxYear : (y < minYear ? minYear : y-1)];
             
             if(fin) {
@@ -422,75 +517,54 @@
                     year: fin.year,
                     sourceType: fin.source,
                     sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name,
-                    mktCap, rev: fin.rev, prof: fin.prof,
-                    pe: fin.prof>0 ? mktCap/fin.prof : -1,
-                    ps: fin.rev>0 ? mktCap/fin.rev : 0
+                    mktCap, 
+                    rev: fin.rev, 
+                    prof: fin.prof,
+                    pe: fin.prof > 0 ? mktCap/fin.prof : -1,
+                    ps: fin.rev > 0 ? mktCap/fin.rev : 0
                 };
             }
             return item;
         });
     }
 
-    // --- GitHub & DB ---
-    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
-    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
-    function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
-    function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
-
-    async function autoSyncFromCloud() {
-        if (!ghConfig.token) return;
-        updateStatus('syncing', '同步中');
-        try {
-            const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
-            const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-            if (res.ok) {
-                const data = await res.json();
-                const cloudDB = JSON.parse(b64_to_utf8(data.content));
-                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
-                updateStatus('online', '已同步');
-                if (currentStock.code) runAnalysis(true);
-            } else if(res.status === 404) updateStatus('online', '新文件');
-            else updateStatus('error', '失败');
-        } catch (e) { updateStatus('error', '错误'); }
+    // --- 表格渲染 ---
+    function renderTable() {
+        const tbody = document.querySelector('#dataTable tbody');
+        tbody.innerHTML = '';
+        [...globalData].reverse().slice(0, 300).forEach(d => {
+            if(!d.pe) return;
+            const peStr = d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>';
+            const tagClass = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
+            // 手动数据支持点击修改
+            const editAttr = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})"` : '';
+            const editIcon = d.sourceType === 'manual' ? ' ✎' : '';
+            
+            tbody.innerHTML += `<tr>
+                <td>${d.date}</td>
+                <td>${d.price.toFixed(2)}</td>
+                <td><span class="tag ${tagClass}" ${editAttr}>${d.sourceName}${editIcon}</span></td>
+                <td>${(d.mktCap/1e8).toFixed(2)}</td>
+                <td>${(d.rev/1e8).toFixed(2)}</td>
+                <td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td>
+                <td class="val-pe">${peStr}</td>
+                <td class="val-ps">${d.ps.toFixed(2)}</td>
+            </tr>`;
+        });
     }
 
-    async function saveToDB(code, year, rev, prof) {
-        let db = getLocalDB();
-        if (!db[code]) db[code] = {};
-        db[code][year] = { rev, prof, timestamp: Date.now() };
-        localStorage.setItem(DB_KEY, JSON.stringify(db));
-        
-        if (ghConfig.token) {
-            clearTimeout(syncTimer);
-            syncTimer = setTimeout(async () => {
-                updateStatus('syncing', '上传中');
-                try {
-                    const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
-                    const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-                    let sha = getRes.ok ? (await getRes.json()).sha : null;
-                    await fetch(url, {
-                        method: 'PUT',
-                        headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: `Update ${code} ${year}`, content: utf8_to_b64(JSON.stringify(getLocalDB())), sha: sha })
-                    });
-                    updateStatus('online', '已保存');
-                } catch(e) { updateStatus('error', '上传失败'); }
-            }, 1000);
-        } else {
-            showToast('已保存至本地 (未配置Token)', 'ok');
-        }
-    }
-
-    // --- 数据获取 ---
+    // --- 数据获取 (EastMoney) ---
     async function fetchShares() {
+        const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
         try {
-            const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`));
+            const res = await fetch(PROXY_URL + encodeURIComponent(url));
             const json = await res.json();
             currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json.data.f2) || 1e8;
         } catch(e) { currentTotalShares = 1e8; }
     }
     async function fetchKline(beg, end) {
-        const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`));
+        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
+        const res = await fetch(PROXY_URL + encodeURIComponent(url));
         const json = await res.json();
         if (!json?.data?.klines) throw new Error("无股价数据");
         globalData = json.data.klines.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
@@ -498,7 +572,8 @@
     async function fetchHistoricalFinancials(code) {
         let map = {};
         try {
-            const res = await fetch(PROXY_URL + encodeURIComponent(`https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&filter=(SECURITY_CODE="${code}")&columns=ALL&pageSize=500&pageNumber=1`));
+            const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&filter=(SECURITY_CODE="${code}")&columns=ALL&pageSize=500&pageNumber=1`;
+            const res = await fetch(PROXY_URL + encodeURIComponent(url));
             const json = await res.json();
             if(json?.result?.data) {
                 json.result.data.forEach(item => {
@@ -515,48 +590,105 @@
         return map;
     }
 
-    // --- 交互与工具 ---
-    async function editYearData(year) {
-        const saved = getFromDB(currentStock.code, year);
-        const manual = await openInputModal(year, saved ? (saved.rev/1e8) : '', saved ? (saved.prof/1e8) : '');
-        if (manual) {
-            await saveToDB(currentStock.code, year, manual.rev, manual.prof);
-            runAnalysis(true); 
+    // --- GitHub & DB 逻辑 ---
+    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
+    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
+    function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
+    function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
+
+    async function autoSyncFromCloud() {
+        if (!ghConfig.token) return;
+        updateStatus('syncing', '同步中');
+        try {
+            const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
+            const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+            if (res.ok) {
+                const data = await res.json();
+                const cloudDB = JSON.parse(b64_to_utf8(data.content));
+                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
+                updateStatus('online', '在线');
+                // 静默刷新
+                if (currentStock.code) runAnalysis(true);
+            } else if(res.status === 404) {
+                updateStatus('online', '新仓库');
+            } else {
+                updateStatus('error', '连接失败');
+            }
+        } catch (e) { updateStatus('error', '网络错误'); }
+    }
+
+    async function saveToDB(code, year, rev, prof) {
+        let db = getLocalDB();
+        if (!db[code]) db[code] = {};
+        db[code][year] = { rev, prof, timestamp: Date.now() };
+        localStorage.setItem(DB_KEY, JSON.stringify(db));
+        
+        if (ghConfig.token) {
+            clearTimeout(syncTimer);
+            syncTimer = setTimeout(async () => {
+                updateStatus('syncing', '上传中');
+                try {
+                    const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
+                    const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+                    let sha = getRes.ok ? (await getRes.json()).sha : null;
+                    
+                    const content = utf8_to_b64(JSON.stringify(getLocalDB()));
+                    const putRes = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: `Update ${code} ${year}`, content: content, sha: sha })
+                    });
+                    
+                    if(putRes.ok) updateStatus('online', '已保存');
+                    else updateStatus('error', '失败');
+                } catch(e) { updateStatus('error', '出错'); }
+            }, 1000);
+        } else {
+            showToast('已保存到本地 (无Token)');
         }
     }
 
+    // --- UI 辅助 ---
+    function updateStatus(s, t) {
+        const dot = document.getElementById('syncDot');
+        const txt = document.getElementById('statusTxt');
+        dot.className = 'sync-dot ' + s;
+        txt.innerText = t;
+    }
+    
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.innerText = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    // 模态框逻辑
     function openInputModal(year, defRev='', defProf='') {
         return new Promise((resolve) => {
             document.getElementById('modalYear').innerText = year;
             document.getElementById('inRev').value = defRev;
             document.getElementById('inProf').value = defProf;
-            document.getElementById('inputModal').style.display = 'flex'; 
+            document.getElementById('inputModal').style.display = 'flex';
             inputModalResolve = resolve;
         });
     }
-
-    function closeInputModal(isConfirm) {
+    function closeInputModal(confirm) {
         document.getElementById('inputModal').style.display = 'none';
-        if (isConfirm && inputModalResolve) {
+        if(confirm && inputModalResolve) {
             const r = parseFloat(document.getElementById('inRev').value);
             const p = parseFloat(document.getElementById('inProf').value);
-            if (!isNaN(r) && !isNaN(p)) inputModalResolve({ rev: r * 1e8, prof: p * 1e8 });
-            else { alert("请输入有效数字"); inputModalResolve(null); }
-        } else if (inputModalResolve) {
-            inputModalResolve(null);
-        }
+            if(!isNaN(r) && !isNaN(p)) inputModalResolve({ rev: r*1e8, prof: p*1e8 });
+            else { showToast('请输入有效数字'); inputModalResolve(null); }
+        } else if(inputModalResolve) inputModalResolve(null);
+    }
+    async function editYearData(year) {
+        const s = getFromDB(currentStock.code, year);
+        const m = await openInputModal(year, s?s.rev/1e8:'', s?s.prof/1e8:'');
+        if(m) { await saveToDB(currentStock.code, year, m.rev, m.prof); runAnalysis(true); }
     }
 
-    // --- UI Utils ---
-    function updateStatus(status, text) {
-        document.getElementById('syncDot').className = 'sync-dot ' + status;
-        document.getElementById('statusTxt').innerText = text;
-    }
-    function showToast(msg, type='ok') {
-        const el = document.getElementById('toastMsg');
-        el.innerHTML = msg; el.className = `status-msg ${type}`; el.style.display = 'block';
-        setTimeout(() => el.style.display='none', 3000);
-    }
+    // 设置逻辑
     window.showSettings = () => {
         document.getElementById('settingModal').style.display = 'flex';
         document.getElementById('cfgToken').value = ghConfig.token;
@@ -565,83 +697,19 @@
     };
     window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
     window.saveConfig = () => {
-        ghConfig.token = document.getElementById('cfgToken').value.trim();
-        ghConfig.user = document.getElementById('cfgUser').value.trim();
-        ghConfig.repo = document.getElementById('cfgRepo').value.trim();
+        ghConfig.token = document.getElementById('cfgToken').value;
+        ghConfig.user = document.getElementById('cfgUser').value;
+        ghConfig.repo = document.getElementById('cfgRepo').value;
         localStorage.setItem('gh_token', ghConfig.token);
         localStorage.setItem('gh_user', ghConfig.user);
         localStorage.setItem('gh_repo', ghConfig.repo);
         closeSettings(); autoSyncFromCloud();
     };
-
-    // --- Chart & Table ---
-    function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
-    const horizontalLinePlugin = { id: 'horizontalLine', afterDraw: (chart) => {
-        if (chart.tooltip?._active?.length) {
-            const ctx = chart.ctx;
-            chart.tooltip._active.forEach(point => {
-                const y = point.element.y;
-                const color = point.datasetIndex === 0 ? '#c0392b' : '#2980b9';
-                ctx.save(); ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = color;
-                ctx.moveTo(chart.chartArea.left, y); ctx.lineTo(chart.chartArea.right, y); ctx.stroke(); ctx.restore();
-            });
-        }
-    }};
     
-    function drawChart() {
-        if(!globalData.length) return;
-        const ctx = document.getElementById('valuationChart').getContext('2d');
-        if(chartInstance) chartInstance.destroy();
-        const validData = globalData.filter(d => d.pe !== undefined);
-        const peData = validData.map(d => d.pe > 0 ? d.pe : null);
-
-        chartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: validData.map(d => d.date),
-                datasets: [
-                    { label: 'PE (右轴)', data: peData, borderColor: '#c0392b', backgroundColor: 'rgba(192, 57, 43, 0.05)', borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, pointHoverRadius: 4, spanGaps: true, segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } },
-                    { label: 'PS (左轴)', data: validData.map(d => d.ps), borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.05)', borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, pointHoverRadius: 4, segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { afterLabel: (c) => ` 🏷️ ${validData[c.dataIndex].sourceName}` } },
-                    zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }, pan: { enabled: true, mode: 'x' } }
-                },
-                scales: {
-                    x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { font: { size: 10 } } },
-                    y_pe: { type: 'linear', position: 'right', title: {display:true, text:'PE 倍数', color:'#c0392b', font:{size:10}}, min: 0, grid: {drawOnChartArea:false} },
-                    y_ps: { type: 'linear', position: 'left', title: {display:true, text:'PS 倍数', color:'#2980b9', font:{size:10}}, min: 0 }
-                }
-            },
-            plugins: [horizontalLinePlugin]
-        });
-    }
-
-    function renderTable() {
-        const tbody = document.querySelector('#dataTable tbody');
-        tbody.innerHTML = '';
-        [...globalData].reverse().slice(0, 500).forEach(d => {
-            if(!d.pe) return;
-            const peStr = d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>';
-            const tagClass = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
-            const editAttr = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})"` : '';
-            const editIcon = d.sourceType === 'manual' ? ' ✎' : '';
-            
-            tbody.innerHTML += `<tr>
-                <td>${d.date}</td>
-                <td>${d.price.toFixed(2)}</td>
-                <td><span class="tag ${tagClass}" ${editAttr}>${d.sourceName}${editIcon}</span></td>
-                <td>${(d.mktCap/1e8).toFixed(2)}</td>
-                <td>${(d.rev/1e8).toFixed(2)}</td>
-                <td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td>
-                <td class="val-pe">${peStr}</td>
-                <td class="val-ps">${d.ps.toFixed(2)}</td>
-            </tr>`;
-        });
-    }
+    // 图表重置
+    window.resetZoom = () => {
+        myChart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
+    };
 </script>
 </body>
 </html>
