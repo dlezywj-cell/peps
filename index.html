@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (ECharts 旗舰版)</title>
+    <title>估值透视 (逻辑修复版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
@@ -17,33 +17,28 @@
             display: flex; flex-direction: column; overflow: hidden;
         }
 
-        /* 顶部 Header (PC端强制单行) */
+        /* Header */
         header { 
             padding: 12px 20px; border-bottom: 1px solid var(--border); background: #fff; 
-            display: flex; align-items: center; justify-content: space-between;
-            height: 40px; 
+            display: flex; align-items: center; justify-content: space-between; height: 40px; 
         }
-
         .header-left { display: flex; align-items: center; gap: 15px; flex: 1; overflow: hidden; }
         h2 { margin: 0; font-size: 16px; font-weight: 700; white-space: nowrap; display: flex; align-items: center; gap: 6px; color: #333; }
 
-        /* 核心控件区：强制不换行 */
+        /* Controls */
         .controls { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
-
         .search-group { display: flex; align-items: center; gap: 0; border: 1px solid #ccc; border-radius: 4px; overflow: hidden; }
         #stockInput { border: none; padding: 6px 8px; font-size: 13px; width: 100px; outline: none; font-weight: 600; }
         #btnSearch { border: none; background: var(--primary); color: #fff; padding: 0 10px; height: 28px; cursor: pointer; font-size: 12px; border-radius: 0; }
         #btnSearch:hover { opacity: 0.9; }
-
         .date-inp { border: 1px solid #ccc; border-radius: 4px; padding: 4px 6px; font-size: 12px; width: 110px; font-family: inherit; color: #555; }
-
         .action-btn { border: none; border-radius: 4px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; height: 28px; }
         .btn-calc { background: #f2f2f7; color: #333; } .btn-calc:hover { background: #e5e5ea; }
         .btn-calc:disabled { color: #ccc; cursor: not-allowed; }
         .btn-reset { background: transparent; color: #666; border: 1px solid #eee; } .btn-reset:hover { border-color: #ccc; }
-
         .divider { width: 1px; height: 16px; background: #ddd; margin: 0 2px; }
 
+        /* Sync Status */
         .header-right { display: flex; align-items: center; }
         .sync-badge { font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: 0.2s; }
         .sync-badge:hover { background: #f5f5f5; }
@@ -53,6 +48,7 @@
         .dot.err { background: var(--danger); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
 
+        /* Mobile */
         @media (max-width: 768px) {
             body { padding: 0; }
             .container { border-radius: 0; min-height: 100vh; }
@@ -69,9 +65,9 @@
             .chart-wrapper { height: 350px !important; }
         }
 
+        /* Chart & Table */
         .chart-wrapper { height: 520px; width: 100%; position: relative; }
         #chart-container { width: 100%; height: 100%; }
-        
         .table-box { overflow-x: auto; border-top: 1px solid #eee; background: #fff; }
         table { width: 100%; border-collapse: collapse; min-width: 600px; font-size: 13px; text-align: right; }
         th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
@@ -85,6 +81,7 @@
         .val-pe { color: var(--danger); font-weight: 600; font-family: "SF Mono", monospace; }
         .val-ps { color: var(--primary); font-weight: 600; font-family: "SF Mono", monospace; }
 
+        /* Modal & Toast */
         .toast { position: fixed; top: 15%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #fff; padding: 8px 16px; border-radius: 4px; font-size: 13px; z-index: 9999; display: none; }
         .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10000; display: none; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
         .modal { background: #fff; width: 300px; border-radius: 8px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
@@ -147,8 +144,8 @@
     <div class="modal">
         <div class="modal-tt">✍️ 录入 <span id="modalYear"></span>年 数据</div>
         <div style="font-size:12px; color:#c0392b; background:#fff2f0; padding:8px; border-radius:4px; margin-bottom:10px;">⚠️ 财报缺失，请手动补充预测值</div>
-        <div class="inp-row"><label>预测营收 (亿)</label><input type="number" id="inRev"></div>
-        <div class="inp-row"><label>预测净利 (亿)</label><input type="number" id="inProf"></div>
+        <div class="inp-row"><label>预测营业收入 (亿)</label><input type="number" id="inRev"></div>
+        <div class="inp-row"><label>预测净利润 (亿)</label><input type="number" id="inProf"></div>
         <div class="btn-row">
             <button class="btn-full btn-cancel" onclick="closeInput(false)">取消</button>
             <button class="btn-full btn-ok" onclick="closeInput(true)">保存</button>
@@ -169,6 +166,7 @@
 </div>
 
 <script>
+    // 核心变量
     let myChart = null;
     let currentStock = { code: '', name: '', secId: '' };
     let globalData = [];
@@ -225,16 +223,34 @@
             if(!silent || !globalData.length) await Promise.all([fetchShares(), fetchKline(beg, end)]);
             let finMap = await fetchFinancials(currentStock.code);
 
-            const saved = getDB(currentStock.code, checkYear);
-            if(saved) {
-                finMap[checkYear] = { year: checkYear, rev: saved.rev, prof: saved.prof, source: 'manual', name: `★${checkYear}录入` };
-                if(!silent) toast('已加载录入数据');
-            } else if(!finMap[checkYear] && !silent) {
+            // --- 核心逻辑修复: 真实数据优先 ---
+            // 1. 先尝试从数据库/本地加载所有保存的预测
+            const dbData = getLocal()[currentStock.code] || {};
+            
+            // 2. 遍历DB数据，只有当finMap中不存在该年份(没有真实财报)时，才填入录入值
+            Object.keys(dbData).forEach(yStr => {
+                const y = parseInt(yStr);
+                const saved = dbData[y];
+                if (!finMap[y] && saved) {
+                    finMap[y] = { 
+                        year: y, rev: saved.rev, prof: saved.prof, 
+                        source: 'manual', name: `★${y}录入` 
+                    };
+                }
+            });
+
+            // 3. 检查当前年份（例如2025），如果真实也没有，录入也没有，则弹窗
+            if(!finMap[checkYear] && !silent) {
                 const manual = await openInput(checkYear);
                 if(manual) {
                     await saveDB(currentStock.code, checkYear, manual.rev, manual.prof);
-                    finMap[checkYear] = { year: checkYear, rev: manual.rev, prof: manual.prof, source: 'manual', name: `★${checkYear}录入` };
+                    finMap[checkYear] = { 
+                        year: checkYear, rev: manual.rev, prof: manual.prof, 
+                        source: 'manual', name: `★${checkYear}录入` 
+                    };
                 }
+            } else if (finMap[checkYear] && finMap[checkYear].source === 'manual' && !silent) {
+                toast(`已加载 ${checkYear} 录入数据`);
             }
 
             calculate(finMap);
@@ -263,31 +279,32 @@
         if(!globalData.length) return;
         const dates = globalData.map(d => d.date);
         
-        // 分离数据以实现虚线效果
-        let splitIdx = -1;
-        // 找到第一个 'manual' 数据的索引
-        for (let i = 0; i < globalData.length; i++) {
-            if (globalData[i].sourceType === 'manual') {
-                splitIdx = i;
-                break;
-            }
-        }
+        // 分离数据实现虚线 (Source: manual)
+        // 逻辑: 如果当前点是 Manual，或者上一个点是 Manual，这段线就是虚线
+        // 为了 ECharts 实现简单，我们分两层：实线层(Real) 和 虚线层(Pred)
+        
+        let splitIdx = globalData.findIndex(d => d.sourceType === 'manual');
+        if(splitIdx === -1) splitIdx = globalData.length;
 
         // PE Data
-        const peReal = globalData.map((d, i) => (d.pe > 0 && (splitIdx === -1 || i <= splitIdx)) ? d.pe.toFixed(2) : null);
-        const pePred = globalData.map((d, i) => (d.pe > 0 && splitIdx !== -1 && i >= splitIdx) ? d.pe.toFixed(2) : null);
-        // 如果有预测，把实盘的最后一个点加到预测里，保证连接不断开
-        if(splitIdx !== -1 && peReal[splitIdx]) pePred[splitIdx] = peReal[splitIdx];
+        const peReal = globalData.map((d, i) => (i <= splitIdx && d.pe > 0) ? d.pe.toFixed(2) : null);
+        const pePred = globalData.map((d, i) => (i >= splitIdx && d.pe > 0) ? d.pe.toFixed(2) : null);
+        // 连接点
+        if(splitIdx < globalData.length && splitIdx > 0 && globalData[splitIdx].pe > 0) {
+             pePred[splitIdx] = globalData[splitIdx].pe.toFixed(2);
+        }
 
         // PS Data
-        const psReal = globalData.map((d, i) => (splitIdx === -1 || i <= splitIdx) ? d.ps.toFixed(2) : null);
-        const psPred = globalData.map((d, i) => (splitIdx !== -1 && i >= splitIdx) ? d.ps.toFixed(2) : null);
-        if(splitIdx !== -1 && psReal[splitIdx]) psPred[splitIdx] = psReal[splitIdx];
+        const psReal = globalData.map((d, i) => (i <= splitIdx) ? d.ps.toFixed(2) : null);
+        const psPred = globalData.map((d, i) => (i >= splitIdx) ? d.ps.toFixed(2) : null);
+        if(splitIdx < globalData.length && splitIdx > 0) {
+             psPred[splitIdx] = globalData[splitIdx].ps.toFixed(2);
+        }
 
         const option = {
             animation: false,
             tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-            legend: { data: ['PE(实)', 'PE(预)', 'PS(实)', 'PS(预)'], top: 5 },
+            legend: { data: ['PE', 'PS'], top: 5 },
             grid: { left: '3%', right: '3%', bottom: '15%', top: '15%', containLabel: true },
             dataZoom: [ { type: 'inside' }, { type: 'slider', bottom: 5, height: 20 } ],
             xAxis: { type: 'category', data: dates, boundaryGap: false },
@@ -296,19 +313,17 @@
                 { type: 'value', name: 'PE', position: 'right', scale: true, axisLine: { show: true, lineStyle: { color: '#ff3b30' } }, splitLine: { lineStyle: { type: 'dashed', color: '#eee' } } }
             ],
             series: [
-                // PS Real
-                { name: 'PS(实)', type: 'line', yAxisIndex: 0, data: psReal, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2 }, itemStyle: { color: '#007aff' }, 
-                  markPoint: { data: [{ type: 'max', name: 'Max' }, { type: 'min', name: 'Min' }], symbolSize: 35, label: { fontSize: 10 } } 
-                },
-                // PS Pred (Dashed)
-                { name: 'PS(预)', type: 'line', yAxisIndex: 0, data: psPred, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2, type: 'dashed' }, itemStyle: { color: '#007aff' } },
-                
                 // PE Real
-                { name: 'PE(实)', type: 'line', yAxisIndex: 1, data: peReal, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2 }, itemStyle: { color: '#ff3b30' }, connectNulls: true,
-                  markPoint: { data: [{ type: 'max', name: 'Max' }, { type: 'min', name: 'Min' }], symbolSize: 35, label: { fontSize: 10 } }
-                },
+                { name: 'PE', type: 'line', yAxisIndex: 1, data: peReal, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2 }, itemStyle: { color: '#ff3b30' }, 
+                  markPoint: { data: [{ type: 'max', name: 'Max' }, { type: 'min', name: 'Min' }], symbolSize: 35, label: { fontSize: 10 } } },
                 // PE Pred (Dashed)
-                { name: 'PE(预)', type: 'line', yAxisIndex: 1, data: pePred, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2, type: 'dashed' }, itemStyle: { color: '#ff3b30' }, connectNulls: true }
+                { name: 'PE', type: 'line', yAxisIndex: 1, data: pePred, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2, type: 'dashed' }, itemStyle: { color: '#ff3b30' }, showInLegend: false },
+                
+                // PS Real
+                { name: 'PS', type: 'line', yAxisIndex: 0, data: psReal, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2 }, itemStyle: { color: '#007aff' },
+                  markPoint: { data: [{ type: 'max', name: 'Max' }, { type: 'min', name: 'Min' }], symbolSize: 35, label: { fontSize: 10 } } },
+                // PS Pred (Dashed)
+                { name: 'PS', type: 'line', yAxisIndex: 0, data: psPred, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2, type: 'dashed' }, itemStyle: { color: '#007aff' }, showInLegend: false }
             ]
         };
         myChart.setOption(option, true);
@@ -368,7 +383,7 @@
                         headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({ message: `upd ${code}`, content: utf8_to_b64(JSON.stringify(getLocal())), sha })
                     });
-                    setStatus('ok', '在线');
+                    setStatus('ok', '已保存');
                 } catch(e) { setStatus('err', '上传失败'); }
             }, 1000);
         } else toast('仅保存本地');
