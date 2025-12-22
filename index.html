@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (最终完美版)</title>
+    <title>估值透视 (时序严格版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
@@ -170,7 +170,7 @@
     let currentStock = { code: '', name: '', secId: '' };
     let globalData = [];
     let currentTotalShares = 0;
-    let splitIdxGlobal = -1; // 记录实盘和预测的分界点
+    let splitIdxGlobal = -1; 
     const PROXY = "https://corsproxy.io/?";
     const DB_KEY = "stock_valuation_db_v2";
     
@@ -188,7 +188,6 @@
     myChart = echarts.init(document.getElementById('chart-container'));
     window.addEventListener('resize', () => myChart.resize());
 
-    // 监听 dataZoom 事件，动态更新极值
     myChart.on('dataZoom', updateDynamicMarks);
 
     document.getElementById('btnSearch').addEventListener('click', runSearch);
@@ -226,10 +225,10 @@
             if(!silent || !globalData.length) await Promise.all([fetchShares(), fetchKline(beg, end)]);
             let finMap = await fetchFinancials(currentStock.code);
 
-            // --- 核心逻辑修复: 真实数据优先 ---
+            // --- 核心修复: 真实数据绝对优先 ---
             const dbData = getLocal()[currentStock.code] || {};
             
-            // 只有当 finMap 中不存在该年份(没有真实财报)时，才使用本地录入数据
+            // 只有当 finMap 中不存在该年份时，才使用本地录入
             Object.keys(dbData).forEach(yStr => {
                 const y = parseInt(yStr);
                 const saved = dbData[y];
@@ -238,7 +237,7 @@
                 }
             });
 
-            // 检查当前年份是否缺失
+            // 检查当前年份（仅当没有真实财报且没有录入时弹窗）
             if(!finMap[checkYear] && !silent) {
                 const manual = await openInput(checkYear);
                 if(manual) {
@@ -256,16 +255,34 @@
         finally { if(!silent) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-bolt"></i> 计算'; } }
     }
 
+    // --- 计算逻辑修正: 严格时序 ---
     function calculate(finMap) {
         const years = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
         if(!years.length) return;
-        const [minY, maxY] = [years[0], years[years.length-1]];
+        
         globalData = globalData.map(d => {
             const y = new Date(d.date).getFullYear();
-            let fin = finMap[y] || finMap[y>maxY?maxY : (y<minY?minY:y-1)];
+            
+            // 修正：找到小于等于当前日期的最大可用财报年份
+            // 防止 2024年的日期 用到 2025年的数据
+            const availableYears = years.filter(year => year <= y);
+            
+            let targetYear;
+            if (availableYears.length > 0) {
+                targetYear = availableYears[availableYears.length - 1]; // 取最近的过去年份
+            } else {
+                targetYear = years[0]; // 如果日期太早，用最早的数据兜底
+            }
+            
+            let fin = finMap[targetYear];
+            
             if(fin) {
                 const mk = d.price * currentTotalShares;
-                return { ...d, year: fin.year, sourceType: fin.source, sourceName: fin.source==='real'?`${fin.year}年报`:fin.name, mktCap: mk, rev: fin.rev, prof: fin.prof, pe: fin.prof>0 ? mk/fin.prof : -1, ps: fin.rev>0 ? mk/fin.rev : 0 };
+                return { 
+                    ...d, year: fin.year, sourceType: fin.source, sourceName: fin.source==='real'?`${fin.year}年报`:fin.name,
+                    mktCap: mk, rev: fin.rev, prof: fin.prof, 
+                    pe: fin.prof>0 ? mk/fin.prof : -1, ps: fin.rev>0 ? mk/fin.rev : 0
+                };
             }
             return d;
         });
