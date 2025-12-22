@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>估值透视 (GitHub云同步版)</title>
+    <title>估值透视 (Pro版 - 严格按需求显示)</title>
     <!-- 引入 Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
@@ -256,8 +256,8 @@
                 updateStatus('online', '已同步');
                 showToast('✅ 云端数据已加载', 'ok');
                 
-                // 如果当前正在展示股票，刷新一下
-                if (currentStock.code) runAnalysis(true); // true 表示静默刷新
+                // 如果当前正在展示股票，刷新一下 (静默模式)
+                if (currentStock.code) runAnalysis(true); 
             } else if (res.status === 404) {
                 // 文件不存在，说明是新仓库，准备首次上传
                 updateStatus('online', '就绪(新)');
@@ -393,22 +393,21 @@
             let finMap = await fetchHistoricalFinancials(currentStock.code);
             const currentYear = new Date().getFullYear(); 
 
-            // 检查逻辑
-            let yearData = finMap[currentYear];
-            const savedData = getFromDB(currentStock.code, currentYear);
+            // 检查逻辑：优先从本地/云端读取，否则弹窗录入 (仅针对 currentYear)
+            let yearData = finMap[currentYear]; // 真实财报数据
+            const savedData = getFromDB(currentStock.code, currentYear); // 本地/云端保存的预测数据
             
             // 优先用本地/云端同步的数据
             if (savedData) {
-                finMap[currentYear] = { year: currentYear, rev: savedData.rev, prof: savedData.prof, source: 'manual', name: '预测(录入)' };
+                finMap[currentYear] = { year: currentYear, rev: savedData.rev, prof: savedData.prof, source: 'manual', name: '录入' };
                 if(!silent) showToast(`已加载 ${currentYear} 预测数据`, 'ok');
             } 
-            // 否则弹窗录入 (静默模式下不弹窗)
+            // 如果真实数据和本地数据都没有，且不是静默模式，则弹窗录入
             else if (!yearData && !silent) {
                 const manual = await openInputModal(currentYear);
                 if (manual) {
-                    // 这里会触发 saveToDB -> pushToGitHub
                     await saveToDB(currentStock.code, currentYear, manual.rev, manual.prof);
-                    finMap[currentYear] = { year: currentYear, rev: manual.rev, prof: manual.prof, source: 'manual', name: '预测(录入)' };
+                    finMap[currentYear] = { year: currentYear, rev: manual.rev, prof: manual.prof, source: 'manual', name: '录入' };
                 }
             }
 
@@ -515,7 +514,8 @@
                     ...item,
                     year: fin.year,
                     sourceType: fin.source,
-                    sourceName: fin.name,
+                    // 核心修改: 严格按照需求生成 sourceName
+                    sourceName: fin.source === 'real' ? `${fin.year}年报` : `★${fin.year}录入`,
                     mktCap, rev: fin.rev, prof: fin.prof,
                     pe: fin.prof>0 ? mktCap/fin.prof : -1,
                     ps: fin.rev>0 ? mktCap/fin.rev : 0
@@ -525,26 +525,44 @@
         });
     }
 
-    // --- 图表 ---
+    // --- 图表相关 (含自定义横向准星插件) ---
     function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
+
+    // 自定义插件：绘制鼠标悬停时的横向虚线
     const horizontalLinePlugin = {
         id: 'horizontalLine',
         afterDraw: (chart) => {
             if (chart.tooltip?._active?.length) {
                 const ctx = chart.ctx;
-                chart.tooltip._active.forEach(point => {
+                const activePoints = chart.tooltip._active;
+                
+                ctx.save();
+                
+                activePoints.forEach(point => {
                     const y = point.element.y;
-                    const color = point.datasetIndex === 0 ? '#c0392b' : '#2980b9';
-                    ctx.save(); ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = color;
-                    ctx.moveTo(chart.chartArea.left, y); ctx.lineTo(chart.chartArea.right, y); ctx.stroke(); ctx.restore();
+                    const datasetIndex = point.datasetIndex;
+                    // 根据数据集索引决定颜色 (0: PE-Red, 1: PS-Blue)
+                    const color = datasetIndex === 0 ? '#c0392b' : '#2980b9';
+                    
+                    ctx.beginPath();
+                    ctx.setLineDash([4, 4]); // 虚线样式
+                    ctx.lineWidth = 1;
+                    ctx.strokeStyle = color;
+                    ctx.moveTo(chart.chartArea.left, y);
+                    ctx.lineTo(chart.chartArea.right, y);
+                    ctx.stroke();
                 });
+                
+                ctx.restore();
             }
         }
     };
+
     function drawChart() {
         if(!globalData.length) return;
         const ctx = document.getElementById('valuationChart').getContext('2d');
         if(chartInstance) chartInstance.destroy();
+
         const validData = globalData.filter(d => d.pe !== undefined);
         const peData = validData.map(d => d.pe > 0 ? d.pe : null);
 
@@ -554,28 +572,56 @@
                 labels: validData.map(d => d.date),
                 datasets: [
                     {
-                        label: 'PE (右轴)', data: peData, borderColor: '#c0392b', backgroundColor: 'rgba(192, 57, 43, 0.05)', borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, pointHoverRadius: 4, spanGaps: true,
+                        label: 'PE (右轴)',
+                        data: peData,
+                        borderColor: '#c0392b',
+                        backgroundColor: 'rgba(192, 57, 43, 0.05)',
+                        borderWidth: 1.5,
+                        yAxisID: 'y_pe',
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        spanGaps: true,
                         segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined }
                     },
                     {
-                        label: 'PS (左轴)', data: validData.map(d => d.ps), borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.05)', borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, pointHoverRadius: 4,
+                        label: 'PS (左轴)',
+                        data: validData.map(d => d.ps),
+                        borderColor: '#2980b9',
+                        backgroundColor: 'rgba(41, 128, 185, 0.05)',
+                        borderWidth: 1.5,
+                        yAxisID: 'y_ps',
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
                         segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined }
                     }
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { afterLabel: (c) => ` 🏷️ ${validData[c.dataIndex].sourceName}` } },
-                    zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }, pan: { enabled: true, mode: 'x' } }
+                    tooltip: { 
+                        backgroundColor: 'rgba(255,255,255,0.95)',
+                        titleColor: '#333',
+                        bodyColor: '#333',
+                        borderColor: '#ddd',
+                        borderWidth: 1,
+                        callbacks: { afterLabel: (c) => ` 🏷️ ${validData[c.dataIndex].sourceName}` } 
+                    },
+                    zoom: {
+                        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+                        pan: { enabled: true, mode: 'x' },
+                        limits: { x: { min: 'original', max: 'original' } }
+                    }
                 },
                 scales: {
-                    x: { type: 'time', time: { unit: 'month' }, grid: { display: false } },
-                    y_pe: { type: 'linear', position: 'right', title: {display:true, text:'PE 倍数', color:'#c0392b'}, min: 0, grid: {drawOnChartArea:false} },
-                    y_ps: { type: 'linear', position: 'left', title: {display:true, text:'PS 倍数', color:'#2980b9'}, min: 0 }
+                    x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { font: { size: 10 } } },
+                    y_pe: { type: 'linear', position: 'right', title: {display:true, text:'PE 倍数', color:'#c0392b', font:{size:10}}, min: 0, grid: {drawOnChartArea:false} },
+                    y_ps: { type: 'linear', position: 'left', title: {display:true, text:'PS 倍数', color:'#2980b9', font:{size:10}}, min: 0 }
                 }
             },
-            plugins: [horizontalLinePlugin]
+            plugins: [horizontalLinePlugin] // 注册自定义横向线插件
         });
     }
 
