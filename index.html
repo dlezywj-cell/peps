@@ -2,103 +2,216 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>估值透视 (强制补全修复版)</title>
-    <!-- 引入 Chart.js -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>估值透视 (移动端适配版)</title>
+    <!-- Chart.js & Plugins -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-    <!-- 引入缩放插件依赖 -->
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
-    <!-- 引入图标库 -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
-        :root { --primary: #2980b9; --danger: #c0392b; --bg: #f4f6f9; --text: #2c3e50; --success: #27ae60; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; font-size: 13px; }
+        :root { --primary: #2980b9; --danger: #c0392b; --bg: #f4f6f9; --text: #2c3e50; --success: #27ae60; --white: #ffffff; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         
-        .container { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); overflow: hidden; position: relative; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background: var(--bg); color: var(--text); margin: 0; padding: 10px; font-size: 13px; 
+        }
         
-        header { padding: 15px 20px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px; background: #fff; }
-        .header-left { display: flex; align-items: center; gap: 15px; }
-        h2 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+        .container { 
+            max-width: 1200px; margin: 0 auto; background: var(--white); 
+            border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); 
+            overflow: hidden; display: flex; flex-direction: column;
+        }
         
-        .controls { display: flex; align-items: center; gap: 10px; }
-        .input-group input { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; outline: none; }
+        /* --- 顶部区域适配 --- */
+        header { 
+            padding: 12px 15px; border-bottom: 1px solid #eee; background: #fff;
+        }
+        
+        .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        h2 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; }
+        
+        /* 控件区域网格布局 */
+        .controls { 
+            display: flex; gap: 8px; flex-wrap: wrap; align-items: center; 
+        }
+        
+        .input-group { position: relative; display: flex; align-items: center; }
+        .input-group input { 
+            padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; outline: none; 
+            width: 100%; transition: border 0.2s; -webkit-appearance: none;
+        }
         .input-group input:focus { border-color: var(--primary); }
-        .input-group input[type="text"] { width: 100px; font-weight: bold; }
-        .input-group input[type="date"] { width: 110px; color: #666; font-family: inherit; }
         
-        button { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; transition: 0.2s; }
+        /* 按钮通用样式 */
+        button { 
+            padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; 
+            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 4px; 
+            white-space: nowrap; transition: 0.2s;
+        }
         .btn-primary { background: var(--primary); color: #fff; }
         .btn-success { background: var(--success); color: #fff; }
         .btn-outline { background: #fff; border: 1px solid #ddd; color: #666; }
+        .btn-outline:active { background: #f0f0f0; }
         button:disabled { background: #eee; color: #aaa; border-color: #eee; cursor: not-allowed; }
 
-        .sync-info { font-size: 12px; color: #666; display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 8px; }
+        /* 同步状态小组件 */
+        .sync-info { 
+            font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; 
+            padding: 4px 8px; background: #f8f9fa; border-radius: 12px; cursor: pointer;
+        }
         .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
-        .sync-dot.online { background: var(--success); box-shadow: 0 0 6px rgba(39, 174, 96, 0.4); }
+        .sync-dot.online { background: var(--success); box-shadow: 0 0 4px var(--success); }
         .sync-dot.syncing { background: var(--primary); animation: pulse 1s infinite; }
         .sync-dot.error { background: var(--danger); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
 
-        .status-msg { display: none; padding: 6px 16px; border-radius: 4px; font-size: 13px; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 20000; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-weight: bold; }
-        .status-msg.ok { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
-        .status-msg.error { background: #fff2f0; color: #cf1322; border: 1px solid #ffa39e; }
-        .status-msg.warn { background: #fffbe6; color: #d48806; border: 1px solid #ffe58f; }
+        /* --- 手机端特有样式 (Media Query) --- */
+        @media (max-width: 768px) {
+            body { padding: 0; background: #fff; }
+            .container { border-radius: 0; box-shadow: none; min-height: 100vh; }
+            
+            /* 手机端控件布局：分行显示 */
+            .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+            
+            /* 搜索行：独占一行 */
+            .search-row { grid-column: 1 / -1; display: flex; gap: 8px; }
+            .search-row .input-group { flex: 1; }
+            
+            /* 日期行：自动并排 */
+            
+            /* 按钮行：独占一行 */
+            .action-row { grid-column: 1 / -1; display: flex; gap: 8px; }
+            .action-row button { flex: 1; padding: 10px; font-size: 14px; }
+            
+            h2 { font-size: 15px; }
+            
+            /* 图表高度适应 */
+            .chart-container { height: 350px !important; padding: 5px 10px; }
+        }
 
-        .chart-container { position: relative; height: 500px; padding: 10px 20px; }
-        .chart-tip { position: absolute; top: 10px; right: 20px; font-size: 11px; color: #999; background: rgba(255,255,255,0.9); padding: 4px 8px; border-radius: 4px; pointer-events: none; }
+        /* --- 桌面端样式微调 --- */
+        @media (min-width: 769px) {
+            .search-row, .action-row { display: contents; } /* 取消Grid分组 */
+            .input-group input[type="text"] { width: 120px; }
+            .input-group input[type="date"] { width: 115px; }
+        }
 
-        .table-wrap { border-top: 1px solid #eee; max-height: 400px; overflow-y: auto; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: right; }
-        th { position: sticky; top: 0; background: #f8f9fa; color: #555; font-weight: 600; padding: 10px 15px; border-bottom: 1px solid #ddd; z-index: 2; }
-        td { padding: 8px 15px; border-bottom: 1px solid #f0f0f0; font-family: "SF Mono", Consolas, monospace; }
-        tr:hover { background-color: #f6f8fa; }
-        th:first-child, td:first-child { text-align: left; }
+        /* --- 图表区域 --- */
+        .chart-container { position: relative; height: 500px; padding: 10px 20px; width: 100%; }
+        .chart-tip { 
+            position: absolute; top: 10px; right: 10px; font-size: 10px; 
+            color: #999; background: rgba(255,255,255,0.8); padding: 2px 6px; 
+            border-radius: 4px; pointer-events: none; z-index: 10;
+        }
 
-        .tag { padding: 1px 5px; border-radius: 3px; font-size: 10px; }
+        /* --- 表格区域 (重点优化) --- */
+        .table-wrap { 
+            border-top: 1px solid #eee; 
+            overflow-x: auto; /* 允许横向滚动 */
+            -webkit-overflow-scrolling: touch; /* 流畅滚动 */
+            background: #fff;
+            position: relative;
+        }
+        
+        table { 
+            width: 100%; 
+            border-collapse: separate; /* 必须为separate才能支持sticky */
+            border-spacing: 0; 
+            font-size: 12px; 
+            text-align: right; 
+            min-width: 600px; /* 保证最小宽度，强制滚动 */
+        }
+        
+        th, td { 
+            padding: 10px 8px; 
+            border-bottom: 1px solid #f0f0f0; 
+            white-space: nowrap; /* 不换行 */
+        }
+        
+        th { background: #f8f9fa; color: #555; font-weight: 600; position: sticky; top: 0; z-index: 20; }
+        
+        /* 首列固定 (日期列) */
+        th:first-child, td:first-child {
+            position: sticky; 
+            left: 0; 
+            background: #fff; 
+            z-index: 10; 
+            text-align: left;
+            border-right: 1px solid #eee;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.02);
+        }
+        th:first-child { z-index: 30; background: #f8f9fa; } /* 表头首列层级最高 */
+
+        /* 数据颜色 */
+        .val-pe { color: var(--danger); font-weight: bold; }
+        .val-ps { color: var(--primary); font-weight: bold; }
+        .tag { padding: 1px 4px; border-radius: 3px; font-size: 10px; display: inline-block; transform: scale(0.9); }
         .tag-real { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
-        .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; cursor: pointer; }
-        .loss { color: #27ae60; } 
+        .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; }
+        .loss { color: #27ae60; font-style: italic; }
 
-        /* 模态框样式 (高优先级) */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; display: none; justify-content: center; align-items: center; backdrop-filter: blur(3px); }
-        .modal-box { background: #fff; padding: 25px; border-radius: 8px; width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); animation: popIn 0.2s ease-out; }
-        @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .modal-header { font-size: 16px; font-weight: 700; margin-bottom: 20px; color: #333; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        .modal-body { display: flex; flex-direction: column; gap: 15px; }
-        .form-row label { display: block; margin-bottom: 6px; font-size: 12px; color: #555; font-weight: 600; }
-        .form-row input { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-        .form-row input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 2px rgba(41,128,185,0.2); }
-        .modal-footer { margin-top: 25px; display: flex; justify-content: flex-end; gap: 10px; }
-        .btn-block { width: 100%; padding: 10px; background: var(--primary); color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; margin-top: 10px; }
+        /* 状态提示条 */
+        .status-msg { 
+            display: none; padding: 8px 16px; border-radius: 20px; font-size: 13px; 
+            position: fixed; top: 60px; left: 50%; transform: translateX(-50%); 
+            z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500;
+            backdrop-filter: blur(5px);
+        }
+        .status-msg.ok { background: rgba(246, 255, 237, 0.95); color: #389e0d; border: 1px solid #b7eb8f; }
+        .status-msg.error { background: rgba(255, 241, 240, 0.95); color: #cf1322; border: 1px solid #ffa39e; }
+        .status-msg.warn { background: rgba(255, 251, 230, 0.95); color: #d48806; border: 1px solid #ffe58f; }
+
+        /* 模态框 */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
+        .modal-box { background: #fff; padding: 20px; border-radius: 12px; width: 85%; max-width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .modal-header { font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #333; display: flex; justify-content: space-between; align-items: center; }
+        .modal-body { display: flex; flex-direction: column; gap: 12px; }
+        .form-row label { display: block; margin-bottom: 5px; font-size: 12px; color: #666; }
+        .form-row input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+        .modal-footer { margin-top: 20px; display: flex; gap: 10px; }
+        .btn-block { flex: 1; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+        .btn-cancel { background: #f5f5f5; color: #666; border: 1px solid #eee; }
+        .btn-confirm { background: var(--primary); color: #fff; border: none; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <header>
-        <div class="header-left">
+        <div class="header-top">
             <h2>📈 估值透视</h2>
-            <div class="controls">
-                <div class="input-group">
-                    <input type="text" id="stockInput" value="贵州茅台" placeholder="代码/名称">
-                </div>
-                <button class="btn-primary" id="btnSearch">🔍 搜索</button>
-                <div style="width:1px; height:20px; background:#ddd; margin:0 5px;"></div>
-                <div class="input-group"><input type="date" id="startDate" value="2020-01-01" title="开始日期"></div>
-                <div class="input-group"><input type="date" id="endDate" title="结束日期"></div>
-                <button class="btn-success" id="btn-run" disabled>⚡ 计算</button>
-                <button class="btn-outline" onclick="resetZoom()" title="重置图表">🔄</button>
+            <div class="sync-info" onclick="showSettings()">
+                <div id="syncDot" class="sync-dot"></div>
+                <span id="statusTxt" onclick="event.stopPropagation(); autoSyncFromCloud()">未连接</span>
+                <i class="fas fa-cog" style="opacity:0.5; margin-left:4px;"></i>
             </div>
         </div>
 
-        <div class="header-right">
-            <div class="sync-info" title="GitHub 同步状态">
-                <div id="syncDot" class="sync-dot"></div>
-                <span id="statusTxt" onclick="autoSyncFromCloud()">未连接</span>
-                <i class="fas fa-cog" onclick="showSettings()" style="margin-left:8px; opacity:0.5; cursor: pointer;" title="GitHub 配置"></i>
+        <div class="controls">
+            <!-- 搜索行 -->
+            <div class="search-row">
+                <div class="input-group">
+                    <input type="text" id="stockInput" value="贵州茅台" placeholder="代码/名称">
+                </div>
+                <button class="btn-primary" id="btnSearch"><i class="fas fa-search"></i></button>
+            </div>
+
+            <!-- 日期行 -->
+            <div class="input-group" style="flex:1">
+                <input type="date" id="startDate" value="2020-01-01">
+            </div>
+            <div class="input-group" style="flex:1">
+                <input type="date" id="endDate">
+            </div>
+
+            <!-- 操作行 -->
+            <div class="action-row">
+                <button class="btn-success" id="btn-run" disabled><i class="fas fa-bolt"></i> 计算</button>
+                <button class="btn-outline" onclick="resetZoom()"><i class="fas fa-sync-alt"></i> 重置</button>
             </div>
         </div>
     </header>
@@ -107,21 +220,22 @@
 
     <div class="chart-container">
         <canvas id="valuationChart"></canvas>
-        <div class="chart-tip">🖱️ 滚轮缩放 / 拖拽平移 / 悬停查看历史水位</div>
+        <div class="chart-tip">双指缩放 / 拖拽</div>
     </div>
 
+    <!-- 表格：支持横向滚动，日期列固定 -->
     <div class="table-wrap">
         <table id="dataTable">
             <thead>
                 <tr>
-                    <th style="width:120px">日期</th>
+                    <th>日期</th>
                     <th>股价</th>
-                    <th>财报/预测</th>
-                    <th>市值(亿)</th>
+                    <th>财报来源</th>
+                    <th>总市值(亿)</th>
                     <th>营收(亿)</th>
                     <th>净利(亿)</th>
-                    <th style="color:var(--danger)">PE (倍)</th>
-                    <th style="color:var(--primary)">PS (倍)</th>
+                    <th style="color:var(--danger)">PE(倍)</th>
+                    <th style="color:var(--primary)">PS(倍)</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -129,28 +243,28 @@
     </div>
 </div>
 
-<!-- 数据录入弹窗 -->
+<!-- 录入数据弹窗 -->
 <div id="inputModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-header">
             <span>✍️ 录入数据：<span id="modalYear"></span>年</span>
         </div>
-        <div style="font-size:13px; color:#c0392b; margin-bottom:15px; line-height:1.5; background:#fff1f0; padding:10px; border-radius:4px;">
-            ⚠️ 缺少该年份财报数据。<br>必须手动输入预测值才能继续计算。
+        <div style="font-size:13px; color:#c0392b; background:#fff1f0; padding:10px; border-radius:6px; margin-bottom:15px;">
+            ⚠️ 缺失该年财报数据，需手动录入预测值以继续。
         </div>
         <div class="modal-body">
             <div class="form-row">
                 <label>预测营业收入 (亿元)</label>
-                <input type="number" id="inRev" placeholder="例如: 1500" autocomplete="off">
+                <input type="number" id="inRev" placeholder="例如: 1500" inputmode="decimal">
             </div>
             <div class="form-row">
                 <label>预测净利润 (亿元)</label>
-                <input type="number" id="inProf" placeholder="例如: 800" autocomplete="off">
+                <input type="number" id="inProf" placeholder="例如: 800" inputmode="decimal">
             </div>
         </div>
         <div class="modal-footer">
-            <button class="btn-outline" onclick="closeInputModal(false)">取消</button>
-            <button class="btn-primary" onclick="closeInputModal(true)">保存并继续</button>
+            <button class="btn-block btn-cancel" onclick="closeInputModal(false)">取消</button>
+            <button class="btn-block btn-confirm" onclick="closeInputModal(true)">保存</button>
         </div>
     </div>
 </div>
@@ -159,24 +273,26 @@
 <div class="modal-overlay" id="settingModal">
     <div class="modal-box">
         <div class="modal-header">
-            <span><i class="fab fa-github"></i> GitHub 同步配置</span>
-            <i class="fas fa-times" onclick="closeSettings()" style="cursor:pointer; color:#999;"></i>
+            <span><i class="fab fa-github"></i> 云同步配置</span>
+            <i class="fas fa-times" onclick="closeSettings()" style="color:#999; padding:5px;"></i>
         </div>
         <div class="modal-body">
             <div class="form-row">
-                <label>Personal Access Token</label>
-                <input type="password" id="cfgToken" placeholder="ghp_...">
+                <label>Token (ghp_...)</label>
+                <input type="password" id="cfgToken">
             </div>
             <div class="form-row">
-                <label>GitHub 用户名</label>
-                <input type="text" id="cfgUser" placeholder="例如: yourname">
+                <label>用户名</label>
+                <input type="text" id="cfgUser">
             </div>
             <div class="form-row">
-                <label>仓库名称 (Repository)</label>
-                <input type="text" id="cfgRepo" placeholder="例如: stock-data">
+                <label>仓库名</label>
+                <input type="text" id="cfgRepo">
             </div>
         </div>
-        <button class="btn-block" onclick="saveConfig()">保存并连接</button>
+        <div class="modal-footer">
+            <button class="btn-block btn-confirm" onclick="saveConfig()">连接云端</button>
+        </div>
     </div>
 </div>
 
@@ -192,7 +308,6 @@
     const PROXY_URL = "https://corsproxy.io/?";
     const DB_KEY = "stock_valuation_db_v1";
 
-    // GitHub 配置
     let ghConfig = {
         token: localStorage.getItem('gh_token') || '',
         user: localStorage.getItem('gh_user') || '',
@@ -206,18 +321,16 @@
     document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
     document.getElementById('stockInput').addEventListener('keydown', e => { if(e.keyCode===13) runSearch(); });
 
-    // 尝试同步
     if(ghConfig.token) autoSyncFromCloud();
-    else updateStatus('ready', '本地模式');
+    else updateStatus('ready', '本地');
 
-    // --- 核心功能 ---
-
-    // 1. 搜索
+    // --- 搜索 ---
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
         
         try {
+            document.getElementById('btnSearch').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14&token=D43BF722C8E33BD5D50F639205545E43`;
             const res = await fetch(PROXY_URL + encodeURIComponent(url));
             const json = await res.json();
@@ -232,37 +345,36 @@
             } else {
                 showToast("❌ 未找到股票", 'error');
             }
-        } catch(e) { showToast("❌ 搜索失败", 'error'); }
+        } catch(e) { showToast("❌ 搜索失败", 'error'); 
+        } finally {
+            document.getElementById('btnSearch').innerHTML = '<i class="fas fa-search"></i>';
+        }
     }
 
-    // 2. 分析 (核心修改)
+    // --- 分析主流程 ---
     async function runAnalysis(silent = false) {
         const btn = document.getElementById('btn-run');
-        if(!silent) { btn.disabled = true; btn.innerHTML = '⏳...'; }
+        if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
         
         try {
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
-            const checkYear = new Date().getFullYear(); // 强制检查当前年份 (如 2025)
+            const checkYear = new Date().getFullYear();
 
-            // 拉取 K线 和 股本
+            // 1. 获取基础数据
             if(!silent || globalData.length === 0) {
                 await Promise.all([fetchShares(), fetchKline(beg, end)]);
             }
             
-            // 拉取真实财报
+            // 2. 获取财报
             let finMap = await fetchHistoricalFinancials(currentStock.code);
 
-            // 检查逻辑：
-            // 1. 获取本地存储的预测数据
+            // 3. 检查缺失
             const savedData = getFromDB(currentStock.code, checkYear);
-            
-            // 2. 判断逻辑
             let hasRealReport = !!finMap[checkYear];
             let hasSavedPredict = !!savedData;
 
             if (hasSavedPredict) {
-                // 如果有保存的，直接覆盖
                 finMap[checkYear] = { 
                     year: checkYear, 
                     rev: savedData.rev, 
@@ -270,12 +382,11 @@
                     source: 'manual', 
                     name: `★${checkYear}录入` 
                 };
-                if(!silent) showToast(`已加载 ${checkYear} 录入数据`, 'ok');
+                if(!silent) showToast(`已加载 ${checkYear} 预测数据`, 'ok');
             } 
             else if (!hasRealReport) {
-                // 如果既没有真实年报，也没有保存的预测，且不是静默刷新，则强制弹窗
                 if (!silent) {
-                    showToast(`⚠️ 缺少 ${checkYear} 数据，请补充`, 'warn');
+                    // 必须弹窗
                     const manual = await openInputModal(checkYear);
                     if (manual) {
                         await saveToDB(currentStock.code, checkYear, manual.rev, manual.prof);
@@ -287,7 +398,7 @@
                             name: `★${checkYear}录入` 
                         };
                     } else {
-                        showToast('已取消，计算可能不准确', 'error');
+                        showToast('取消录入，数据不完整', 'warn');
                     }
                 }
             }
@@ -298,13 +409,13 @@
             
         } catch(e) {
             console.error(e);
-            if(!silent) showToast(e.message, 'error');
+            if(!silent) showToast(e.message || "运行出错", 'error');
         } finally {
-            if(!silent) { btn.disabled = false; btn.innerHTML = '⚡ 计算'; }
+            if(!silent) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-bolt"></i> 计算'; }
         }
     }
 
-    // 3. 计算与渲染 (严格按上一版逻辑)
+    // --- 计算逻辑 (严格保持) ---
     function calculate(finMap) {
         const years = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
         if(!years.length) return;
@@ -312,8 +423,6 @@
 
         globalData = globalData.map(item => {
             const y = new Date(item.date).getFullYear();
-            
-            // 上帝视角逻辑
             let fin = finMap[y] || finMap[y > maxYear ? maxYear : (y < minYear ? minYear : y-1)];
             
             if(fin) {
@@ -322,11 +431,8 @@
                     ...item,
                     year: fin.year,
                     sourceType: fin.source,
-                    // 严格按照需求：真实年报显示年份，录入数据加星号年份
                     sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name,
-                    mktCap, 
-                    rev: fin.rev, 
-                    prof: fin.prof,
+                    mktCap, rev: fin.rev, prof: fin.prof,
                     pe: fin.prof>0 ? mktCap/fin.prof : -1,
                     ps: fin.rev>0 ? mktCap/fin.rev : 0
                 };
@@ -335,9 +441,41 @@
         });
     }
 
-    // --- 辅助功能 ---
+    // --- 数据获取 ---
+    async function fetchShares() {
+        try {
+            const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`));
+            const json = await res.json();
+            currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json.data.f2) || 1e8;
+        } catch(e) { currentTotalShares = 1e8; }
+    }
+    async function fetchKline(beg, end) {
+        const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`));
+        const json = await res.json();
+        if (!json?.data?.klines) throw new Error("无股价数据");
+        globalData = json.data.klines.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
+    }
+    async function fetchHistoricalFinancials(code) {
+        let map = {};
+        try {
+            const res = await fetch(PROXY_URL + encodeURIComponent(`https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&filter=(SECURITY_CODE="${code}")&columns=ALL&pageSize=500&pageNumber=1`));
+            const json = await res.json();
+            if(json?.result?.data) {
+                json.result.data.forEach(item => {
+                    const d = item.REPORT_DATE || item.REPORTDATE;
+                    if(d && d.includes("-12-31")) {
+                        const y = parseInt(d.substring(0,4));
+                        const r = item.TOTAL_OPERATE_INCOME || item.OPERATE_INCOME;
+                        const p = item.PARENT_NETPROFIT || item.NETPROFIT;
+                        if(r && p) map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
+                    }
+                });
+            }
+        } catch(e) {}
+        return map;
+    }
 
-    // 修改数据
+    // --- 交互与工具 ---
     async function editYearData(year) {
         const saved = getFromDB(currentStock.code, year);
         const manual = await openInputModal(year, saved ? (saved.rev/1e8) : '', saved ? (saved.prof/1e8) : '');
@@ -369,41 +507,6 @@
         }
     }
 
-    // --- 网络请求 ---
-    async function fetchShares() {
-        try {
-            const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`));
-            const json = await res.json();
-            currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json.data.f2) || 1e8;
-        } catch(e) { currentTotalShares = 1e8; }
-    }
-    async function fetchKline(beg, end) {
-        const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`));
-        const json = await res.json();
-        if (!json?.data?.klines) throw new Error("无股价数据");
-        globalData = json.data.klines.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
-    }
-    async function fetchHistoricalFinancials(code) {
-        let map = {};
-        try {
-            const res = await fetch(PROXY_URL + encodeURIComponent(`https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&filter=(SECURITY_CODE="${code}")&columns=ALL&pageSize=500&pageNumber=1`));
-            const json = await res.json();
-            if(json?.result?.data) {
-                json.result.data.forEach(item => {
-                    const d = item.REPORT_DATE || item.REPORTDATE;
-                    // 只提取真实年报 (-12-31)
-                    if(d && d.includes("-12-31")) {
-                        const y = parseInt(d.substring(0,4));
-                        const r = item.TOTAL_OPERATE_INCOME || item.OPERATE_INCOME;
-                        const p = item.PARENT_NETPROFIT || item.NETPROFIT;
-                        if(r && p) map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
-                    }
-                });
-            }
-        } catch(e) {}
-        return map;
-    }
-
     // --- GitHub & DB ---
     function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
     function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
@@ -412,7 +515,7 @@
 
     async function autoSyncFromCloud() {
         if (!ghConfig.token) return;
-        updateStatus('syncing', '拉取中...');
+        updateStatus('syncing', '同步');
         try {
             const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
             const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
@@ -420,11 +523,11 @@
                 const data = await res.json();
                 const cloudDB = JSON.parse(b64_to_utf8(data.content));
                 localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
-                updateStatus('online', '已同步');
+                updateStatus('online', '在线');
                 if (currentStock.code) runAnalysis(true);
-            } else if(res.status === 404) updateStatus('online', '新仓库');
+            } else if(res.status === 404) updateStatus('online', '新库');
             else updateStatus('error', '失败');
-        } catch (e) { updateStatus('error', '错误'); }
+        } catch (e) { updateStatus('error', '错'); }
     }
 
     async function saveToDB(code, year, rev, prof) {
@@ -436,7 +539,7 @@
         if (ghConfig.token) {
             clearTimeout(syncTimer);
             syncTimer = setTimeout(async () => {
-                updateStatus('syncing', '上传中...');
+                updateStatus('syncing', '上传');
                 try {
                     const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
                     const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
@@ -446,8 +549,8 @@
                         headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({ message: `Update ${code} ${year}`, content: utf8_to_b64(JSON.stringify(getLocalDB())), sha: sha })
                     });
-                    updateStatus('online', '已保存');
-                } catch(e) { updateStatus('error', '上传失败'); }
+                    updateStatus('online', '已存');
+                } catch(e) { updateStatus('error', '失败'); }
             }, 1000);
         }
     }
@@ -455,11 +558,11 @@
     // --- UI Utils ---
     function updateStatus(status, text) {
         document.getElementById('syncDot').className = 'sync-dot ' + status;
-        document.getElementById('statusTxt').innerText = text || (status==='syncing'?'同步':'在线');
+        document.getElementById('statusTxt').innerText = text;
     }
     function showToast(msg, type='ok') {
         const el = document.getElementById('toastMsg');
-        el.innerText = msg; el.className = `status-msg ${type}`; el.style.display = 'block';
+        el.innerHTML = msg; el.className = `status-msg ${type}`; el.style.display = 'block';
         setTimeout(() => el.style.display='none', 3000);
     }
     window.showSettings = () => {
@@ -542,8 +645,8 @@
                 <td>${(d.mktCap/1e8).toFixed(2)}</td>
                 <td>${(d.rev/1e8).toFixed(2)}</td>
                 <td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td>
-                <td style="color:var(--danger);font-weight:bold">${peStr}</td>
-                <td style="color:var(--primary);font-weight:bold">${d.ps.toFixed(2)}</td>
+                <td class="val-pe">${peStr}</td>
+                <td class="val-ps">${d.ps.toFixed(2)}</td>
             </tr>`;
         });
     }
