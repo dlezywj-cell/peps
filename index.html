@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (逻辑修复版)</title>
+    <title>估值透视 (最终完美版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
@@ -166,11 +166,11 @@
 </div>
 
 <script>
-    // 核心变量
     let myChart = null;
     let currentStock = { code: '', name: '', secId: '' };
     let globalData = [];
     let currentTotalShares = 0;
+    let splitIdxGlobal = -1; // 记录实盘和预测的分界点
     const PROXY = "https://corsproxy.io/?";
     const DB_KEY = "stock_valuation_db_v2";
     
@@ -187,6 +187,9 @@
     document.getElementById('endDate').value = new Date().toISOString().split('T')[0];
     myChart = echarts.init(document.getElementById('chart-container'));
     window.addEventListener('resize', () => myChart.resize());
+
+    // 监听 dataZoom 事件，动态更新极值
+    myChart.on('dataZoom', updateDynamicMarks);
 
     document.getElementById('btnSearch').addEventListener('click', runSearch);
     document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
@@ -224,30 +227,23 @@
             let finMap = await fetchFinancials(currentStock.code);
 
             // --- 核心逻辑修复: 真实数据优先 ---
-            // 1. 先尝试从数据库/本地加载所有保存的预测
             const dbData = getLocal()[currentStock.code] || {};
             
-            // 2. 遍历DB数据，只有当finMap中不存在该年份(没有真实财报)时，才填入录入值
+            // 只有当 finMap 中不存在该年份(没有真实财报)时，才使用本地录入数据
             Object.keys(dbData).forEach(yStr => {
                 const y = parseInt(yStr);
                 const saved = dbData[y];
                 if (!finMap[y] && saved) {
-                    finMap[y] = { 
-                        year: y, rev: saved.rev, prof: saved.prof, 
-                        source: 'manual', name: `★${y}录入` 
-                    };
+                    finMap[y] = { year: y, rev: saved.rev, prof: saved.prof, source: 'manual', name: `★${y}录入` };
                 }
             });
 
-            // 3. 检查当前年份（例如2025），如果真实也没有，录入也没有，则弹窗
+            // 检查当前年份是否缺失
             if(!finMap[checkYear] && !silent) {
                 const manual = await openInput(checkYear);
                 if(manual) {
                     await saveDB(currentStock.code, checkYear, manual.rev, manual.prof);
-                    finMap[checkYear] = { 
-                        year: checkYear, rev: manual.rev, prof: manual.prof, 
-                        source: 'manual', name: `★${checkYear}录入` 
-                    };
+                    finMap[checkYear] = { year: checkYear, rev: manual.rev, prof: manual.prof, source: 'manual', name: `★${checkYear}录入` };
                 }
             } else if (finMap[checkYear] && finMap[checkYear].source === 'manual' && !silent) {
                 toast(`已加载 ${checkYear} 录入数据`);
@@ -279,54 +275,97 @@
         if(!globalData.length) return;
         const dates = globalData.map(d => d.date);
         
-        // 分离数据实现虚线 (Source: manual)
-        // 逻辑: 如果当前点是 Manual，或者上一个点是 Manual，这段线就是虚线
-        // 为了 ECharts 实现简单，我们分两层：实线层(Real) 和 虚线层(Pred)
-        
-        let splitIdx = globalData.findIndex(d => d.sourceType === 'manual');
-        if(splitIdx === -1) splitIdx = globalData.length;
+        splitIdxGlobal = globalData.findIndex(d => d.sourceType === 'manual');
+        if(splitIdxGlobal === -1) splitIdxGlobal = globalData.length;
 
-        // PE Data
-        const peReal = globalData.map((d, i) => (i <= splitIdx && d.pe > 0) ? d.pe.toFixed(2) : null);
-        const pePred = globalData.map((d, i) => (i >= splitIdx && d.pe > 0) ? d.pe.toFixed(2) : null);
-        // 连接点
-        if(splitIdx < globalData.length && splitIdx > 0 && globalData[splitIdx].pe > 0) {
-             pePred[splitIdx] = globalData[splitIdx].pe.toFixed(2);
-        }
+        const peReal = globalData.map((d, i) => (i <= splitIdxGlobal && d.pe > 0) ? d.pe.toFixed(2) : null);
+        const pePred = globalData.map((d, i) => (i >= splitIdxGlobal && d.pe > 0) ? d.pe.toFixed(2) : null);
+        if(splitIdxGlobal < globalData.length && splitIdxGlobal > 0 && globalData[splitIdxGlobal].pe > 0) pePred[splitIdxGlobal] = globalData[splitIdxGlobal].pe.toFixed(2);
 
-        // PS Data
-        const psReal = globalData.map((d, i) => (i <= splitIdx) ? d.ps.toFixed(2) : null);
-        const psPred = globalData.map((d, i) => (i >= splitIdx) ? d.ps.toFixed(2) : null);
-        if(splitIdx < globalData.length && splitIdx > 0) {
-             psPred[splitIdx] = globalData[splitIdx].ps.toFixed(2);
-        }
+        const psReal = globalData.map((d, i) => (i <= splitIdxGlobal) ? d.ps.toFixed(2) : null);
+        const psPred = globalData.map((d, i) => (i >= splitIdxGlobal) ? d.ps.toFixed(2) : null);
+        if(splitIdxGlobal < globalData.length && splitIdxGlobal > 0) psPred[splitIdxGlobal] = globalData[splitIdxGlobal].ps.toFixed(2);
 
         const option = {
             animation: false,
             tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
             legend: { data: ['PE', 'PS'], top: 5 },
             grid: { left: '3%', right: '3%', bottom: '15%', top: '15%', containLabel: true },
-            dataZoom: [ { type: 'inside' }, { type: 'slider', bottom: 5, height: 20 } ],
+            dataZoom: [ { type: 'inside', start: 0, end: 100 }, { type: 'slider', bottom: 5, height: 20 } ],
             xAxis: { type: 'category', data: dates, boundaryGap: false },
             yAxis: [
                 { type: 'value', name: 'PS', position: 'left', scale: true, axisLine: { show: true, lineStyle: { color: '#007aff' } }, splitLine: { show: false } },
                 { type: 'value', name: 'PE', position: 'right', scale: true, axisLine: { show: true, lineStyle: { color: '#ff3b30' } }, splitLine: { lineStyle: { type: 'dashed', color: '#eee' } } }
             ],
             series: [
-                // PE Real
-                { name: 'PE', type: 'line', yAxisIndex: 1, data: peReal, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2 }, itemStyle: { color: '#ff3b30' }, 
-                  markPoint: { data: [{ type: 'max', name: 'Max' }, { type: 'min', name: 'Min' }], symbolSize: 35, label: { fontSize: 10 } } },
-                // PE Pred (Dashed)
-                { name: 'PE', type: 'line', yAxisIndex: 1, data: pePred, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2, type: 'dashed' }, itemStyle: { color: '#ff3b30' }, showInLegend: false },
-                
-                // PS Real
-                { name: 'PS', type: 'line', yAxisIndex: 0, data: psReal, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2 }, itemStyle: { color: '#007aff' },
-                  markPoint: { data: [{ type: 'max', name: 'Max' }, { type: 'min', name: 'Min' }], symbolSize: 35, label: { fontSize: 10 } } },
-                // PS Pred (Dashed)
-                { name: 'PS', type: 'line', yAxisIndex: 0, data: psPred, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2, type: 'dashed' }, itemStyle: { color: '#007aff' }, showInLegend: false }
+                { name: 'PS', type: 'line', yAxisIndex: 0, data: psReal, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2 }, itemStyle: { color: '#007aff' } },
+                { name: 'PS', type: 'line', yAxisIndex: 0, data: psPred, smooth: true, showSymbol: false, lineStyle: { color: '#007aff', width: 2, type: 'dashed' }, itemStyle: { color: '#007aff' }, showInLegend: false },
+                { name: 'PE', type: 'line', yAxisIndex: 1, data: peReal, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2 }, itemStyle: { color: '#ff3b30' }, connectNulls: true },
+                { name: 'PE', type: 'line', yAxisIndex: 1, data: pePred, smooth: true, showSymbol: false, lineStyle: { color: '#ff3b30', width: 2, type: 'dashed' }, itemStyle: { color: '#ff3b30' }, connectNulls: true, showInLegend: false }
             ]
         };
         myChart.setOption(option, true);
+        updateDynamicMarks();
+    }
+
+    function updateDynamicMarks() {
+        if (!myChart || !globalData.length) return;
+        const opt = myChart.getOption();
+        const start = opt.dataZoom[0].start;
+        const end = opt.dataZoom[0].end;
+        const len = globalData.length;
+        
+        const sIdx = Math.floor(len * start / 100);
+        const eIdx = Math.ceil(len * end / 100);
+        
+        const viewData = globalData.slice(sIdx, eIdx);
+        if(viewData.length === 0) return;
+
+        let psMaxVal = -Infinity, psMinVal = Infinity, psMaxIdx = -1, psMinIdx = -1;
+        let peMaxVal = -Infinity, peMinVal = Infinity, peMaxIdx = -1, peMinIdx = -1;
+
+        viewData.forEach((d, i) => {
+            const realIdx = sIdx + i;
+            if(d.ps !== null) {
+                if(d.ps > psMaxVal) { psMaxVal = d.ps; psMaxIdx = realIdx; }
+                if(d.ps < psMinVal) { psMinVal = d.ps; psMinIdx = realIdx; }
+            }
+            if(d.pe > 0) {
+                if(d.pe > peMaxVal) { peMaxVal = d.pe; peMaxIdx = realIdx; }
+                if(d.pe < peMinVal) { peMinVal = d.pe; peMinIdx = realIdx; }
+            }
+        });
+
+        const createMP = (idx, type) => {
+            if(idx === -1) return null;
+            let seriesIndex = 0;
+            if (type === 'PS') seriesIndex = idx <= splitIdxGlobal ? 0 : 1;
+            else               seriesIndex = idx <= splitIdxGlobal ? 2 : 3;
+            
+            return {
+                seriesIndex: seriesIndex,
+                coord: [idx, type==='PS'?globalData[idx].ps : globalData[idx].pe],
+                value: (type==='PS'?globalData[idx].ps:globalData[idx].pe).toFixed(2),
+                itemStyle: { color: type==='PS'?'#007aff':'#ff3b30' }
+            };
+        };
+
+        const mpDataPS = [createMP(psMaxIdx, 'PS'), createMP(psMinIdx, 'PS')].filter(x=>x);
+        const mpDataPE = [createMP(peMaxIdx, 'PE'), createMP(peMinIdx, 'PE')].filter(x=>x);
+
+        const mp0 = mpDataPS.filter(d => d.seriesIndex === 0).map(d => ({...d, name: d.coord[1]===psMaxVal?'Max':'Min'}));
+        const mp1 = mpDataPS.filter(d => d.seriesIndex === 1).map(d => ({...d, name: d.coord[1]===psMaxVal?'Max':'Min'}));
+        const mp2 = mpDataPE.filter(d => d.seriesIndex === 2).map(d => ({...d, name: d.coord[1]===peMaxVal?'Max':'Min'}));
+        const mp3 = mpDataPE.filter(d => d.seriesIndex === 3).map(d => ({...d, name: d.coord[1]===peMaxVal?'Max':'Min'}));
+
+        myChart.setOption({
+            series: [
+                { markPoint: { data: mp0, symbolSize: 35, label: { fontSize: 10 } } },
+                { markPoint: { data: mp1, symbolSize: 35, label: { fontSize: 10 } } },
+                { markPoint: { data: mp2, symbolSize: 35, label: { fontSize: 10 } } },
+                { markPoint: { data: mp3, symbolSize: 35, label: { fontSize: 10 } } }
+            ]
+        });
     }
 
     function renderTable() {
