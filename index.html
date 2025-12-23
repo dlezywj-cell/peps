@@ -332,7 +332,19 @@
             // 2. 获取财报
             let finMap = await fetchHistoricalFinancials(currentStock.code);
 
-            // 3. 检查缺失
+            // 3. 尝试获取云端 stockdata/data.json 数据
+            let extForecast = null;
+            try {
+                // 读取 raw json
+                const extRes = await fetch(PROXY_URL + encodeURIComponent("https://raw.githubusercontent.com/dlezywj-cell/stockdata/main/data.json"));
+                const extList = await extRes.json();
+                // 模糊匹配 (例如: 600519 匹配 600519.SH)
+                extForecast = extList.find(item => item.code.includes(currentStock.code));
+            } catch(e) { 
+                console.warn("外部预测数据获取失败或无匹配", e); 
+            }
+
+            // 4. 检查缺失并决策使用哪个数据源
             const savedData = getFromDB(currentStock.code, checkYear);
             let hasRealReport = !!finMap[checkYear];
             let hasSavedPredict = !!savedData;
@@ -348,7 +360,34 @@
                 if(!silent) showToast(`已加载 ${checkYear} 预测数据`, 'ok');
             } 
             else if (!hasRealReport) {
-                if (!silent) {
+                // 优先使用云端预测数据
+                if (extForecast && (extForecast.revenue || extForecast.profit)) {
+                    let rev = (extForecast.revenue || 0) * 1e8; // 单位换算: 亿 -> 元
+                    let prof = (extForecast.profit || 0) * 1e8; // 单位换算: 亿 -> 元
+                    let note = '★云端预测';
+
+                    // 提取最新日志日期
+                    if(extForecast.logs && extForecast.logs.length > 0) {
+                        // 按日期倒序排列，取最新的一个
+                        extForecast.logs.sort((a,b) => new Date(b.date) - new Date(a.date));
+                        const lastDate = new Date(extForecast.logs[0].date);
+                        if(!isNaN(lastDate)) {
+                            const dateStr = (lastDate.getMonth()+1) + '-' + lastDate.getDate();
+                            note = `★${dateStr}更新`;
+                        }
+                    }
+
+                    finMap[checkYear] = { 
+                        year: checkYear, 
+                        rev: rev,
+                        prof: prof,
+                        source: 'manual', 
+                        name: note 
+                    };
+                    if(!silent) showToast(`已加载云端最新预测`, 'ok');
+                }
+                else if (!silent) {
+                    // 没有云端数据，才弹窗
                     const manual = await openInputModal(checkYear);
                     if (manual) {
                         await saveToDB(currentStock.code, checkYear, manual.rev, manual.prof);
