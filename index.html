@@ -27,40 +27,15 @@
             display: flex; flex-direction: column; overflow: hidden;
         }
         
-        /* --- 顶部工具栏 (PC端优先设计) --- */
-        header { 
-            padding: 15px 20px; border-bottom: 1px solid var(--border); background: #fff; 
-            display: flex; align-items: center; justify-content: space-between;
-        }
-        
-        .header-left { display: flex; align-items: center; gap: 20px; }
-        h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-        
-        /* 控件区域 (PC端单行排列) */
-        .controls { display: flex; align-items: center; gap: 10px; }
-        
-        .input-group { position: relative; }
-        .input-group input { 
-            padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; 
-            height: 32px;
-        }
-        .input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
-        .input-group input[type="text"] { width: 120px; font-weight: 600; }
-        .input-group input[type="date"] { width: 130px; color: #555; font-family: inherit; }
-        
-        /* 按钮 */
-        button { 
-            height: 32px; padding: 0 15px; border: none; border-radius: 4px; cursor: pointer; 
-            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; 
-            white-space: nowrap; transition: background 0.2s;
-        }
-        .btn-primary { background: var(--primary); color: #fff; } .btn-primary:hover { background: #1f618d; }
-        .btn-success { background: var(--success); color: #fff; } .btn-success:hover { background: #219150; }
-        .btn-outline { background: #fff; border: 1px solid #ccc; color: #666; } .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
-        button:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
+        /* --- 顶部区域 --- */
+        header { background: #fff; border-bottom: 1px solid var(--border); }
 
-        /* 同步状态 */
-        .header-right { display: flex; align-items: center; }
+        .top-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 20px; border-bottom: 1px solid #f0f0f0;
+        }
+        h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+        
         .sync-info { 
             font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; 
             padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.2s;
@@ -72,36 +47,53 @@
         .sync-dot.error { background: var(--danger); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
 
-        /* --- 手机端适配 (Media Query) --- */
+        .tools-bar { padding: 12px 20px; }
+        
+        .input-group input { 
+            padding: 0 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; 
+            height: 34px; width: 100%;
+        }
+        .input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
+        
+        button { 
+            height: 34px; padding: 0 16px; border: none; border-radius: 4px; cursor: pointer; 
+            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; 
+            white-space: nowrap; transition: background 0.2s;
+        }
+        .btn-primary { background: var(--primary); color: #fff; } .btn-primary:hover { background: #1f618d; }
+        .btn-success { background: var(--success); color: #fff; } .btn-success:hover { background: #219150; }
+        .btn-outline { background: #fff; border: 1px solid #ccc; color: #666; } .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
+        button:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
+
+        /* PC 端布局 */
+        @media (min-width: 769px) {
+            .tools-bar { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+            .group-search { display: flex; gap: 8px; align-items: center; }
+            .group-search .input-group { width: 140px; }
+            .divider-v { width: 1px; height: 20px; background: #ddd; margin: 0 5px; }
+            .group-dates { display: flex; gap: 8px; align-items: center; }
+            .group-dates .input-group input { width: 130px; }
+            .group-actions { display: flex; gap: 8px; align-items: center; }
+        }
+
+        /* 手机 端布局 */
         @media (max-width: 768px) {
             body { padding: 0; }
             .container { border-radius: 0; box-shadow: none; min-height: 100vh; }
-            
-            header { display: block; padding: 12px; }
-            .header-left { display: block; width: 100%; }
-            .header-right { position: absolute; top: 12px; right: 12px; }
-            
-            h2 { margin-bottom: 12px; font-size: 16px; }
-            
-            /* 手机端控件折行显示 */
-            .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
-            
-            /* 搜索行独占一行 */
-            .search-box { grid-column: 1 / -1; display: flex; gap: 8px; }
-            .search-box .input-group { flex: 1; }
-            .search-box input { width: 100% !important; }
-            
-            /* 日期行自动并排 (无需特殊CSS，grid自动处理) */
-            .input-group input { width: 100% !important; }
-            
-            /* 按钮行独占一行 */
-            .action-box { grid-column: 1 / -1; display: flex; gap: 8px; }
-            .action-box button { flex: 1; height: 36px; font-size: 14px; }
-            
+            .top-bar { padding: 12px 15px; }
+            h2 { font-size: 16px; }
+            .tools-bar { display: flex; flex-direction: column; gap: 10px; padding: 10px 15px; background: #fdfdfd; }
+            .group-search { display: flex; gap: 8px; width: 100%; }
+            .group-search .input-group { flex: 1; }
+            .group-search button { flex: 0 0 auto; }
+            .divider-v { display: none; }
+            .group-dates { display: flex; gap: 8px; width: 100%; }
+            .group-dates .input-group { flex: 1; }
+            .group-actions { display: flex; gap: 8px; width: 100%; }
+            .group-actions button { flex: 1; height: 38px; font-size: 14px; }
             .chart-container { height: 350px !important; padding: 5px 10px; }
         }
 
-        /* --- 图表与提示 --- */
         .chart-container { position: relative; height: 500px; padding: 15px 20px; width: 100%; }
         .chart-tip { 
             position: absolute; top: 10px; right: 15px; font-size: 11px; 
@@ -109,28 +101,12 @@
             border-radius: 4px; pointer-events: none; z-index: 10;
         }
 
-        /* --- 表格区域 (横向滚动适配) --- */
-        .table-wrap { 
-            border-top: 1px solid var(--border); 
-            overflow-x: auto; -webkit-overflow-scrolling: touch; 
-            background: #fff;
-        }
-        table { 
-            width: 100%; border-collapse: separate; border-spacing: 0; 
-            font-size: 12px; text-align: right; min-width: 600px; 
-        }
+        .table-wrap { border-top: 1px solid var(--border); overflow-x: auto; -webkit-overflow-scrolling: touch; background: #fff; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; text-align: right; min-width: 600px; }
         th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
         th { background: #f8f9fa; color: #555; font-weight: 600; position: sticky; top: 0; z-index: 20; }
-        
-        /* 固定首列 */
-        th:first-child, td:first-child {
-            position: sticky; left: 0; background: #fff; z-index: 10; 
-            text-align: left; border-right: 1px solid #f0f0f0;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.02);
-        }
+        th:first-child, td:first-child { position: sticky; left: 0; background: #fff; z-index: 10; text-align: left; border-right: 1px solid #f0f0f0; box-shadow: 2px 0 5px rgba(0,0,0,0.02); }
         th:first-child { z-index: 30; background: #f8f9fa; }
-
-        /* 标签颜色 */
         .val-pe { color: var(--danger); font-weight: bold; }
         .val-ps { color: var(--primary); font-weight: bold; }
         .tag { padding: 1px 5px; border-radius: 3px; font-size: 10px; display: inline-block; transform: scale(0.95); }
@@ -138,18 +114,18 @@
         .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; cursor: pointer; }
         .loss { color: #27ae60; font-style: italic; }
 
-        /* 消息提示 (Toast) */
+        /* 提示框穿透 */
         .status-msg { 
             display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; 
-            position: fixed; top: 70px; left: 50%; transform: translateX(-50%); 
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
             z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500;
             background: #fff; border: 1px solid #eee;
+            pointer-events: none; 
         }
         .status-msg.ok { color: #389e0d; border-color: #b7eb8f; background: #f6ffed; }
         .status-msg.error { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
         .status-msg.warn { color: #d48806; border-color: #ffe58f; background: #fffbe6; }
 
-        /* 模态框 (通用) */
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
         .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); animation: popIn 0.2s ease-out; }
         @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
@@ -168,35 +144,31 @@
 
 <div class="container">
     <header>
-        <div class="header-left">
+        <div class="top-bar">
             <h2>📈 估值透视</h2>
-            
-            <!-- 电脑端：一行显示 -->
-            <div class="controls">
-                <div class="search-box">
-                    <div class="input-group">
-                        <input type="text" id="stockInput" value="贵州茅台" placeholder="代码/名称">
-                    </div>
-                    <button class="btn-primary" id="btnSearch">🔍 搜索</button>
-                </div>
-
-                <div style="width:1px; height:20px; background:#ddd; margin:0 5px;" class="divider"></div>
-
-                <div class="input-group"><input type="date" id="startDate" value="2020-01-01"></div>
-                <div class="input-group"><input type="date" id="endDate"></div>
-
-                <div class="action-box">
-                    <button class="btn-success" id="btn-run" disabled>⚡ 计算</button>
-                    <button class="btn-outline" onclick="resetZoom()">🔄 重置</button>
-                </div>
-            </div>
-        </div>
-
-        <div class="header-right">
             <div class="sync-info" onclick="showSettings()" title="GitHub 配置">
                 <div id="syncDot" class="sync-dot"></div>
                 <span id="statusTxt">未连接</span>
                 <i class="fas fa-cog" style="opacity:0.5; margin-left:4px;"></i>
+            </div>
+        </div>
+
+        <div class="tools-bar">
+            <div class="group-search">
+                <div class="input-group">
+                    <input type="text" id="stockInput" value="贵州茅台" placeholder="代码/名称">
+                </div>
+                <button class="btn-primary" id="btnSearch">🔍 搜索</button>
+            </div>
+            <div class="divider-v"></div>
+            <div class="group-dates">
+                <div class="input-group"><input type="date" id="startDate" value="2020-01-01"></div>
+                <div class="input-group"><input type="date" id="endDate"></div>
+            </div>
+            <div class="divider-v"></div>
+            <div class="group-actions">
+                <button class="btn-success" id="btn-run" disabled>⚡ 计算</button>
+                <button class="btn-outline" onclick="resetZoom()">🔄 重置</button>
             </div>
         </div>
     </header>
@@ -227,7 +199,6 @@
     </div>
 </div>
 
-<!-- 录入弹窗 -->
 <div id="inputModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-header">
@@ -253,7 +224,6 @@
     </div>
 </div>
 
-<!-- GitHub 设置弹窗 -->
 <div class="modal-overlay" id="settingModal">
     <div class="modal-box">
         <div class="modal-header">
@@ -266,15 +236,15 @@
                 <input type="password" id="cfgToken" placeholder="ghp_...">
             </div>
             <div class="form-row">
-                <label>用户名 (已预设)</label>
+                <label>用户名</label>
                 <input type="text" id="cfgUser" value="dlezywj-cell">
             </div>
             <div class="form-row">
-                <label>仓库名 (已预设)</label>
+                <label>仓库名</label>
                 <input type="text" id="cfgRepo" value="pepsdata">
             </div>
             <div class="form-row">
-                <label>文件名 (已预设)</label>
+                <label>文件名</label>
                 <input type="text" id="cfgFile" value="data.json" disabled style="background:#f9f9f9">
             </div>
         </div>
@@ -296,7 +266,7 @@
     const PROXY_URL = "https://corsproxy.io/?";
     const DB_KEY = "stock_valuation_db_v1";
 
-    // GitHub 配置 (默认值已更新)
+    // GitHub 配置
     let ghConfig = {
         token: localStorage.getItem('gh_token') || '',
         user: localStorage.getItem('gh_user') || 'dlezywj-cell',
@@ -311,8 +281,11 @@
     document.getElementById('stockInput').addEventListener('keydown', e => { if(e.keyCode===13) runSearch(); });
 
     // 尝试同步
-    if(ghConfig.token) autoSyncFromCloud();
-    else updateStatus('ready', '本地模式');
+    if(ghConfig.token) {
+        setTimeout(autoSyncFromCloud, 500); 
+    } else {
+        updateStatus('ready', '本地模式');
+    }
 
     // --- 搜索 ---
     async function runSearch() {
@@ -375,7 +348,6 @@
                 if(!silent) showToast(`已加载 ${checkYear} 预测数据`, 'ok');
             } 
             else if (!hasRealReport) {
-                // 仅非静默模式且缺数据时弹窗
                 if (!silent) {
                     const manual = await openInputModal(checkYear);
                     if (manual) {
@@ -405,7 +377,6 @@
         }
     }
 
-    // --- 计算逻辑 (严格保持) ---
     function calculate(finMap) {
         const years = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
         if(!years.length) return;
@@ -547,7 +518,6 @@
         }
     }
 
-    // --- UI Utils ---
     function updateStatus(status, text) {
         document.getElementById('syncDot').className = 'sync-dot ' + status;
         document.getElementById('statusTxt').innerText = text;
@@ -574,19 +544,43 @@
         closeSettings(); autoSyncFromCloud();
     };
 
-    // --- Chart & Table ---
+    // --- Chart ---
     function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
-    const horizontalLinePlugin = { id: 'horizontalLine', afterDraw: (chart) => {
-        if (chart.tooltip?._active?.length) {
-            const ctx = chart.ctx;
-            chart.tooltip._active.forEach(point => {
-                const y = point.element.y;
-                const color = point.datasetIndex === 0 ? '#c0392b' : '#2980b9';
-                ctx.save(); ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = color;
-                ctx.moveTo(chart.chartArea.left, y); ctx.lineTo(chart.chartArea.right, y); ctx.stroke(); ctx.restore();
-            });
+    
+    // 插件：纵向虚线十字光标 + 横轴日期显示
+    const verticalLinePlugin = { 
+        id: 'verticalLine', 
+        afterDraw: (chart) => {
+            if (chart.tooltip?._active?.length) {
+                const ctx = chart.ctx;
+                const activePoint = chart.tooltip._active[0];
+                const x = activePoint.element.x;
+                const bottom = chart.chartArea.bottom;
+                
+                // 1. 绘制虚线
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([4, 4]); // 虚线样式
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = '#666'; // 深灰色
+                ctx.moveTo(x, chart.chartArea.top);
+                ctx.lineTo(x, bottom); // 延伸到底部
+                ctx.stroke();
+
+                // 2. 绘制日期文字在轴上
+                const dataIndex = activePoint.index;
+                const dateStr = chart.data.labels[dataIndex]; // 从数据中获取日期字符串 "YYYY-MM-DD"
+                
+                ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial';
+                ctx.fillStyle = '#666';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText(dateStr, x, bottom + 6); // 在虚线底端下方绘制日期
+
+                ctx.restore();
+            }
         }
-    }};
+    };
     
     function drawChart() {
         if(!globalData.length) return;
@@ -605,18 +599,43 @@
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                responsive: true, maintainAspectRatio: false, 
+                interaction: { mode: 'index', intersect: false }, 
                 plugins: {
-                    tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { afterLabel: (c) => ` 🏷️ ${validData[c.dataIndex].sourceName}` } },
-                    zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }, pan: { enabled: true, mode: 'x' } }
+                    tooltip: { 
+                        backgroundColor: 'rgba(255,255,255,0.95)', 
+                        titleColor: '#333', 
+                        bodyColor: '#333', 
+                        borderColor: '#ddd', 
+                        borderWidth: 1,
+                        callbacks: {
+                            title: () => null // 隐藏提示框中的日期标题
+                        }
+                    },
+                    zoom: { 
+                        limits: {
+                            x: { min: 'original', max: 'original' } // 限制缩放/拖拽范围，防止空白
+                        },
+                        pan: { 
+                            enabled: true, 
+                            mode: 'x',
+                            limits: { x: { min: 'original', max: 'original' } }
+                        },
+                        zoom: { 
+                            wheel: { enabled: true }, 
+                            pinch: { enabled: true }, 
+                            mode: 'x',
+                            limits: { x: { min: 'original', max: 'original' } }
+                        } 
+                    }
                 },
                 scales: {
                     x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { font: { size: 10 } } },
-                    y_pe: { type: 'linear', position: 'right', title: {display:true, text:'PE 倍数', color:'#c0392b', font:{size:10}}, min: 0, grid: {drawOnChartArea:false} },
-                    y_ps: { type: 'linear', position: 'left', title: {display:true, text:'PS 倍数', color:'#2980b9', font:{size:10}}, min: 0 }
+                    y_pe: { type: 'linear', position: 'right', title: {display:true, text:'PE 倍数', color:'#c0392b', font:{size:10}}, grace: '5%', grid: {drawOnChartArea:false} },
+                    y_ps: { type: 'linear', position: 'left', title: {display:true, text:'PS 倍数', color:'#2980b9', font:{size:10}}, grace: '5%' }
                 }
             },
-            plugins: [horizontalLinePlugin]
+            plugins: [verticalLinePlugin]
         });
     }
 
