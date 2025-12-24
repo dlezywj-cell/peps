@@ -156,7 +156,8 @@
         <div class="tools-bar">
             <div class="group-search">
                 <div class="input-group">
-                    <input type="text" id="stockInput" value="贵州茅台" placeholder="代码/名称">
+                    <!-- 修改点：去掉了 value="贵州茅台"，默认为空 -->
+                    <input type="text" id="stockInput" value="" placeholder="代码/名称">
                 </div>
                 <button class="btn-primary" id="btnSearch">🔍 搜索</button>
             </div>
@@ -407,6 +408,9 @@
             calculate(finMap);
             drawChart();
             renderTable();
+
+            // 修改点：计算成功后，清空输入框
+            document.getElementById('stockInput').value = '';
             
         } catch(e) {
             console.error(e);
