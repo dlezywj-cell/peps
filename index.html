@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (PC/Mobile 双端完美版)</title>
+    <title>估值透视 (独立配置版)</title>
     <!-- Chart.js & Plugins -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
@@ -156,7 +156,6 @@
         <div class="tools-bar">
             <div class="group-search">
                 <div class="input-group">
-                    <!-- 修改点：去掉了 value="贵州茅台"，默认为空 -->
                     <input type="text" id="stockInput" value="" placeholder="代码/名称">
                 </div>
                 <button class="btn-primary" id="btnSearch">🔍 搜索</button>
@@ -228,7 +227,7 @@
 <div class="modal-overlay" id="settingModal">
     <div class="modal-box">
         <div class="modal-header">
-            <span><i class="fab fa-github"></i> 云同步配置</span>
+            <span><i class="fab fa-github"></i> 独立配置 (Stock)</span>
             <i class="fas fa-times" onclick="closeSettings()" style="cursor:pointer; color:#999;"></i>
         </div>
         <div class="modal-body">
@@ -250,7 +249,7 @@
             </div>
         </div>
         <div class="modal-footer">
-            <button class="btn-block btn-confirm" onclick="saveConfig()">保存并连接</button>
+            <button class="btn-block btn-confirm" onclick="saveConfig()">保存配置</button>
         </div>
     </div>
 </div>
@@ -267,11 +266,12 @@
     const PROXY_URL = "https://corsproxy.io/?";
     const DB_KEY = "stock_valuation_db_v1";
 
-    // GitHub 配置
+    // 🔴 修复点：修改了变量名，防止与 Life Manager 串台
+    // 之前是 gh_token, 现在改为 stock_token
     let ghConfig = {
-        token: localStorage.getItem('gh_token') || '',
-        user: localStorage.getItem('gh_user') || 'dlezywj-cell',
-        repo: localStorage.getItem('gh_repo') || 'pepsdata',
+        token: localStorage.getItem('stock_token') || '',
+        user: localStorage.getItem('stock_user') || 'dlezywj-cell',
+        repo: localStorage.getItem('stock_repo') || 'pepsdata',
         file: 'data.json'
     };
 
@@ -409,7 +409,6 @@
             drawChart();
             renderTable();
 
-            // 修改点：计算成功后，清空输入框
             document.getElementById('stockInput').value = '';
             
         } catch(e) {
@@ -581,9 +580,12 @@
         ghConfig.token = document.getElementById('cfgToken').value.trim();
         ghConfig.user = document.getElementById('cfgUser').value.trim();
         ghConfig.repo = document.getElementById('cfgRepo').value.trim();
-        localStorage.setItem('gh_token', ghConfig.token);
-        localStorage.setItem('gh_user', ghConfig.user);
-        localStorage.setItem('gh_repo', ghConfig.repo);
+        
+        // 🔴 修复点：保存时也使用新的变量名 stock_token
+        localStorage.setItem('stock_token', ghConfig.token);
+        localStorage.setItem('stock_user', ghConfig.user);
+        localStorage.setItem('stock_repo', ghConfig.repo);
+        
         closeSettings(); autoSyncFromCloud();
     };
 
