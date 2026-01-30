@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (PC/Mobile 双端完美版)</title>
+    <title>估值透视 (数据保护版)</title>
     <!-- Chart.js & Plugins -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
@@ -65,7 +65,6 @@
         .btn-outline { background: #fff; border: 1px solid #ccc; color: #666; } .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
         button:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
 
-        /* PC 端布局 */
         @media (min-width: 769px) {
             .tools-bar { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
             .group-search { display: flex; gap: 8px; align-items: center; }
@@ -76,7 +75,6 @@
             .group-actions { display: flex; gap: 8px; align-items: center; }
         }
 
-        /* 手机 端布局 */
         @media (max-width: 768px) {
             body { padding: 0; }
             .container { border-radius: 0; box-shadow: none; min-height: 100vh; }
@@ -112,15 +110,14 @@
         .tag { padding: 1px 5px; border-radius: 3px; font-size: 10px; display: inline-block; transform: scale(0.95); }
         .tag-real { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
         .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; cursor: pointer; }
+        .tag-est { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; } /* 自动沿用 */
         .loss { color: #27ae60; font-style: italic; }
 
-        /* 提示框穿透 */
         .status-msg { 
             display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; 
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
             z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500;
-            background: #fff; border: 1px solid #eee;
-            pointer-events: none; 
+            background: #fff; border: 1px solid #eee; pointer-events: none; 
         }
         .status-msg.ok { color: #389e0d; border-color: #b7eb8f; background: #f6ffed; }
         .status-msg.error { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
@@ -156,7 +153,6 @@
         <div class="tools-bar">
             <div class="group-search">
                 <div class="input-group">
-                    <!-- 修改点：去掉了 value="贵州茅台"，默认为空 -->
                     <input type="text" id="stockInput" value="" placeholder="代码/名称">
                 </div>
                 <button class="btn-primary" id="btnSearch">🔍 搜索</button>
@@ -200,13 +196,15 @@
     </div>
 </div>
 
+<!-- 录入弹窗 -->
 <div id="inputModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-header">
             <span>✍️ 录入 <span id="modalYear"></span>年 数据</span>
         </div>
         <div style="font-size:12px; color:#c0392b; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:12px;">
-            ⚠️ 缺失当前年份数据，请手动补充以继续。
+            ⚠️ 缺失当前年份数据，请补充。
+            <br><span style="color:#666; font-weight:normal;">(取消则沿用上一年数据)</span>
         </div>
         <div class="modal-body">
             <div class="form-row">
@@ -219,6 +217,7 @@
             </div>
         </div>
         <div class="modal-footer">
+            <!-- 关键修改：取消按钮调用 closeInputModal(false) -->
             <button class="btn-block btn-cancel" onclick="closeInputModal(false)">取消</button>
             <button class="btn-block btn-confirm" onclick="closeInputModal(true)">保存</button>
         </div>
@@ -292,7 +291,6 @@
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
-        
         try {
             document.getElementById('btnSearch').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14&token=D43BF722C8E33BD5D50F639205545E43`;
@@ -303,16 +301,13 @@
                 const item = json.QuotationCodeTable.Data[0];
                 const secId = (item.MarketType == "1" || item.Code.startsWith('6')) ? `1.${item.Code}` : `0.${item.Code}`;
                 currentStock = { code: item.Code, name: item.Name, secId };
-                
                 document.getElementById('btn-run').disabled = false;
                 showToast(`✅ 已锁定: ${item.Name}`, 'ok');
             } else {
                 showToast("❌ 未找到股票", 'error');
             }
         } catch(e) { showToast("❌ 搜索失败", 'error'); 
-        } finally {
-            document.getElementById('btnSearch').innerHTML = '🔍 搜索';
-        }
+        } finally { document.getElementById('btnSearch').innerHTML = '🔍 搜索'; }
     }
 
     // --- 分析主流程 ---
@@ -333,23 +328,21 @@
             // 2. 获取财报
             let finMap = await fetchHistoricalFinancials(currentStock.code);
 
-            // 3. 尝试获取云端 stockdata/data.json 数据
+            // 3. 尝试获取云端 stockdata/data.json
             let extForecast = null;
             try {
-                // 读取 raw json
                 const extRes = await fetch(PROXY_URL + encodeURIComponent("https://raw.githubusercontent.com/dlezywj-cell/stockdata/main/data.json"));
                 const extList = await extRes.json();
-                // 模糊匹配 (例如: 600519 匹配 600519.SH)
                 extForecast = extList.find(item => item.code.includes(currentStock.code));
-            } catch(e) { 
-                console.warn("外部预测数据获取失败或无匹配", e); 
-            }
+            } catch(e) { console.warn("外部预测数据获取失败", e); }
 
-            // 4. 检查缺失并决策使用哪个数据源
+            // 4. 数据融合
             const savedData = getFromDB(currentStock.code, checkYear);
             let hasRealReport = !!finMap[checkYear];
             let hasSavedPredict = !!savedData;
 
+            // 逻辑优先级: 
+            // 1. 本地/云端存储的手动数据
             if (hasSavedPredict) {
                 finMap[checkYear] = { 
                     year: checkYear, 
@@ -360,56 +353,47 @@
                 };
                 if(!silent) showToast(`已加载 ${checkYear} 预测数据`, 'ok');
             } 
-            else if (!hasRealReport) {
-                // 优先使用云端预测数据
-                if (extForecast && (extForecast.revenue || extForecast.profit)) {
-                    let rev = (extForecast.revenue || 0) * 1e8; // 单位换算: 亿 -> 元
-                    let prof = (extForecast.profit || 0) * 1e8; // 单位换算: 亿 -> 元
-                    let note = '★云端预测';
-
-                    // 提取最新日志日期
-                    if(extForecast.logs && extForecast.logs.length > 0) {
-                        // 按日期倒序排列，取最新的一个
-                        extForecast.logs.sort((a,b) => new Date(b.date) - new Date(a.date));
-                        const lastDate = new Date(extForecast.logs[0].date);
-                        if(!isNaN(lastDate)) {
-                            const dateStr = (lastDate.getMonth()+1) + '-' + lastDate.getDate();
-                            note = `★${dateStr}更新`;
-                        }
+            // 2. 真实年报
+            else if (hasRealReport) {
+                // do nothing, use real
+            }
+            // 3. 云端公共库预测
+            else if (extForecast && (extForecast.revenue || extForecast.profit)) {
+                let rev = (extForecast.revenue || 0) * 1e8; 
+                let prof = (extForecast.profit || 0) * 1e8; 
+                let note = '★云端预测';
+                if(extForecast.logs && extForecast.logs.length > 0) {
+                    extForecast.logs.sort((a,b) => new Date(b.date) - new Date(a.date));
+                    const lastDate = new Date(extForecast.logs[0].date);
+                    if(!isNaN(lastDate)) {
+                        note = `★${lastDate.getMonth()+1}-${lastDate.getDate()}更新`;
                     }
-
+                }
+                finMap[checkYear] = { year: checkYear, rev: rev, prof: prof, source: 'manual', name: note };
+                if(!silent) showToast(`已加载云端最新预测`, 'ok');
+            }
+            // 4. 手动录入 (仅在非静默模式且无任何数据时)
+            else if (!silent) {
+                const manual = await openInputModal(checkYear);
+                if (manual) {
+                    // 用户录入了数据
+                    await saveToDB(currentStock.code, checkYear, manual.rev, manual.prof);
                     finMap[checkYear] = { 
                         year: checkYear, 
-                        rev: rev,
-                        prof: prof,
+                        rev: manual.rev, 
+                        prof: manual.prof, 
                         source: 'manual', 
-                        name: note 
+                        name: `★${checkYear}录入` 
                     };
-                    if(!silent) showToast(`已加载云端最新预测`, 'ok');
-                }
-                else if (!silent) {
-                    // 没有云端数据，才弹窗
-                    const manual = await openInputModal(checkYear);
-                    if (manual) {
-                        await saveToDB(currentStock.code, checkYear, manual.rev, manual.prof);
-                        finMap[checkYear] = { 
-                            year: checkYear, 
-                            rev: manual.rev, 
-                            prof: manual.prof, 
-                            source: 'manual', 
-                            name: `★${checkYear}录入` 
-                        };
-                    } else {
-                        showToast('取消录入，数据不完整', 'warn');
-                    }
+                } else {
+                    // 用户点击了取消 -> 流程继续，依靠 calculate 中的兜底逻辑
+                    showToast('未录入，尝试沿用旧数据', 'warn');
                 }
             }
 
             calculate(finMap);
             drawChart();
             renderTable();
-
-            // 修改点：计算成功后，清空输入框
             document.getElementById('stockInput').value = '';
             
         } catch(e) {
@@ -423,34 +407,42 @@
     function calculate(finMap) {
         const years = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
         if(!years.length) return;
-        const [minYear, maxYear] = [years[0], years[years.length-1]];
-
+        
         globalData = globalData.map(item => {
             const y = new Date(item.date).getFullYear();
-            let fin = finMap[y] || finMap[y > maxYear ? maxYear : (y < minYear ? minYear : y-1)];
+            let fin = finMap[y];
+            
+            // 兜底逻辑：如果当年没有数据，沿用上一年 (无论是历史还是当前年，响应用户需求)
+            if (!fin && finMap[y-1]) {
+                fin = { ...finMap[y-1], year: y, sourceName: `${y-1}数据(沿用)`, sourceType: 'est' };
+            }
             
             if(fin) {
                 const mktCap = item.price * currentTotalShares;
                 return {
                     ...item,
                     year: fin.year,
-                    sourceType: fin.source,
-                    sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name,
+                    sourceType: fin.sourceType || fin.source,
+                    sourceName: fin.sourceName || fin.name,
                     mktCap, rev: fin.rev, prof: fin.prof,
                     pe: fin.prof>0 ? mktCap/fin.prof : -1,
                     ps: fin.rev>0 ? mktCap/fin.rev : 0
                 };
             }
-            return item;
+            return {
+                ...item, mktCap: item.price * currentTotalShares,
+                rev: null, prof: null, pe: null, ps: null
+            };
         });
     }
 
-    // --- GitHub & DB ---
+    // --- GitHub & DB (关键修复区域) ---
     function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
     function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
     function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
     function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
 
+    // 下载时：全量下载并存入本地（包含您的非股票数据）
     async function autoSyncFromCloud() {
         if (!ghConfig.token) return;
         updateStatus('syncing', '同步中');
@@ -459,37 +451,80 @@
             const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
             if (res.ok) {
                 const data = await res.json();
-                const cloudDB = JSON.parse(b64_to_utf8(data.content));
-                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
+                const cloudContent = JSON.parse(b64_to_utf8(data.content));
+                
+                // 合并逻辑：云端覆盖本地，确保您之前的 "0", "1" 等待办事项数据被保留在本地
+                const newDB = { ...getLocalDB(), ...cloudContent };
+                localStorage.setItem(DB_KEY, JSON.stringify(newDB));
+                
                 updateStatus('online', '已同步');
                 if (currentStock.code) runAnalysis(true);
-            } else if(res.status === 404) updateStatus('online', '新文件');
-            else updateStatus('error', '失败');
+            } else if(res.status === 404) {
+                updateStatus('online', '新文件');
+            } else {
+                updateStatus('error', '失败');
+            }
         } catch (e) { updateStatus('error', '错误'); }
     }
 
+    // 保存时：先拉取云端，精准注入，保留其他字段
     async function saveToDB(code, year, rev, prof) {
-        let db = getLocalDB();
-        if (!db[code]) db[code] = {};
-        db[code][year] = { rev, prof, timestamp: Date.now() };
-        localStorage.setItem(DB_KEY, JSON.stringify(db));
+        // 1. 先更新本地缓存，让界面立即响应
+        let localDB = getLocalDB();
+        if (!localDB[code]) localDB[code] = {};
+        localDB[code][year] = { rev, prof, timestamp: Date.now() };
+        localStorage.setItem(DB_KEY, JSON.stringify(localDB));
         
+        // 2. 如果配置了 GitHub，进行安全增量更新
         if (ghConfig.token) {
             clearTimeout(syncTimer);
-            syncTimer = setTimeout(async () => {
-                updateStatus('syncing', '上传中');
-                try {
-                    const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
-                    const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-                    let sha = getRes.ok ? (await getRes.json()).sha : null;
-                    await fetch(url, {
-                        method: 'PUT',
-                        headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: `Update ${code} ${year}`, content: utf8_to_b64(JSON.stringify(getLocalDB())), sha: sha })
-                    });
+            updateStatus('syncing', '准备上传');
+            
+            try {
+                const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
+                
+                // A. 获取云端最新版本 (包含您的Todo数据)
+                const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+                
+                let finalDB = {};
+                let sha = null;
+
+                if (getRes.ok) {
+                    const getData = await getRes.json();
+                    sha = getData.sha;
+                    // 解析云端数据
+                    finalDB = JSON.parse(b64_to_utf8(getData.content));
+                } else {
+                    // 文件不存在，使用本地数据作为初始数据
+                    finalDB = localDB;
+                }
+
+                // B. 只修改本次涉及的股票代码，绝对不碰 "0", "1" 等其他 Key
+                if (!finalDB[code]) finalDB[code] = {};
+                finalDB[code][year] = { rev, prof, timestamp: Date.now() };
+
+                // C. 回写
+                const putRes = await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        message: `Update ${code} ${year}`, 
+                        content: utf8_to_b64(JSON.stringify(finalDB)), // 发送包含了Todo+股票的完整数据
+                        sha: sha 
+                    })
+                });
+
+                if(putRes.ok) {
                     updateStatus('online', '已保存');
-                } catch(e) { updateStatus('error', '上传失败'); }
-            }, 1000);
+                    // 更新本地以匹配最新云端结构
+                    localStorage.setItem(DB_KEY, JSON.stringify(finalDB));
+                } else {
+                    updateStatus('error', '上传失败');
+                }
+            } catch(e) { 
+                console.error(e);
+                updateStatus('error', '网络错误'); 
+            }
         } else {
             showToast('已保存至本地 (未配置Token)', 'ok');
         }
@@ -550,14 +585,16 @@
     }
 
     function closeInputModal(isConfirm) {
+        // 关键修复：立即隐藏弹窗
         document.getElementById('inputModal').style.display = 'none';
+        
         if (isConfirm && inputModalResolve) {
             const r = parseFloat(document.getElementById('inRev').value);
             const p = parseFloat(document.getElementById('inProf').value);
             if (!isNaN(r) && !isNaN(p)) inputModalResolve({ rev: r * 1e8, prof: p * 1e8 });
-            else { alert("请输入有效数字"); inputModalResolve(null); }
+            else { inputModalResolve(null); }
         } else if (inputModalResolve) {
-            inputModalResolve(null);
+            inputModalResolve(null); // 返回 null 代表用户取消
         }
     }
 
@@ -590,7 +627,6 @@
     // --- Chart ---
     function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
     
-    // 插件：纵向虚线十字光标 + 横轴日期显示
     const verticalLinePlugin = { 
         id: 'verticalLine', 
         afterDraw: (chart) => {
@@ -599,27 +635,18 @@
                 const activePoint = chart.tooltip._active[0];
                 const x = activePoint.element.x;
                 const bottom = chart.chartArea.bottom;
-                
-                // 1. 绘制虚线
                 ctx.save();
                 ctx.beginPath();
-                ctx.setLineDash([4, 4]); // 虚线样式
+                ctx.setLineDash([4, 4]); 
                 ctx.lineWidth = 1;
-                ctx.strokeStyle = '#666'; // 深灰色
+                ctx.strokeStyle = '#666'; 
                 ctx.moveTo(x, chart.chartArea.top);
-                ctx.lineTo(x, bottom); // 延伸到底部
+                ctx.lineTo(x, bottom); 
                 ctx.stroke();
-
-                // 2. 绘制日期文字在轴上
                 const dataIndex = activePoint.index;
-                const dateStr = chart.data.labels[dataIndex]; // 从数据中获取日期字符串 "YYYY-MM-DD"
-                
-                ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial';
-                ctx.fillStyle = '#666';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                ctx.fillText(dateStr, x, bottom + 6); // 在虚线底端下方绘制日期
-
+                const dateStr = chart.data.labels[dataIndex];
+                ctx.font = '11px Arial'; ctx.fillStyle = '#666'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+                ctx.fillText(dateStr, x, bottom + 6);
                 ctx.restore();
             }
         }
@@ -629,16 +656,16 @@
         if(!globalData.length) return;
         const ctx = document.getElementById('valuationChart').getContext('2d');
         if(chartInstance) chartInstance.destroy();
-        const validData = globalData.filter(d => d.pe !== undefined);
-        const peData = validData.map(d => d.pe > 0 ? d.pe : null);
+        const validData = globalData;
+        const peData = validData.map(d => (d.pe && d.pe > 0) ? d.pe : null);
 
         chartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: validData.map(d => d.date),
                 datasets: [
-                    { label: 'PE (右轴)', data: peData, borderColor: '#c0392b', backgroundColor: 'rgba(192, 57, 43, 0.05)', borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, pointHoverRadius: 4, spanGaps: true, segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } },
-                    { label: 'PS (左轴)', data: validData.map(d => d.ps), borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.05)', borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, pointHoverRadius: 4, segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } }
+                    { label: 'PE (右轴)', data: peData, borderColor: '#c0392b', backgroundColor: 'rgba(192, 57, 43, 0.05)', borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, pointHoverRadius: 4, spanGaps: false, segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } },
+                    { label: 'PS (左轴)', data: validData.map(d => d.ps), borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.05)', borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, pointHoverRadius: 4, spanGaps: false, segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } }
                 ]
             },
             options: {
@@ -646,30 +673,13 @@
                 interaction: { mode: 'index', intersect: false }, 
                 plugins: {
                     tooltip: { 
-                        backgroundColor: 'rgba(255,255,255,0.95)', 
-                        titleColor: '#333', 
-                        bodyColor: '#333', 
-                        borderColor: '#ddd', 
-                        borderWidth: 1,
-                        callbacks: {
-                            title: () => null // 隐藏提示框中的日期标题
-                        }
+                        backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1,
+                        callbacks: { title: () => null }
                     },
                     zoom: { 
-                        limits: {
-                            x: { min: 'original', max: 'original' } // 限制缩放/拖拽范围，防止空白
-                        },
-                        pan: { 
-                            enabled: true, 
-                            mode: 'x',
-                            limits: { x: { min: 'original', max: 'original' } }
-                        },
-                        zoom: { 
-                            wheel: { enabled: true }, 
-                            pinch: { enabled: true }, 
-                            mode: 'x',
-                            limits: { x: { min: 'original', max: 'original' } }
-                        } 
+                        limits: { x: { min: 'original', max: 'original' } },
+                        pan: { enabled: true, mode: 'x', limits: { x: { min: 'original', max: 'original' } } },
+                        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', limits: { x: { min: 'original', max: 'original' } } } 
                     }
                 },
                 scales: {
@@ -685,22 +695,27 @@
     function renderTable() {
         const tbody = document.querySelector('#dataTable tbody');
         tbody.innerHTML = '';
-        [...globalData].reverse().slice(0, 500).forEach(d => {
-            if(!d.pe) return;
-            const peStr = d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>';
-            const tagClass = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
+        [...globalData].reverse().forEach(d => {
+            const peStr = d.pe ? (d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>') : '-';
+            const psStr = d.ps ? d.ps.toFixed(2) : '-';
+            
+            let tagClass = 'tag-real';
+            if (d.sourceType === 'manual') tagClass = 'tag-manual';
+            else if (d.sourceType === 'est') tagClass = 'tag-est';
+
             const editAttr = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})"` : '';
             const editIcon = d.sourceType === 'manual' ? ' ✎' : '';
+            const sourceText = d.sourceName || '-';
             
             tbody.innerHTML += `<tr>
                 <td>${d.date}</td>
                 <td>${d.price.toFixed(2)}</td>
-                <td><span class="tag ${tagClass}" ${editAttr}>${d.sourceName}${editIcon}</span></td>
-                <td>${(d.mktCap/1e8).toFixed(2)}</td>
-                <td>${(d.rev/1e8).toFixed(2)}</td>
-                <td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td>
+                <td><span class="tag ${tagClass}" ${editAttr}>${sourceText}${editIcon}</span></td>
+                <td>${d.mktCap ? (d.mktCap/1e8).toFixed(2) : '-'}</td>
+                <td>${d.rev ? (d.rev/1e8).toFixed(2) : '-'}</td>
+                <td class="${d.prof>0?'':'loss'}">${d.prof ? (d.prof/1e8).toFixed(2) : '-'}</td>
                 <td class="val-pe">${peStr}</td>
-                <td class="val-ps">${d.ps.toFixed(2)}</td>
+                <td class="val-ps">${psStr}</td>
             </tr>`;
         });
     }
