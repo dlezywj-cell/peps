@@ -1,10 +1,10 @@
-<!-- START OF FILE Paste January 30, 2026 -->
+<!-- START OF FILE - FIXED KLINE API -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (纯净直连版)</title>
+    <title>估值透视 (修复K线直连版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
@@ -33,14 +33,13 @@
         }
         h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
         
-        /* 网络状态指示器 */
         .net-status { display: flex; gap: 10px; }
         .badge { 
             font-size: 11px; padding: 2px 8px; border-radius: 4px; display: flex; align-items: center; gap: 5px; 
             cursor: pointer; transition: 0.2s; border: 1px solid transparent;
         }
-        .badge-data { background: #e6f7ff; color: #0050b3; border-color: #91d5ff; } /* 蓝色：直连 */
-        .badge-cloud { background: #f6ffed; color: #389e0d; border-color: #b7eb8f; } /* 绿色：GitHub */
+        .badge-data { background: #e6f7ff; color: #0050b3; border-color: #91d5ff; } 
+        .badge-cloud { background: #f6ffed; color: #389e0d; border-color: #b7eb8f; } 
         .badge-cloud.offline { background: #fff1f0; color: #cf1322; border-color: #ffa39e; }
         .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
         
@@ -104,7 +103,6 @@
 
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
         .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); animation: popIn 0.2s ease-out; display: flex; flex-direction: column; max-height: 80vh; }
-        @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .modal-header { font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #333; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; }
         .modal-body { display: flex; flex-direction: column; gap: 0; overflow-y: auto; padding-right: 5px; margin-bottom: 15px; }
         
@@ -113,7 +111,6 @@
         .row-year { font-weight: 600; width: 50px; color: #2980b9; font-size: 14px; }
         .row-inputs { flex: 1; display: flex; gap: 8px; }
         .row-inputs input { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
-        .row-inputs input:focus { border-color: var(--primary); outline: none; }
 
         .modal-footer { margin-top: auto; display: flex; gap: 10px; }
         .btn-block { flex: 1; padding: 10px; border-radius: 4px; font-weight: 600; cursor: pointer; border:none; }
@@ -124,7 +121,6 @@
         .form-row input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
         .form-hint { font-size: 11px; color: #e67e22; margin-top: 5px; background: #fef5e6; padding: 4px; border-radius: 4px; }
         
-        /* 迷你控制台 */
         #console-wrap { border-top:1px solid #eee; padding:10px; background:#fafafa; font-family:monospace; font-size:11px; height:100px; overflow-y:auto; color:#666; display:none; }
         .log-line { margin:2px 0; border-bottom:1px dashed #eee; }
         .log-error { color: #c0392b; font-weight:bold; }
@@ -136,7 +132,7 @@
 <div class="container">
     <header>
         <div class="top-bar">
-            <h2>📈 估值透视</h2>
+            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(直连修复版)</span></h2>
             <div class="net-status">
                 <div class="badge badge-data" title="无需VPN，直接连接东方财富">
                     <div class="dot"></div> 数据直连
@@ -194,11 +190,10 @@
     </div>
     
     <div id="console-wrap">
-        <div style="color:#999; font-style:italic;">-- 系统日志 (点击上方终端图标隐藏) --</div>
+        <div style="color:#999; font-style:italic;">-- 系统日志 --</div>
     </div>
 </div>
 
-<!-- 批量录入弹窗 -->
 <div id="batchInputModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-header">
@@ -207,9 +202,7 @@
         <div style="font-size:12px; color:#c0392b; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:8px;">
             ⚠️ 请补全以下年份的数据 (单位: 亿元)
         </div>
-        <div class="modal-body" id="batchInputContainer">
-            <!-- 动态生成行 -->
-        </div>
+        <div class="modal-body" id="batchInputContainer"></div>
         <div class="modal-footer">
             <button class="btn-block btn-cancel" onclick="closeBatchModal(false)">取消</button>
             <button class="btn-block btn-confirm" onclick="closeBatchModal(true)">保存全部</button>
@@ -225,12 +218,9 @@
         </div>
         <div class="modal-body" style="gap:12px;">
             <div class="form-row">
-                <label>GitHub Token (必填)</label>
+                <label>GitHub Token</label>
                 <input type="password" id="cfgToken" placeholder="ghp_...">
-                <div class="form-hint">
-                    1. <b>数据获取</b> 无需 VPN (直连)<br>
-                    2. <b>云端保存</b> 需要 VPN (连接 GitHub)
-                </div>
+                <div class="form-hint">仅云端保存需要VPN，获取数据不需要。</div>
             </div>
             <div class="form-row">
                 <label>用户名</label>
@@ -269,7 +259,6 @@
     let chartInstance = null;
     let batchModalResolve = null;
     let syncTimer = null;
-
     const DB_KEY = "stock_valuation_db_v1";
 
     let ghConfig = {
@@ -285,22 +274,19 @@
     document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
     document.getElementById('stockInput').addEventListener('keydown', e => { if(e.keyCode===13) runSearch(); });
 
-    // 初始化云端状态
     updateCloudStatus(ghConfig.token ? 'unknown' : 'offline');
     if(ghConfig.token) setTimeout(autoSyncFromCloud, 1000);
 
     // --- 1. 核心网络层：JSONP (直连神器) ---
-    // 即使没有VPN，这部分也能在本地网络下工作，因为它像加载图片一样加载数据
     function fetchJsonp(url, callbackParam = 'cb') {
         return new Promise((resolve, reject) => {
             const callbackName = 'jsonp_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
             const script = document.createElement('script');
             const separator = url.includes('?') ? '&' : '?';
             
-            // 超时控制
             const timeout = setTimeout(() => {
                 cleanup();
-                reject(new Error("请求超时 - 请检查网络"));
+                reject(new Error("请求超时"));
             }, 10000);
 
             window[callbackName] = function(data) {
@@ -315,10 +301,10 @@
             }
 
             script.src = `${url}${separator}${callbackParam}=${callbackName}`;
-            script.onerror = () => { 
+            script.onerror = (e) => { 
                 clearTimeout(timeout);
                 cleanup(); 
-                reject(new Error(`网络错误 (JSONP Fail)`)); 
+                reject(new Error(`API拒绝连接 (JSONP Fail)`)); 
             };
             document.head.appendChild(script);
         });
@@ -328,25 +314,25 @@
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
-        
         const btn = document.getElementById('btnSearch');
         const originalText = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         
         try {
             debugLog(`正在搜索: ${val}`);
-            // 使用 Eastmoney 搜索接口
             const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14,31,41&token=D43BF722C8E33BD5D50F639205545E43`;
             const json = await fetchJsonp(url, 'cb');
             
             if(json?.QuotationCodeTable?.Data?.length > 0) {
                 const item = json.QuotationCodeTable.Data[0];
                 let secId = '';
+                // 修正SecId逻辑，确保市场代码正确
                 if(item.QuoteID) secId = item.QuoteID;
                 else if(item.MarketType == "1") secId = `1.${item.Code}`; 
                 else if(item.MarketType == "2") secId = `0.${item.Code}`; 
-                else if(item.Code.startsWith('6')) secId = `1.${item.Code}`;
-                else secId = `0.${item.Code}`; // 默认为深市
+                else if(item.Code.startsWith('6')) secId = `1.${item.Code}`; // 上海
+                else if(item.Code.startsWith('8') || item.Code.startsWith('4')) secId = `0.${item.Code}`; // 北交/三板
+                else secId = `0.${item.Code}`; // 深圳
 
                 currentStock = { code: item.Code, name: item.Name, secId };
                 document.getElementById('btn-run').disabled = false;
@@ -356,8 +342,7 @@
                 showToast("❌ 未找到股票", 'error');
             }
         } catch(e) { 
-            console.error(e);
-            showToast(`❌ 搜索失败: ${e.message}`, 'error'); 
+            showToast(`❌ 搜索失败`, 'error'); 
         } finally {
             btn.innerHTML = originalText;
         }
@@ -369,18 +354,18 @@
         if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
         
         try {
-            debugLog("🚀 开始获取数据(直连)...");
+            debugLog("🚀 开始获取数据...");
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
             
-            // 1. 并行获取 股本 和 K线
+            // 并行获取
             await Promise.all([fetchShares(), fetchKline(beg, end)]);
             if(globalData.length === 0) throw new Error("该时间段无股价数据");
 
-            // 2. 获取财报
+            // 获取财报
             let finMap = await fetchHistoricalFinancials(currentStock);
 
-            // 3. 整合本地补充数据
+            // 整合数据
             const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0,4))));
             const sortedYears = Array.from(yearsSet).sort((a,b) => a-b);
             let missingYears = [];
@@ -393,13 +378,12 @@
                         source: 'manual', name: `★${year}手动` 
                     };
                 } else if (!finMap[year]) {
-                    // 如果不是最近一年(可能财报没出)，则列为缺失
                     const currentYear = new Date().getFullYear();
+                    // 只有小于当前年份的才算缺失（当年可能还没出年报）
                     if(year < currentYear) missingYears.push(year);
                 }
             }
 
-            // 4. 缺失数据弹窗
             if (missingYears.length > 0 && !silent) {
                 showToast(`⚠️ 需补录 ${missingYears.length} 年数据`, 'warn');
                 const batchData = await openBatchModal(missingYears);
@@ -410,22 +394,20 @@
                         await saveToDB(currentStock.code, yearInt, rev, prof, false); 
                         finMap[yearInt] = { year: yearInt, rev: rev, prof: prof, source: 'manual', name: `★${yearInt}录入` };
                     }
-                    triggerSync(); // 尝试同步到GitHub
+                    triggerSync();
                 }
             }
 
-            // 5. 计算并绘图
             calculate(finMap);
             drawChart();
             renderTable();
-            
             if(!silent) showToast("计算完成", 'ok');
             debugLog("✅ 分析完成", 'success');
             
         } catch(e) {
             console.error(e);
-            if(!silent) showToast("数据获取失败，请检查网络", 'error');
-            debugLog(`错误: ${e.message}`, 'error');
+            if(!silent) showToast(e.message, 'error');
+            debugLog(`❌ 错误: ${e.message}`, 'error');
         } finally {
             if(!silent) { btn.disabled = false; btn.innerHTML = '⚡ 计算'; }
         }
@@ -435,8 +417,7 @@
         globalData = globalData.map(item => {
             const y = parseInt(item.date.substring(0,4));
             let fin = finMap[y];
-            // 向前找一年的财报兜底（比如1月份用去年的）
-            if(!fin && finMap[y-1]) fin = finMap[y-1];
+            if(!fin && finMap[y-1]) fin = finMap[y-1]; // 兜底
 
             if(fin) {
                 const mktCap = item.price * currentTotalShares;
@@ -455,56 +436,59 @@
         });
     }
 
-    // --- 数据源实现 (关键：JSONP直连) ---
+    // --- 数据源 (FIXED) ---
     
-    // 获取总股本
+    // 1. 获取股本 (Push2, 正常)
     async function fetchShares() {
         try {
-            // Push2 接口稳定
             const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
             const json = await fetchJsonp(url, 'cb'); 
-            // f84: 总股本, f20: 总市值, f2: 最新价
             currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json?.data?.f2) || 0;
             if(!currentTotalShares) throw new Error("股本为0");
             debugLog(`股本: ${(currentTotalShares/1e8).toFixed(2)}亿`, 'success');
         } catch(e) { 
-            currentTotalShares = 1e8; // Fallback
-            debugLog("股本获取失败，暂按1亿计算", 'warn');
+            currentTotalShares = 1e8; 
+            debugLog("股本获取警告: 使用默认值1亿", 'warn');
         }
     }
     
-    // 获取K线
+    // 2. 获取K线 (关键修复：使用 push2his)
     async function fetchKline(beg, end) {
-        const url = `https://push2.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
-        const json = await fetchJsonp(url, 'cb');
-        if (!json?.data?.klines) return;
-        globalData = json.data.klines.map(k => { 
-            const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; 
-        });
-        debugLog(`K线数据: ${globalData.length}条`, 'success');
+        // [修复] 使用 push2his 域名，这是获取历史数据更稳定的接口
+        // fields1 添加 f1-f6 是为了满足API的格式校验，防止返回 JSON 格式导致 JSONP 失败
+        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}&lmt=1000`;
+        
+        try {
+            const json = await fetchJsonp(url, 'cb');
+            if (!json?.data?.klines) throw new Error("无K线数据");
+            globalData = json.data.klines.map(k => { 
+                const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; 
+            });
+            debugLog(`股价获取成功: ${globalData.length}条`, 'success');
+        } catch (e) {
+            debugLog(`K线获取失败: ${e.message}. 建议缩小日期范围或检查代码。`, 'error');
+            throw e;
+        }
     }
 
-    // 获取历史财报 (Datacenter)
-    // 技巧：reportName 和 columns 参数要根据东财的定义来
+    // 3. 获取财报
     async function fetchHistoricalFinancials(stockObj) {
         let map = {};
         const code = stockObj.code;
-        
         // 默认A股配置
         let reportName = 'RPT_LICO_FN_CPD'; 
         let filterStr = `(SECURITY_CODE="${code}")`;
-        let fieldRev = 'TOTAL_OPERATE_INCOME'; // 营业总收入
-        let fieldProf = 'PARENT_NETPROFIT';     // 归母净利润
+        let fieldRev = 'TOTAL_OPERATE_INCOME'; 
+        let fieldProf = 'PARENT_NETPROFIT';
         
         try {
+            // Datacenter 必须用 'callback'
             const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=50&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB`;
-            // 注意：Datacenter 必须用 'callback'
             const json = await fetchJsonp(url, 'callback'); 
             
             if(json?.result?.data) {
                 json.result.data.forEach(item => {
                     const d = item.REPORT_DATE || item.REPORTDATE;
-                    // 只取年报 (12-31)
                     if(d && d.includes("-12-31")) {
                         const y = parseInt(d.substring(0,4));
                         const r = item[fieldRev] || item['OPERATE_INCOME'];
@@ -514,13 +498,11 @@
                 });
                 debugLog(`财报获取成功: ${Object.keys(map).length}年份`, 'success');
             }
-        } catch(e) { 
-            debugLog("自动财报获取部分缺失，可手动补录", 'warn'); 
-        }
+        } catch(e) { debugLog("自动财报获取部分缺失", 'warn'); }
         return map;
     }
 
-    // --- UI 逻辑 ---
+    // --- UI/DB/GitHub ---
     function openBatchModal(years, prefillData = {}) {
         return new Promise((resolve) => {
             const container = document.getElementById('batchInputContainer');
@@ -560,7 +542,6 @@
         }
     }
 
-    // --- 数据存储 (GitHub API - 需VPN) ---
     function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
     function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
     function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
@@ -593,7 +574,6 @@
     }
     window.showSettings = () => document.getElementById('settingModal').style.display = 'flex';
     window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
-    
     window.saveConfig = () => {
         ghConfig.token = document.getElementById('cfgToken').value.trim();
         ghConfig.user = document.getElementById('cfgUser').value.trim();
@@ -605,31 +585,19 @@
         autoSyncFromCloud();
     };
 
-    // GitHub 同步逻辑 (唯一需要 VPN 的地方)
     async function autoSyncFromCloud() {
         if (!ghConfig.token) return;
         updateCloudStatus('syncing');
-        debugLog("正在连接 GitHub...");
-        
         try {
             const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
             const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-            
             if (res.ok) {
                 const data = await res.json();
                 const cloudDB = JSON.parse(b64_to_utf8(data.content));
                 localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
                 updateCloudStatus('online');
-                debugLog("GitHub 同步成功", 'success');
-            } else {
-                updateCloudStatus('error');
-                if(res.status === 404) debugLog("云端文件不存在，将在首次保存时创建");
-                else debugLog("连接 GitHub 失败，请开启 VPN", 'error');
-            }
-        } catch (e) { 
-            updateCloudStatus('error'); 
-            debugLog("GitHub 连接超时 (请检查VPN)", 'error');
-        }
+            } else updateCloudStatus('error');
+        } catch (e) { updateCloudStatus('error'); }
     }
 
     function triggerSync() {
@@ -638,32 +606,21 @@
         syncTimer = setTimeout(async () => {
             updateCloudStatus('syncing');
             try {
-                // 1. Get SHA
                 const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
                 const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
                 let sha = getRes.ok ? (await getRes.json()).sha : null;
-                
-                // 2. Upload
                 const putRes = await fetch(url, {
                     method: 'PUT',
                     headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        message: `Update ${currentStock.code} ${new Date().toISOString().split('T')[0]}`, 
+                        message: `Update ${currentStock.code}`, 
                         content: utf8_to_b64(JSON.stringify(getLocalDB())), 
                         sha: sha 
                     })
                 });
-                
-                if(putRes.ok) {
-                    updateCloudStatus('online');
-                    showToast('云端保存成功', 'ok');
-                } else {
-                    throw new Error("Upload failed");
-                }
-            } catch(e) { 
-                updateCloudStatus('error');
-                showToast('云端同步失败(需VPN)', 'warn');
-            }
+                if(putRes.ok) { updateCloudStatus('online'); showToast('云端保存成功', 'ok'); }
+                else throw new Error("Upload failed");
+            } catch(e) { updateCloudStatus('error'); showToast('云端同步失败', 'warn'); }
         }, 1500); 
     }
 
@@ -675,7 +632,6 @@
         if(chartInstance) chartInstance.destroy();
         const validData = globalData; 
         
-        // 垂直线插件
         const verticalLinePlugin = { 
             id: 'verticalLine', 
             afterDraw: (chart) => {
@@ -695,28 +651,15 @@
             data: {
                 labels: validData.map(d => d.date),
                 datasets: [
-                    { 
-                        label: 'PE (右轴)', 
-                        data: validData.map(d => d.pe>0?d.pe:null), 
-                        borderColor: '#c0392b', borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0,
-                        spanGaps: true
-                    },
-                    { 
-                        label: 'PS (左轴)', 
-                        data: validData.map(d => d.ps), 
-                        borderColor: '#2980b9', borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0,
-                        spanGaps: true
-                    }
+                    { label: 'PE (右轴)', data: validData.map(d => d.pe>0?d.pe:null), borderColor: '#c0392b', borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, spanGaps: true },
+                    { label: 'PS (左轴)', data: validData.map(d => d.ps), borderColor: '#2980b9', borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, spanGaps: true }
                 ]
             },
             options: {
                 responsive: true, maintainAspectRatio: false, 
                 interaction: { mode: 'index', intersect: false }, 
                 plugins: { 
-                    tooltip: { 
-                        backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, 
-                        callbacks: { title: (ctx) => ctx[0].label } 
-                    }, 
+                    tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { title: (ctx) => ctx[0].label } }, 
                     zoom: { limits: { x: { min: 'original', max: 'original' } }, pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } } 
                 },
                 scales: { 
@@ -739,3 +682,4 @@
 </script>
 </body>
 </html>
+<!-- END OF FILE -->
