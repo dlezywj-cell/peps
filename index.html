@@ -1,9 +1,10 @@
+<!-- START OF FILE - PORTED FROM REFERENCE CODE -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (参考代码移植版)</title>
+    <title>估值透视 (内核移植版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
@@ -276,19 +277,17 @@
     updateCloudStatus(ghConfig.token ? 'unknown' : 'offline');
     if(ghConfig.token) setTimeout(autoSyncFromCloud, 1000);
 
-    // --- 核心网络层：移植自"参考代码"的 JSONP 实现 ---
+    // --- 核心网络层：完全移植自您的参考代码 ---
     function jsonpRequest(url, callbackParamName = 'cb') {
         return new Promise((resolve, reject) => {
             const callbackName = 'jsonp_cb_' + Math.random().toString(36).substr(2, 9);
             const script = document.createElement('script');
             
-            // 超时控制
             const timeout = setTimeout(() => {
                 cleanup();
                 reject(new Error("请求超时"));
             }, 10000);
 
-            // 回调函数
             window[callbackName] = (data) => {
                 clearTimeout(timeout);
                 cleanup();
@@ -300,7 +299,6 @@
                 if (script.parentNode) script.parentNode.removeChild(script);
             }
 
-            // 拼接 URL
             const hasQuery = url.includes('?');
             script.src = `${url}${hasQuery ? '&' : '?'}${callbackParamName}=${callbackName}`;
             script.onerror = () => {
@@ -313,7 +311,18 @@
         });
     }
 
-    // --- 2. 搜索逻辑 (移植版) ---
+    // --- ID 转换逻辑 (核心修复：直接使用参考代码的算法) ---
+    // 这个函数确保 002050 被正确转换为 0.002050，并且兼容美股、港股
+    const getEmSecId = c => { 
+        if (!c) return "0.000000"; 
+        let raw = c.replace(/\.[A-Z]+$/, '');
+        if (/^\d{5}$/.test(raw)) return '116.' + raw.padStart(5, '0'); // 港股
+        if (c.includes('.US')) return '105.' + raw; // 美股初步
+        if (raw.startsWith('6')) return '1.' + raw; // 沪市
+        return '0.' + raw; // 深市
+    };
+
+    // --- 2. 搜索逻辑 (已更新) ---
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
@@ -328,16 +337,21 @@
             
             if(json?.QuotationCodeTable?.Data?.length > 0) {
                 const item = json.QuotationCodeTable.Data[0];
-                let secId = '';
+                let suffix = "";
+                // 补全后缀以便 getEmSecId 正确识别
+                if (/^\d{5}$/.test(item.Code)) suffix = item.Code.startsWith('6') ? ".SH" : ".SZ"; 
+                else if (!/^\d+$/.test(item.Code)) suffix = ".US"; 
+                else { 
+                    if(item.MarketType == "1") suffix = ".SH"; 
+                    else if(item.MarketType == "2") suffix = ".SZ"; 
+                    else if(item.MarketType == "5") suffix = ".HK"; 
+                }
                 
-                // 优先使用 QuoteID
-                if(item.QuoteID) secId = item.QuoteID;
-                else if(item.MarketType == "1") secId = `1.${item.Code}`; 
-                else if(item.MarketType == "2") secId = `0.${item.Code}`; 
-                else if(item.Code.startsWith('6')) secId = `1.${item.Code}`; 
-                else secId = `0.${item.Code}`; 
+                const fullCode = item.Code + suffix;
+                // 使用参考代码的转换逻辑计算 SecId
+                const secId = getEmSecId(fullCode);
 
-                currentStock = { code: item.Code, name: item.Name, secId };
+                currentStock = { code: fullCode, name: item.Name, secId: secId };
                 document.getElementById('btn-run').disabled = false;
                 showToast(`✅ 已锁定: ${item.Name}`, 'ok');
                 debugLog(`锁定股票: ${item.Name} (${secId})`, 'success');
@@ -361,14 +375,10 @@
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
             
-            // 并行获取
             await Promise.all([fetchShares(), fetchKline(beg, end)]);
             if(globalData.length === 0) throw new Error("该时间段无股价数据");
 
-            // 获取财报
             let finMap = await fetchHistoricalFinancials(currentStock);
-
-            // 整合数据
             const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0,4))));
             const sortedYears = Array.from(yearsSet).sort((a,b) => a-b);
             let missingYears = [];
@@ -376,10 +386,7 @@
             for (let year of sortedYears) {
                 const savedData = getFromDB(currentStock.code, year);
                 if (savedData) {
-                    finMap[year] = { 
-                        year: year, rev: savedData.rev, prof: savedData.prof, 
-                        source: 'manual', name: `★${year}手动` 
-                    };
+                    finMap[year] = { year: year, rev: savedData.rev, prof: savedData.prof, source: 'manual', name: `★${year}手动` };
                 } else if (!finMap[year]) {
                     const currentYear = new Date().getFullYear();
                     if(year < currentYear) missingYears.push(year);
@@ -438,12 +445,11 @@
         });
     }
 
-    // --- 数据源 (核心修复：移植自参考代码) ---
+    // --- 核心修复：完全模仿参考代码的 K 线获取逻辑 ---
     
     // 1. 获取股本
     async function fetchShares() {
         try {
-            // Push2 接口在您的环境下一直稳定
             const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
             const json = await jsonpRequest(url, 'cb'); 
             currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json?.data?.f2) || 0;
@@ -455,28 +461,26 @@
         }
     }
     
-    // 2. 获取K线 (移植自参考代码的 fetchHistoryKline 逻辑)
+    // 2. 获取K线 (完全移植)
     async function fetchKline(beg, end) {
-        // 使用 push2his
-        const secId = currentStock.secId;
-        // 注意 fields1=f1，这正是参考代码成功的关键
+        // 使用与参考代码完全一致的字段配置：fields1=f1 (这很关键!)
         let baseParams = `fields1=f1&fields2=f51,f53&klt=101&beg=${beg}&end=${end}`;
-        let url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&${baseParams}&fqt=1`;
+        let url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&${baseParams}&fqt=1`;
 
         try {
             // 尝试1: 前复权 (fqt=1)
             let json = await jsonpRequest(url);
             let data = json?.data?.klines || [];
 
-            // 尝试2: 不复权 (fqt=0) - 兜底
+            // 尝试2: 降级尝试不复权 (fqt=0) - 模仿参考代码的 fallback
             if (data.length === 0) {
-                 let url2 = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&${baseParams}&fqt=0`;
+                 let url2 = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&${baseParams}&fqt=0`;
                  let json2 = await jsonpRequest(url2);
                  data = json2?.data?.klines || [];
             }
 
-            // 尝试3: 美股代码修正 (105 -> 106) - 兜底
-            if (data.length === 0 && secId.startsWith('105.')) {
+            // 尝试3: 美股修正 (105 -> 106) - 模仿参考代码
+            if (data.length === 0 && currentStock.secId.startsWith('105.')) {
                 let altUrl = url.replace('105.', '106.');
                 let j3 = await jsonpRequest(altUrl);
                 let d3 = j3?.data?.klines || [];
@@ -484,7 +488,7 @@
             }
 
             if (data.length === 0) throw new Error("无K线数据");
-            
+
             globalData = data.map(k => { 
                 const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; 
             });
@@ -499,7 +503,7 @@
     // 3. 获取财报
     async function fetchHistoricalFinancials(stockObj) {
         let map = {};
-        const code = stockObj.code;
+        const code = stockObj.code.replace(/\.[A-Z]+$/, ''); // 去掉后缀用于财报查询
         let reportName = 'RPT_LICO_FN_CPD'; 
         let filterStr = `(SECURITY_CODE="${code}")`;
         let fieldRev = 'TOTAL_OPERATE_INCOME'; 
@@ -705,3 +709,4 @@
 </script>
 </body>
 </html>
+<!-- END OF FILE -->
