@@ -1,10 +1,10 @@
-<!-- START OF FILE - PRODUCTION VERSION (VERIFIED ENGINE) -->
+<!-- START OF FILE - FINAL SYNC FIX -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (最终验证版)</title>
+    <title>估值透视 (同步修复版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
@@ -132,7 +132,7 @@
 <div class="container">
     <header>
         <div class="top-bar">
-            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(最终验证版)</span></h2>
+            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(同步修复版)</span></h2>
             <div class="net-status">
                 <div class="badge badge-data" title="无需VPN，直接连接东方财富">
                     <div class="dot"></div> 数据直连
@@ -232,6 +232,7 @@
             </div>
         </div>
         <div class="modal-footer">
+             <button class="btn-block btn-primary" onclick="autoSyncFromCloud(true)" style="background:#f39c12; border:none;">🔄 立即从云端拉取</button>
             <button class="btn-block btn-confirm" onclick="saveConfig()">保存并连接</button>
         </div>
     </div>
@@ -277,41 +278,21 @@
     updateCloudStatus(ghConfig.token ? 'unknown' : 'offline');
     if(ghConfig.token) setTimeout(autoSyncFromCloud, 1000);
 
-    // --- 核心网络层：使用刚才诊断成功的逻辑 ---
+    // --- 核心网络层 ---
     function jsonpRequest(url, callbackParamName = 'cb') {
         return new Promise((resolve, reject) => {
             const callbackName = 'jsonp_cb_' + Math.random().toString(36).substr(2, 9);
             const script = document.createElement('script');
-            
-            const timeout = setTimeout(() => {
-                cleanup();
-                reject(new Error("请求超时"));
-            }, 10000);
-
-            window[callbackName] = (data) => {
-                clearTimeout(timeout);
-                cleanup();
-                resolve(data);
-            };
-
-            function cleanup() {
-                delete window[callbackName];
-                if (script.parentNode) script.parentNode.removeChild(script);
-            }
-
+            const timeout = setTimeout(() => { cleanup(); reject(new Error("请求超时")); }, 10000);
+            window[callbackName] = (data) => { clearTimeout(timeout); cleanup(); resolve(data); };
+            function cleanup() { delete window[callbackName]; if (script.parentNode) script.parentNode.removeChild(script); }
             const hasQuery = url.includes('?');
             script.src = `${url}${hasQuery ? '&' : '?'}${callbackParamName}=${callbackName}`;
-            script.onerror = () => {
-                clearTimeout(timeout);
-                cleanup();
-                reject(new Error("JSONP Load Failed"));
-            };
-
+            script.onerror = () => { clearTimeout(timeout); cleanup(); reject(new Error("JSONP Load Failed")); };
             document.body.appendChild(script);
         });
     }
 
-    // --- ID 转换逻辑 (诊断版使用的算法) ---
     const getEmSecId = c => { 
         if (!c) return "0.000000"; 
         let raw = c.replace(/\.[A-Z]+$/, '');
@@ -328,16 +309,13 @@
         const btn = document.getElementById('btnSearch');
         const originalText = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        
         try {
             debugLog(`正在搜索: ${val}`);
             const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14,31,41&token=D43BF722C8E33BD5D50F639205545E43`;
             const json = await jsonpRequest(url, 'cb');
-            
             if(json?.QuotationCodeTable?.Data?.length > 0) {
                 const item = json.QuotationCodeTable.Data[0];
                 let suffix = "";
-                // 补全后缀，确保 SecID 计算正确
                 if (/^\d{5}$/.test(item.Code)) suffix = item.Code.startsWith('6') ? ".SH" : ".SZ"; 
                 else if (!/^\d+$/.test(item.Code)) suffix = ".US"; 
                 else { 
@@ -345,34 +323,24 @@
                     else if(item.MarketType == "2") suffix = ".SZ"; 
                     else if(item.MarketType == "5") suffix = ".HK"; 
                 }
-                
                 const fullCode = item.Code + suffix;
                 const secId = getEmSecId(fullCode);
-
                 currentStock = { code: fullCode, name: item.Name, secId: secId };
                 document.getElementById('btn-run').disabled = false;
                 showToast(`✅ 已锁定: ${item.Name}`, 'ok');
                 debugLog(`锁定股票: ${item.Name} (${secId})`, 'success');
-            } else {
-                showToast("❌ 未找到股票", 'error');
-            }
-        } catch(e) { 
-            showToast(`❌ 搜索失败`, 'error'); 
-        } finally {
-            btn.innerHTML = originalText;
-        }
+            } else { showToast("❌ 未找到股票", 'error'); }
+        } catch(e) { showToast(`❌ 搜索失败`, 'error'); } finally { btn.innerHTML = originalText; }
     }
 
     // --- 3. 分析主逻辑 ---
     async function runAnalysis(silent = false) {
         const btn = document.getElementById('btn-run');
         if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
-        
         try {
             debugLog("🚀 开始获取数据...");
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
-            
             await Promise.all([fetchShares(), fetchKline(beg, end)]);
             if(globalData.length === 0) throw new Error("该时间段无股价数据");
 
@@ -404,20 +372,12 @@
                     triggerSync();
                 }
             }
-
             calculate(finMap);
             drawChart();
             renderTable();
             if(!silent) showToast("计算完成", 'ok');
             debugLog("✅ 分析完成", 'success');
-            
-        } catch(e) {
-            console.error(e);
-            if(!silent) showToast(e.message, 'error');
-            debugLog(`❌ 错误: ${e.message}`, 'error');
-        } finally {
-            if(!silent) { btn.disabled = false; btn.innerHTML = '⚡ 计算'; }
-        }
+        } catch(e) { console.error(e); if(!silent) showToast(e.message, 'error'); debugLog(`❌ 错误: ${e.message}`, 'error'); } finally { if(!silent) { btn.disabled = false; btn.innerHTML = '⚡ 计算'; } }
     }
 
     function calculate(finMap) {
@@ -425,27 +385,14 @@
             const y = parseInt(item.date.substring(0,4));
             let fin = finMap[y];
             if(!fin && finMap[y-1]) fin = finMap[y-1]; 
-
             if(fin) {
                 const mktCap = item.price * currentTotalShares;
-                return {
-                    ...item,
-                    year: fin.year,
-                    sourceType: fin.source,
-                    sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name,
-                    mktCap, rev: fin.rev, prof: fin.prof,
-                    pe: fin.prof>0 ? mktCap/fin.prof : -1,
-                    ps: fin.rev>0 ? mktCap/fin.rev : 0
-                };
-            } else {
-                return { ...item, pe: null, ps: null };
-            }
+                return { ...item, year: fin.year, sourceType: fin.source, sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name, mktCap, rev: fin.rev, prof: fin.prof, pe: fin.prof>0 ? mktCap/fin.prof : -1, ps: fin.rev>0 ? mktCap/fin.rev : 0 };
+            } else { return { ...item, pe: null, ps: null }; }
         });
     }
 
-    // --- 核心修复：完全移植诊断成功的 K 线获取逻辑 ---
-    
-    // 1. 获取股本
+    // --- 数据源 ---
     async function fetchShares() {
         try {
             const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
@@ -453,34 +400,32 @@
             currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json?.data?.f2) || 0;
             if(!currentTotalShares) throw new Error("股本为0");
             debugLog(`股本: ${(currentTotalShares/1e8).toFixed(2)}亿`, 'success');
-        } catch(e) { 
-            currentTotalShares = 1e8; 
-            debugLog("股本获取警告: 使用默认值1亿", 'warn');
-        }
+        } catch(e) { currentTotalShares = 1e8; debugLog("股本获取警告: 使用默认值1亿", 'warn'); }
     }
     
-    // 2. 获取K线 (方案A逻辑)
     async function fetchKline(beg, end) {
-        // 使用诊断代码中验证成功的 URL 结构
-        // 关键点：push2his 域名 + fields1=f1 (极简字段)
-        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
-        
+        let baseParams = `fields1=f1&fields2=f51,f53&klt=101&beg=${beg}&end=${end}`;
+        let url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&${baseParams}&fqt=1`;
         try {
-            const json = await jsonpRequest(url, 'cb');
-            if (!json?.data?.klines) throw new Error("无K线数据");
-            
-            globalData = json.data.klines.map(k => { 
-                const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; 
-            });
+            let json = await jsonpRequest(url, 'cb');
+            let data = json?.data?.klines || [];
+            if (data.length === 0) {
+                 let url2 = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&${baseParams}&fqt=0`;
+                 let json2 = await jsonpRequest(url2);
+                 data = json2?.data?.klines || [];
+            }
+            if (data.length === 0 && currentStock.secId.startsWith('105.')) {
+                let altUrl = url.replace('105.', '106.');
+                let j3 = await jsonpRequest(altUrl);
+                let d3 = j3?.data?.klines || [];
+                if(d3.length > 0) data = d3;
+            }
+            if (data.length === 0) throw new Error("无K线数据");
+            globalData = data.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
             debugLog(`股价获取成功: ${globalData.length}条`, 'success');
-
-        } catch (e) {
-            debugLog(`K线获取失败: ${e.message}`, 'error');
-            throw e;
-        }
+        } catch (e) { debugLog(`K线获取失败: ${e.message}`, 'error'); throw e; }
     }
 
-    // 3. 获取财报
     async function fetchHistoricalFinancials(stockObj) {
         let map = {};
         const code = stockObj.code.replace(/\.[A-Z]+$/, ''); 
@@ -488,11 +433,9 @@
         let filterStr = `(SECURITY_CODE="${code}")`;
         let fieldRev = 'TOTAL_OPERATE_INCOME'; 
         let fieldProf = 'PARENT_NETPROFIT';
-        
         try {
             const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=50&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB`;
             const json = await jsonpRequest(url, 'callback'); 
-            
             if(json?.result?.data) {
                 json.result.data.forEach(item => {
                     const d = item.REPORT_DATE || item.REPORTDATE;
@@ -549,8 +492,11 @@
         }
     }
 
+    // --- 同步逻辑核心修复 ---
     function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
-    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
+    // 修复：在解码前去掉所有空格和换行符，防止 GitHub 返回的长串 Base64 导致 atob 报错
+    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str.replace(/\s/g, '')))); }
+    
     function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
     function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
     
@@ -589,22 +535,59 @@
         localStorage.setItem('stock_user', ghConfig.user);
         localStorage.setItem('stock_repo', ghConfig.repo);
         closeSettings(); 
-        autoSyncFromCloud();
+        autoSyncFromCloud(true);
     };
 
-    async function autoSyncFromCloud() {
+    // 智能合并：保留最新时间戳的数据
+    function deepMergeDB(local, cloud) {
+        let merged = { ...local };
+        for (let code in cloud) {
+            if (!merged[code]) {
+                merged[code] = cloud[code];
+            } else {
+                for (let year in cloud[code]) {
+                    const lData = merged[code][year];
+                    const cData = cloud[code][year];
+                    // 如果本地没有，或者云端的时间戳更新，则使用云端数据
+                    if (!lData || (cData.timestamp > (lData.timestamp || 0))) {
+                        merged[code][year] = cData;
+                    }
+                }
+            }
+        }
+        return merged;
+    }
+
+    async function autoSyncFromCloud(force = false) {
         if (!ghConfig.token) return;
         updateCloudStatus('syncing');
+        debugLog("正在连接 GitHub (需VPN)...");
         try {
             const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
             const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+            
             if (res.ok) {
                 const data = await res.json();
-                const cloudDB = JSON.parse(b64_to_utf8(data.content));
-                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
+                const cloudContent = b64_to_utf8(data.content);
+                let cloudDB = {};
+                try { cloudDB = JSON.parse(cloudContent); } catch(e) { console.error("Parse Cloud DB Error", e); }
+                
+                // 执行智能合并
+                const localDB = getLocalDB();
+                const mergedDB = deepMergeDB(localDB, cloudDB);
+                
+                localStorage.setItem(DB_KEY, JSON.stringify(mergedDB));
                 updateCloudStatus('online');
-            } else updateCloudStatus('error');
-        } catch (e) { updateCloudStatus('error'); }
+                debugLog("GitHub 同步成功", 'success');
+                if(force) showToast("已从云端拉取最新数据", 'ok');
+            } else {
+                updateCloudStatus('error');
+                debugLog("GitHub 连接失败: " + res.status, 'error');
+            }
+        } catch (e) { 
+            updateCloudStatus('error'); 
+            debugLog("GitHub 连接超时 (请检查VPN)", 'error');
+        }
     }
 
     function triggerSync() {
@@ -616,11 +599,12 @@
                 const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
                 const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
                 let sha = getRes.ok ? (await getRes.json()).sha : null;
+                
                 const putRes = await fetch(url, {
                     method: 'PUT',
                     headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        message: `Update ${currentStock.code}`, 
+                        message: `Update ${currentStock.code} ${new Date().toISOString().split('T')[0]}`, 
                         content: utf8_to_b64(JSON.stringify(getLocalDB())), 
                         sha: sha 
                     })
