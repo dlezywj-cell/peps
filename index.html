@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (极速版)</title>
+    <title>估值透视 (批量录入极速版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
@@ -55,14 +55,18 @@
         .status-msg.error { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
         .status-msg.warn { color: #d48806; border-color: #ffe58f; background: #fffbe6; }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
-        .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); animation: popIn 0.2s ease-out; }
+        /* 批量录入 Modal 样式调整 */
+        .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 95%; max-width: 400px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); animation: popIn 0.2s ease-out; display:flex; flex-direction:column; max-height: 85vh; }
         @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .modal-header { font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #333; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        .modal-body { display: flex; flex-direction: column; gap: 12px; }
-        .form-row label { display: block; margin-bottom: 5px; font-size: 12px; color: #666; font-weight: 600; }
-        .form-row input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
-        .form-row input:focus { border-color: var(--primary); outline: none; }
-        .modal-footer { margin-top: 20px; display: flex; gap: 10px; }
+        .modal-header { font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #333; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; flex-shrink: 0;}
+        .modal-body { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; padding-right: 5px; }
+        .batch-row { background: #f9f9f9; padding: 12px; border-radius: 6px; border: 1px solid #eee; }
+        .batch-row-header { font-weight: 700; margin-bottom: 8px; color: var(--primary); display: flex; justify-content: space-between; font-size: 14px; }
+        .batch-inputs { display: flex; gap: 10px; }
+        .form-col { flex: 1; }
+        .form-col label { display: block; margin-bottom: 4px; font-size: 11px; color: #666; }
+        .form-col input { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+        .modal-footer { margin-top: 15px; display: flex; gap: 10px; flex-shrink: 0; }
         .btn-block { flex: 1; padding: 10px; border-radius: 4px; font-weight: 600; cursor: pointer; border:none; }
         .btn-cancel { background: #f5f5f5; color: #666; border: 1px solid #eee; }
         .btn-confirm { background: var(--primary); color: #fff; }
@@ -119,20 +123,20 @@
     </div>
 </div>
 
+<!-- 批量录入 Modal -->
 <div id="inputModal" class="modal-overlay">
     <div class="modal-box">
-        <div class="modal-header"><span>✍️ 录入 <span id="modalYear"></span>年 数据</span></div>
-        <div style="font-size:12px; color:#c0392b; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:12px;">
-            ⚠️ 缺失该年数据，请补充。
-            <br><span style="color:#666; font-weight:normal;">(点击取消将自动尝试沿用上一年)</span>
+        <div class="modal-header"><span>✍️ 补充预测数据</span></div>
+        <div style="font-size:12px; color:#c0392b; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:12px; flex-shrink:0;">
+            检测到以下年份缺失数据，请一次性补充。
+            <br><span style="color:#666; font-weight:normal;">(留空则自动尝试沿用上一年)</span>
         </div>
-        <div class="modal-body">
-            <div class="form-row"><label>预测营业收入 (亿元)</label><input type="number" id="inRev" placeholder="例如: 1500" inputmode="decimal"></div>
-            <div class="form-row"><label>预测净利润 (亿元)</label><input type="number" id="inProf" placeholder="例如: 800" inputmode="decimal"></div>
+        <div class="modal-body" id="batchContainer">
+            <!-- 动态生成 -->
         </div>
         <div class="modal-footer">
-            <button class="btn-block btn-cancel" onclick="closeInputModal(false)">取消</button>
-            <button class="btn-block btn-confirm" onclick="closeInputModal(true)">保存</button>
+            <button class="btn-block btn-cancel" onclick="closeInputModal(null)">取消</button>
+            <button class="btn-block btn-confirm" onclick="confirmBatchInput()">一键保存</button>
         </div>
     </div>
 </div>
@@ -157,14 +161,7 @@
     let chartInstance = null;
     let inputModalResolve = null;
     let syncTimer = null;
-    
-    // 缓存系统 (加速核心)
-    let APP_CACHE = {
-        key: '', // 缓存标识：code + startDate + endDate
-        kline: null,
-        shares: null,
-        financials: null
-    };
+    let APP_CACHE = { key: '', kline: null, shares: null, financials: null };
 
     const PROXY_URL = "https://stock-proxy.dlezywj.workers.dev/?";
     const DB_KEY = "stock_valuation_db_v1";
@@ -182,7 +179,6 @@
 
     if(ghConfig.token) setTimeout(autoSyncFromCloud, 200); else updateStatus('ready', '本地模式');
 
-    // --- 极速搜索 ---
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
@@ -195,12 +191,7 @@
             if(json?.QuotationCodeTable?.Data?.length > 0) {
                 const item = json.QuotationCodeTable.Data[0];
                 const secId = (item.MarketType == "1" || item.Code.startsWith('6')) ? `1.${item.Code}` : `0.${item.Code}`;
-                
-                // 切换股票时清空缓存
-                if(currentStock.code !== item.Code) {
-                    APP_CACHE = { key: '', kline: null, shares: null, financials: null };
-                }
-                
+                if(currentStock.code !== item.Code) APP_CACHE = { key: '', kline: null, shares: null, financials: null };
                 currentStock = { code: item.Code, name: item.Name, secId };
                 document.getElementById('btn-run').disabled = false;
                 showToast(`✅ 已锁定: ${item.Name}`, 'ok');
@@ -209,7 +200,6 @@
         } finally { document.getElementById('btnSearch').innerHTML = '🔍 搜索'; }
     }
 
-    // --- 极速计算 ---
     async function runAnalysis(silent = false) {
         const btn = document.getElementById('btn-run');
         if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
@@ -218,39 +208,29 @@
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
             const cacheKey = `${currentStock.code}_${beg}_${end}`;
-
-            // 1. 检查缓存 (如果缓存有效，直接跳过网络请求)
             let finMap = {};
             
             if (APP_CACHE.key === cacheKey && APP_CACHE.kline) {
                 globalData = APP_CACHE.kline;
                 currentTotalShares = APP_CACHE.shares;
-                finMap = JSON.parse(JSON.stringify(APP_CACHE.financials)); // 深拷贝防止污染缓存
+                finMap = JSON.parse(JSON.stringify(APP_CACHE.financials));
                 if(!silent) console.log("Using Cache");
             } else {
-                // 2. 并发请求 (极速模式: 同时发起3个请求)
                 if(!silent || globalData.length === 0) {
                     const [shareRes, klineRes, finRes] = await Promise.all([
-                        fetchShares(), 
-                        fetchKline(beg, end),
-                        fetchHistoricalFinancials(currentStock.code)
+                        fetchShares(), fetchKline(beg, end), fetchHistoricalFinancials(currentStock.code)
                     ]);
-                    
-                    // 写入缓存
-                    APP_CACHE.key = cacheKey;
-                    APP_CACHE.shares = currentTotalShares; // fetchShares 已更新此全局变量
-                    APP_CACHE.kline = globalData;          // fetchKline 已更新此全局变量
-                    APP_CACHE.financials = finRes;
+                    APP_CACHE = { key: cacheKey, shares: currentTotalShares, kline: globalData, financials: finRes };
                     finMap = JSON.parse(JSON.stringify(finRes));
                 }
             }
 
-            // 3. 融合本地/GitHub数据
             const realYears = Object.keys(finMap).map(Number);
             const maxRealYear = realYears.length > 0 ? Math.max(...realYears) : 0;
             const localDB = getLocalDB();
             const savedStockData = localDB[currentStock.code] || {};
 
+            // 加载本地/GitHub已存数据
             Object.keys(savedStockData).forEach(yStr => {
                 const y = parseInt(yStr);
                 const record = savedStockData[yStr];
@@ -264,34 +244,42 @@
                 }
             });
 
-            // 4. 弹窗检查 (仅检查当年)
+            // --- 核心修正：批量检测缺失年份 ---
             const currentYear = new Date().getFullYear();
+            const missingYears = [];
             
-            // 如果非静默模式，且该年比真实年报晚，且没有缓存的数据 -> 弹窗
-            if (!silent && currentYear > maxRealYear && !finMap[currentYear]) {
-                const manual = await openInputModal(currentYear);
-                if (manual) {
-                    await saveToDB(currentStock.code, currentYear, manual.rev, manual.prof);
+            // 从真实财报下一年开始，直到当前年份，全部检查
+            if (maxRealYear > 0) {
+                for (let y = maxRealYear + 1; y <= currentYear; y++) {
+                    if (!finMap[y]) missingYears.push({ year: y });
+                }
+            } else {
+                if (!finMap[currentYear]) missingYears.push({ year: currentYear });
+            }
+
+            if (!silent && missingYears.length > 0) {
+                // 一次性弹出批量录入框
+                const batchResult = await openBatchInputModal(missingYears);
+                if (batchResult) {
+                    // 原子化批量保存
+                    await saveBatchToDB(currentStock.code, batchResult);
+                    
+                    // 立即更新内存
                     const now = new Date();
-                    finMap[currentYear] = { 
-                        year: currentYear, rev: manual.rev, prof: manual.prof, source: 'manual', 
-                        name: `${now.getMonth()+1}-${now.getDate()}录入`
-                    };
+                    Object.keys(batchResult).forEach(yStr => {
+                        const y = parseInt(yStr);
+                        finMap[y] = { 
+                            year: y, rev: batchResult[y].rev, prof: batchResult[y].prof, source: 'manual', 
+                            name: `${now.getMonth()+1}-${now.getDate()}录入`
+                        };
+                    });
                 } else {
-                    showToast(`${currentYear}年未录入，回溯旧数据`, 'warn');
-                    // 取消后，无需网络请求，直接进入下一步计算，速度极快
+                    showToast('未录入，尝试沿用旧数据', 'warn');
                 }
             }
 
-            // 5. 计算与渲染 (渲染是耗时大户，已优化)
             calculate(finMap);
-            
-            // 使用 requestAnimationFrame 避免UI卡顿
-            requestAnimationFrame(() => {
-                drawChart();
-                renderTable(); // 内部已优化为只渲染最近数据
-            });
-
+            requestAnimationFrame(() => { drawChart(); renderTable(); });
             document.getElementById('stockInput').value = '';
             
         } catch(e) {
@@ -305,7 +293,6 @@
     function calculate(finMap) {
         const availableYears = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
         const minYear = availableYears[0];
-        // 纯内存计算，极快
         globalData = globalData.map(item => {
             const dateY = new Date(item.date).getFullYear();
             let effectiveFin = null, searchY = dateY;
@@ -328,7 +315,118 @@
         });
     }
 
-    // --- 数据获取 (返回数据而不修改全局，由调用者处理) ---
+    // --- Modal Logic ---
+    function openBatchInputModal(yearList) {
+        return new Promise((resolve) => {
+            const container = document.getElementById('batchContainer');
+            container.innerHTML = '';
+            yearList.forEach(item => {
+                const y = item.year;
+                const defRev = item.defRev ? (item.defRev/1e8) : '';
+                const defProf = item.defProf ? (item.defProf/1e8) : '';
+                container.innerHTML += `
+                    <div class="batch-row" data-year="${y}">
+                        <div class="batch-row-header"><span>${y}年</span></div>
+                        <div class="batch-inputs">
+                            <div class="form-col"><label>营收(亿)</label><input type="number" class="in-rev" value="${defRev}" placeholder="0" inputmode="decimal"></div>
+                            <div class="form-col"><label>净利(亿)</label><input type="number" class="in-prof" value="${defProf}" placeholder="0" inputmode="decimal"></div>
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('inputModal').style.display = 'flex';
+            inputModalResolve = resolve;
+        });
+    }
+
+    function confirmBatchInput() {
+        const result = {};
+        let hasData = false;
+        document.querySelectorAll('.batch-row').forEach(row => {
+            const y = parseInt(row.getAttribute('data-year'));
+            const r = parseFloat(row.querySelector('.in-rev').value);
+            const p = parseFloat(row.querySelector('.in-prof').value);
+            if (!isNaN(r) && !isNaN(p)) {
+                result[y] = { rev: r * 1e8, prof: p * 1e8 };
+                hasData = true;
+            }
+        });
+        document.getElementById('inputModal').style.display = 'none';
+        if(inputModalResolve) inputModalResolve(hasData ? result : null);
+    }
+    
+    function closeInputModal() {
+        document.getElementById('inputModal').style.display = 'none';
+        if(inputModalResolve) inputModalResolve(null);
+    }
+
+    // --- UI Utils for Single Edit ---
+    async function editYearData(year) {
+        // 复用批量弹窗，但只传一个年份
+        const saved = getFromDB(currentStock.code, year);
+        const batchResult = await openBatchInputModal([{ 
+            year: year, 
+            defRev: saved ? saved.rev : '', 
+            defProf: saved ? saved.prof : '' 
+        }]);
+        
+        if (batchResult) {
+            await saveBatchToDB(currentStock.code, batchResult);
+            runAnalysis(true);
+        }
+    }
+
+    // --- DB & Sync (Batch Optimized) ---
+    // 原子化批量保存：只读一次云端，只写一次云端
+    async function saveBatchToDB(code, dataMap) {
+        let localDB = getLocalDB();
+        if (!localDB[code]) localDB[code] = {};
+        
+        // 1. 更新本地
+        const now = Date.now();
+        Object.keys(dataMap).forEach(y => {
+            localDB[code][y] = { ...dataMap[y], timestamp: now };
+        });
+        localStorage.setItem(DB_KEY, JSON.stringify(localDB));
+
+        // 2. 更新云端 (Atomic Request)
+        if (ghConfig.token) {
+            clearTimeout(syncTimer);
+            updateStatus('syncing', '批量上传中');
+            try {
+                const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
+                const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+                
+                let finalDB = {}; let sha = null;
+                if (getRes.ok) { const d = await getRes.json(); sha = d.sha; finalDB = JSON.parse(b64_to_utf8(d.content)); } else { finalDB = localDB; }
+                
+                if (!finalDB[code]) finalDB[code] = {};
+                // 批量合并数据
+                Object.keys(dataMap).forEach(y => {
+                    finalDB[code][y] = { ...dataMap[y], timestamp: now };
+                });
+
+                const putRes = await fetch(url, { 
+                    method: 'PUT', 
+                    headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ 
+                        message: `Batch update ${code}`, 
+                        content: utf8_to_b64(JSON.stringify(finalDB)), 
+                        sha: sha 
+                    }) 
+                });
+                
+                if(putRes.ok) { 
+                    updateStatus('online', '已保存'); 
+                    localStorage.setItem(DB_KEY, JSON.stringify(finalDB)); 
+                } else { 
+                    updateStatus('error', '上传失败'); 
+                }
+            } catch(e) { updateStatus('error', '网络错误'); }
+        } else { showToast('已保存至本地', 'ok'); }
+    }
+
+    // --- Standard Helpers ---
     async function fetchShares() {
         try {
             const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`));
@@ -363,13 +461,10 @@
         } catch(e) {}
         return map;
     }
-
-    // --- DB & Sync ---
     function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
     function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
     function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
     function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
-
     async function autoSyncFromCloud() {
         if (!ghConfig.token) return;
         updateStatus('syncing', '同步中');
@@ -386,61 +481,12 @@
             else updateStatus('error', '失败');
         } catch (e) { updateStatus('error', '错误'); }
     }
-
-    async function saveToDB(code, year, rev, prof) {
-        let localDB = getLocalDB();
-        if (!localDB[code]) localDB[code] = {};
-        localDB[code][year] = { rev, prof, timestamp: Date.now() };
-        localStorage.setItem(DB_KEY, JSON.stringify(localDB));
-        
-        if (ghConfig.token) {
-            clearTimeout(syncTimer);
-            updateStatus('syncing', '准备上传');
-            try {
-                const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
-                const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-                let finalDB = {}; let sha = null;
-                if (getRes.ok) { const d = await getRes.json(); sha = d.sha; finalDB = JSON.parse(b64_to_utf8(d.content)); } else { finalDB = localDB; }
-                
-                if (!finalDB[code]) finalDB[code] = {};
-                finalDB[code][year] = { rev, prof, timestamp: Date.now() };
-                
-                const putRes = await fetch(url, { method: 'PUT', headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: `Update ${code} ${year}`, content: utf8_to_b64(JSON.stringify(finalDB)), sha: sha }) });
-                if(putRes.ok) { updateStatus('online', '已保存'); localStorage.setItem(DB_KEY, JSON.stringify(finalDB)); } else updateStatus('error', '上传失败');
-            } catch(e) { updateStatus('error', '网络错误'); }
-        } else { showToast('已保存至本地', 'ok'); }
-    }
-
-    // --- UI Utils ---
-    async function editYearData(year) {
-        const saved = getFromDB(currentStock.code, year);
-        const manual = await openInputModal(year, saved ? (saved.rev/1e8) : '', saved ? (saved.prof/1e8) : '');
-        if (manual) { await saveToDB(currentStock.code, year, manual.rev, manual.prof); runAnalysis(true); }
-    }
-    function openInputModal(year, defRev='', defProf='') {
-        return new Promise((resolve) => {
-            document.getElementById('modalYear').innerText = year;
-            document.getElementById('inRev').value = defRev;
-            document.getElementById('inProf').value = defProf;
-            document.getElementById('inputModal').style.display = 'flex'; 
-            inputModalResolve = resolve;
-        });
-    }
-    function closeInputModal(isConfirm) {
-        document.getElementById('inputModal').style.display = 'none';
-        const r = parseFloat(document.getElementById('inRev').value);
-        const p = parseFloat(document.getElementById('inProf').value);
-        if (isConfirm && inputModalResolve && !isNaN(r) && !isNaN(p)) inputModalResolve({ rev: r * 1e8, prof: p * 1e8 });
-        else if (inputModalResolve) inputModalResolve(null);
-    }
     function updateStatus(status, text) { document.getElementById('syncDot').className = 'sync-dot ' + status; document.getElementById('statusTxt').innerText = text; }
     function showToast(msg, type='ok') { const el = document.getElementById('toastMsg'); el.innerHTML = msg; el.className = `status-msg ${type}`; el.style.display = 'block'; setTimeout(() => el.style.display='none', 3000); }
     window.showSettings = () => { document.getElementById('settingModal').style.display = 'flex'; document.getElementById('cfgToken').value = ghConfig.token; document.getElementById('cfgUser').value = ghConfig.user; document.getElementById('cfgRepo').value = ghConfig.repo; };
     window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
     window.saveConfig = () => { ghConfig.token = document.getElementById('cfgToken').value.trim(); ghConfig.user = document.getElementById('cfgUser').value.trim(); ghConfig.repo = document.getElementById('cfgRepo').value.trim(); localStorage.setItem('gh_token', ghConfig.token); localStorage.setItem('gh_user', ghConfig.user); localStorage.setItem('gh_repo', ghConfig.repo); closeSettings(); autoSyncFromCloud(); };
     function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
-
-    // --- Chart & Table Optimized ---
     const verticalLinePlugin = { id: 'verticalLine', afterDraw: (chart) => { if (chart.tooltip?._active?.length) { const ctx = chart.ctx; const activePoint = chart.tooltip._active[0]; const x = activePoint.element.x; const bottom = chart.chartArea.bottom; ctx.save(); ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = '#666'; ctx.moveTo(x, chart.chartArea.top); ctx.lineTo(x, bottom); ctx.stroke(); const dateStr = chart.data.labels[activePoint.index]; ctx.font = '11px Arial'; ctx.fillStyle = '#666'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(dateStr, x, bottom + 6); ctx.restore(); } } };
 
     function drawChart() {
@@ -468,29 +514,19 @@
 
     function renderTable() {
         const tbody = document.querySelector('#dataTable tbody');
-        // 渲染优化：只渲染最近的 250 条数据 (约1年)，避免DOM操作过多导致页面卡顿
-        // 之前的代码渲染了 1500+ 条，是导致“点击取消慢”的元凶
         const renderList = [...globalData].reverse().slice(0, 250);
-        
-        let html = ''; // 构建大字符串一次性插入，比逐条插入快
+        let html = '';
         renderList.forEach(d => {
             const peStr = d.pe ? (d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>') : '-';
             const psStr = d.ps ? d.ps.toFixed(2) : '-';
-            
-            let tagClass = 'tag-real';
-            let editAttr = '';
-            let editIcon = '';
+            let tagClass = 'tag-real'; let editAttr = ''; let editIcon = '';
             if (d.sourceType === 'manual') { tagClass = 'tag-manual'; editAttr = `onclick="editYearData(${d.year})"`; editIcon = ' ✎'; }
             else if (d.sourceType === 'copy') { tagClass = 'tag-copy'; editAttr = `onclick="editYearData(${d.rowYear})"`; editIcon = ' ✎'; }
             const sourceText = d.sourceName || '-';
-
             html += `<tr><td>${d.date}</td><td>${d.price.toFixed(2)}</td><td><span class="tag ${tagClass}" ${editAttr} title="点击修改">${sourceText}${editIcon}</span></td><td>${d.mktCap ? (d.mktCap/1e8).toFixed(2) : '-'}</td><td>${d.rev ? (d.rev/1e8).toFixed(2) : '-'}</td><td class="${d.prof>0?'':'loss'}">${d.prof ? (d.prof/1e8).toFixed(2) : '-'}</td><td class="val-pe">${peStr}</td><td class="val-ps">${psStr}</td></tr>`;
         });
         tbody.innerHTML = html;
-        
-        if (globalData.length > 250) {
-            tbody.innerHTML += `<tr><td colspan="8" style="text-align:center; color:#999;">... 更多历史数据请在图表中查看 ...</td></tr>`;
-        }
+        if (globalData.length > 250) tbody.innerHTML += `<tr><td colspan="8" style="text-align:center; color:#999;">... 更多历史数据请在图表中查看 ...</td></tr>`;
     }
 </script>
 </body>
