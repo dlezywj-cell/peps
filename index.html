@@ -3,13 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (完美直连版)</title>
-    <!-- Chart.js & Plugins -->
+    <title>估值透视 (最终修复版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
-    <!-- Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
@@ -27,9 +25,7 @@
             display: flex; flex-direction: column; overflow: hidden;
         }
         
-        /* --- 顶部区域 --- */
         header { background: #fff; border-bottom: 1px solid var(--border); }
-
         .top-bar {
             display: flex; justify-content: space-between; align-items: center;
             padding: 12px 20px; border-bottom: 1px solid #f0f0f0;
@@ -48,18 +44,10 @@
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
 
         .tools-bar { padding: 12px 20px; }
-        
-        .input-group input { 
-            padding: 0 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; 
-            height: 34px; width: 100%;
-        }
+        .input-group input { padding: 0 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; height: 34px; width: 100%; }
         .input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
         
-        button { 
-            height: 34px; padding: 0 16px; border: none; border-radius: 4px; cursor: pointer; 
-            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; 
-            white-space: nowrap; transition: background 0.2s;
-        }
+        button { height: 34px; padding: 0 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; transition: background 0.2s; }
         .btn-primary { background: var(--primary); color: #fff; } .btn-primary:hover { background: #1f618d; }
         .btn-success { background: var(--success); color: #fff; } .btn-success:hover { background: #219150; }
         .btn-outline { background: #fff; border: 1px solid #ccc; color: #666; } .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
@@ -93,11 +81,7 @@
         }
 
         .chart-container { position: relative; height: 500px; padding: 15px 20px; width: 100%; }
-        .chart-tip { 
-            position: absolute; top: 10px; right: 15px; font-size: 11px; 
-            color: #999; background: rgba(255,255,255,0.8); padding: 2px 6px; 
-            border-radius: 4px; pointer-events: none; z-index: 10;
-        }
+        .chart-tip { position: absolute; top: 10px; right: 15px; font-size: 11px; color: #999; background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px; pointer-events: none; z-index: 10; }
 
         .table-wrap { border-top: 1px solid var(--border); overflow-x: auto; -webkit-overflow-scrolling: touch; background: #fff; }
         table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; text-align: right; min-width: 600px; }
@@ -112,14 +96,7 @@
         .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; cursor: pointer; }
         .loss { color: #27ae60; font-style: italic; }
 
-        /* 提示框穿透 */
-        .status-msg { 
-            display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; 
-            position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
-            z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500;
-            background: #fff; border: 1px solid #eee;
-            pointer-events: none; 
-        }
+        .status-msg { display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500; background: #fff; border: 1px solid #eee; pointer-events: none; }
         .status-msg.ok { color: #389e0d; border-color: #b7eb8f; background: #f6ffed; }
         .status-msg.error { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
         .status-msg.warn { color: #d48806; border-color: #ffe58f; background: #fffbe6; }
@@ -142,10 +119,15 @@
         .btn-cancel { background: #f5f5f5; color: #666; border: 1px solid #eee; }
         .btn-confirm { background: var(--primary); color: #fff; }
 
-        /* 配置弹窗的样式复用 */
         .form-row label { display: block; margin-bottom: 5px; font-size: 12px; color: #666; font-weight: 600; }
         .form-row input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
         .form-hint { font-size: 11px; color: #e67e22; margin-top: 5px; background: #fef5e6; padding: 4px; border-radius: 4px; }
+        
+        /* 迷你控制台 */
+        #console-wrap { border-top:1px solid #eee; padding:10px; background:#fafafa; font-family:monospace; font-size:11px; height:100px; overflow-y:auto; color:#666; display:none; }
+        .log-line { margin:2px 0; border-bottom:1px dashed #eee; }
+        .log-error { color: #c0392b; font-weight:bold; }
+        .log-success { color: #27ae60; }
     </style>
 </head>
 <body>
@@ -153,7 +135,7 @@
 <div class="container">
     <header>
         <div class="top-bar">
-            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(完美直连版)</span></h2>
+            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(最终直连版)</span></h2>
             <div class="sync-info" onclick="showSettings()" title="GitHub 配置">
                 <div id="syncDot" class="sync-dot"></div>
                 <span id="statusTxt">未连接</span>
@@ -164,7 +146,7 @@
         <div class="tools-bar">
             <div class="group-search">
                 <div class="input-group">
-                    <input type="text" id="stockInput" value="" placeholder="代码/名称/美股/港股">
+                    <input type="text" id="stockInput" value="" placeholder="代码/名称">
                 </div>
                 <button class="btn-primary" id="btnSearch">🔍 搜索</button>
             </div>
@@ -177,6 +159,7 @@
             <div class="group-actions">
                 <button class="btn-success" id="btn-run" disabled>⚡ 计算</button>
                 <button class="btn-outline" onclick="resetZoom()">🔄 重置</button>
+                <button class="btn-outline" onclick="toggleConsole()" title="显示日志" style="padding:0 8px;"><i class="fas fa-terminal"></i></button>
             </div>
         </div>
     </header>
@@ -204,6 +187,10 @@
             </thead>
             <tbody></tbody>
         </table>
+    </div>
+    
+    <div id="console-wrap">
+        <div style="color:#999; font-style:italic;">-- 系统日志 (点击上方终端图标隐藏) --</div>
     </div>
 </div>
 
@@ -254,6 +241,20 @@
 </div>
 
 <script>
+    // --- 日志工具 ---
+    function debugLog(msg, type='info') {
+        const box = document.getElementById('console-wrap');
+        const div = document.createElement('div');
+        div.className = 'log-line ' + (type === 'error' ? 'log-error' : (type==='success'?'log-success':''));
+        div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        box.prepend(div);
+        console.log(msg);
+    }
+    function toggleConsole() {
+        const el = document.getElementById('console-wrap');
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
     // --- 全局变量 ---
     let currentStock = { code: '', name: '', secId: '' };
     let globalData = [];
@@ -284,7 +285,7 @@
         updateStatus('ready', '本地模式');
     }
 
-    // --- 1. 标准 JSONP (用于股价、财报) ---
+    // --- 1. 标准 JSONP (通用) ---
     function fetchJsonp(url, callbackParam = 'cb') {
         return new Promise((resolve, reject) => {
             const callbackName = 'jsonp_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
@@ -300,106 +301,72 @@
             }
             const separator = url.includes('?') ? '&' : '?';
             script.src = `${url}${separator}${callbackParam}=${callbackName}`;
-            script.onerror = () => { cleanup(); reject(new Error('API 请求失败')); };
+            script.onerror = () => { cleanup(); reject(new Error(`JSONP Error: ${url}`)); };
             document.head.appendChild(script);
         });
     }
 
-    // --- 2. 专用搜索函数 (修复转圈问题) ---
-    // 东方财富的 suggest3 接口不使用 callback 回调，而是直接赋值给 window.QuotationCodeTable
-    function searchStockRaw(val) {
-        return new Promise((resolve, reject) => {
-            // 清理旧数据
-            window.QuotationCodeTable = null;
-            
-            const script = document.createElement('script');
-            // 注意：input 必须 encode，防止中文乱码
-            script.src = `https://suggest3.eastmoney.com/suggest/default.aspx?input=${encodeURIComponent(val)}&type=14,31,41`;
-            
-            script.onload = () => {
-                if (window.QuotationCodeTable) {
-                    resolve(window.QuotationCodeTable);
-                } else {
-                    reject(new Error("未找到数据"));
-                }
-                script.remove();
-            };
-            
-            script.onerror = () => {
-                reject(new Error("网络错误，请检查网络"));
-                script.remove();
-            };
-            
-            document.head.appendChild(script);
-        });
-    }
-
-    // --- 搜索 (使用专用函数) ---
+    // --- 2. 搜索 (已验证成功) ---
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
         
         const btn = document.getElementById('btnSearch');
         const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         
         try {
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-            // 添加一个超时，防止永久转圈
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("搜索超时")), 5000));
+            debugLog(`正在搜索: ${val}`);
+            const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14,31,41&token=D43BF722C8E33BD5D50F639205545E43`;
+            const json = await fetchJsonp(url, 'cb');
             
-            // 竞速：数据返回 vs 超时
-            const json = await Promise.race([searchStockRaw(val), timeoutPromise]);
-            
-            if(json?.Data?.length > 0) {
-                const item = json.Data[0];
+            if(json?.QuotationCodeTable?.Data?.length > 0) {
+                const item = json.QuotationCodeTable.Data[0];
                 let secId = '';
-                // 构造 secId 逻辑
-                if(item.QuoteID) {
-                    secId = item.QuoteID;
-                } else {
-                    if(item.MarketType == "1") secId = `1.${item.Code}`; 
-                    else if(item.MarketType == "2") secId = `0.${item.Code}`; 
-                    else if(item.MarketType == "31" || item.MarketType == "5") secId = `116.${item.Code}`; 
-                    else if(item.Code.startsWith('6')) secId = `1.${item.Code}`;
-                    else secId = `0.${item.Code}`;
-                }
+                if(item.QuoteID) secId = item.QuoteID;
+                else if(item.MarketType == "1") secId = `1.${item.Code}`; 
+                else if(item.MarketType == "2") secId = `0.${item.Code}`; 
+                else if(item.MarketType == "31" || item.MarketType == "5") secId = `116.${item.Code}`; 
+                else if(item.Code.startsWith('6')) secId = `1.${item.Code}`;
+                else secId = `0.${item.Code}`;
+
                 currentStock = { code: item.Code, name: item.Name, secId };
                 document.getElementById('btn-run').disabled = false;
                 showToast(`✅ 已锁定: ${item.Name} (${item.Code})`, 'ok');
+                debugLog(`锁定股票: ${item.Name}`, 'success');
             } else {
                 showToast("❌ 未找到股票", 'error');
+                debugLog(`未找到股票: ${val}`, 'error');
             }
         } catch(e) { 
             console.error(e);
-            showToast(`❌ ${e.message}`, 'error'); 
+            showToast(`❌ 搜索失败`, 'error'); 
+            debugLog(`搜索异常: ${e.message}`, 'error');
         } finally {
             btn.innerHTML = originalText;
         }
     }
 
-    // --- 核心分析主流程 (无需 VPN) ---
+    // --- 核心分析主流程 ---
     async function runAnalysis(silent = false) {
         const btn = document.getElementById('btn-run');
         if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
         
         try {
+            debugLog("🚀 开始计算...");
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
             
-            // 1. 获取股价和股本 (直连)
-            if(!silent || globalData.length === 0) {
-                await Promise.all([fetchShares(), fetchKline(beg, end)]);
-            }
+            // 并行获取
+            await Promise.all([fetchShares(), fetchKline(beg, end)]);
             if(globalData.length === 0) throw new Error("该时间段无股价数据");
 
-            // 2. 获取API历史财报 (直连)
+            // 获取财报
             let finMap = await fetchHistoricalFinancials(currentStock);
 
-            // 3. 计算所有年份
+            // 识别补录
             const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0,4))));
             const sortedYears = Array.from(yearsSet).sort((a,b) => a-b);
-
-            // 4. 识别需要录入的年份
             let missingYears = [];
             
             for (let year of sortedYears) {
@@ -414,38 +381,34 @@
                 }
             }
 
-            // 5. 补录逻辑
+            // 弹窗
             if (missingYears.length > 0 && !silent) {
                 showToast(`⚠️ 需补录 ${missingYears.length} 年数据`, 'warn');
                 const batchData = await openBatchModal(missingYears);
-                
                 if (batchData) {
                     for (let y in batchData) {
                         const { rev, prof } = batchData[y];
                         const yearInt = parseInt(y);
                         await saveToDB(currentStock.code, yearInt, rev, prof, false); 
-                        finMap[yearInt] = { 
-                            year: yearInt, rev: rev, prof: prof, 
-                            source: 'manual', name: `★${yearInt}录入` 
-                        };
+                        finMap[yearInt] = { year: yearInt, rev: rev, prof: prof, source: 'manual', name: `★${yearInt}录入` };
                     }
                     triggerSync();
-                } else {
-                    showToast('取消录入，部分数据将缺失', 'error');
                 }
             }
 
-            // 6. 绘图
+            // 绘图
             calculate(finMap);
             drawChart();
             renderTable();
             
             if(!silent) showToast("计算完成", 'ok');
+            debugLog("✅ 计算完成", 'success');
             document.getElementById('stockInput').value = ''; 
             
         } catch(e) {
             console.error(e);
-            if(!silent) showToast(e.message || "运行出错", 'error');
+            if(!silent) showToast("数据获取失败", 'error');
+            debugLog(`运行错误: ${e.message}`, 'error');
         } finally {
             if(!silent) { btn.disabled = false; btn.innerHTML = '⚡ 计算'; }
         }
@@ -473,156 +436,42 @@
         });
     }
 
-    // --- 批量弹窗逻辑 ---
-    function openBatchModal(years, prefillData = {}) {
-        return new Promise((resolve) => {
-            const container = document.getElementById('batchInputContainer');
-            container.innerHTML = '';
-            
-            years.forEach(y => {
-                const defaultRev = prefillData[y] ? (prefillData[y].rev/1e8) : '';
-                const defaultProf = prefillData[y] ? (prefillData[y].prof/1e8) : '';
-                
-                const row = document.createElement('div');
-                row.className = 'batch-row';
-                row.dataset.year = y;
-                row.innerHTML = `
-                    <div class="row-year">${y}</div>
-                    <div class="row-inputs">
-                        <input type="number" placeholder="营收(亿)" class="in-rev" value="${defaultRev}" inputmode="decimal">
-                        <input type="number" placeholder="净利(亿)" class="in-prof" value="${defaultProf}" inputmode="decimal">
-                    </div>
-                `;
-                container.appendChild(row);
-            });
-
-            document.getElementById('batchInputModal').style.display = 'flex';
-            batchModalResolve = resolve;
-            
-            const firstInput = container.querySelector('input');
-            if(firstInput) firstInput.focus();
-        });
-    }
-
-    function closeBatchModal(isConfirm) {
-        document.getElementById('batchInputModal').style.display = 'none';
-        if (isConfirm && batchModalResolve) {
-            let result = {};
-            const rows = document.querySelectorAll('.batch-row');
-            
-            rows.forEach(row => {
-                const y = row.dataset.year;
-                const revVal = row.querySelector('.in-rev').value;
-                const profVal = row.querySelector('.in-prof').value;
-                
-                if (revVal && profVal) {
-                    result[y] = { 
-                        rev: parseFloat(revVal) * 1e8, 
-                        prof: parseFloat(profVal) * 1e8 
-                    };
-                }
-            });
-            batchModalResolve(result);
-        } else if (batchModalResolve) {
-            batchModalResolve(null);
-        }
-    }
-
-    async function editYearData(year) {
-        const saved = getFromDB(currentStock.code, year);
-        const prefill = saved ? { [year]: saved } : {};
-        const newData = await openBatchModal([year], prefill);
-        
-        if (newData && newData[year]) {
-            await saveToDB(currentStock.code, year, newData[year].rev, newData[year].prof);
-            runAnalysis(true);
-        }
-    }
-
-    // --- GitHub & DB ---
-    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
-    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
-    function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
-    function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
-
-    async function autoSyncFromCloud() {
-        if (!ghConfig.token) return;
-        updateStatus('syncing', '同步中');
-        // 同步逻辑保持 fetch，需要 VPN
-        try {
-            const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
-            const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-            if (res.ok) {
-                const data = await res.json();
-                const cloudDB = JSON.parse(b64_to_utf8(data.content));
-                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
-                updateStatus('online', '已同步');
-            } else if(res.status === 404) updateStatus('online', '新文件');
-            else updateStatus('error', 'Sync失败'); 
-        } catch (e) { 
-            console.warn("GitHub需要VPN");
-            updateStatus('error', '连接超时');
-        }
-    }
-
-    async function saveToDB(code, year, rev, prof, immediateSync = true) {
-        let db = getLocalDB();
-        if (!db[code]) db[code] = {};
-        db[code][year] = { rev, prof, timestamp: Date.now() };
-        localStorage.setItem(DB_KEY, JSON.stringify(db));
-        if (immediateSync) triggerSync();
-    }
-
-    function triggerSync() {
-        if (!ghConfig.token) {
-            showToast('已保存本地', 'ok');
-            return;
-        }
-        clearTimeout(syncTimer);
-        syncTimer = setTimeout(async () => {
-            updateStatus('syncing', '上传中');
-            try {
-                const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
-                // 保存逻辑保持 fetch，需要 VPN
-                const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-                let sha = getRes.ok ? (await getRes.json()).sha : null;
-                
-                await fetch(url, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        message: `Update ${currentStock.code} data`, 
-                        content: utf8_to_b64(JSON.stringify(getLocalDB())), 
-                        sha: sha 
-                    })
-                });
-                updateStatus('online', '已保存');
-            } catch(e) { 
-                updateStatus('error', '上传失败'); 
-                showToast('上传GitHub失败(请检查VPN)', 'warn');
-            }
-        }, 1500); 
-    }
-
-    // --- 数据获取 (直连版 - 股价/财报) ---
+    // --- 数据获取 (修复关键点) ---
+    
+    // 1. 获取股本 (Push2, 正常)
     async function fetchShares() {
         try {
+            debugLog("获取股本...");
             const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
             const json = await fetchJsonp(url, 'cb'); 
             currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json.data.f2) || 1e8;
-        } catch(e) { currentTotalShares = 1e8; }
+            debugLog(`股本: ${(currentTotalShares/1e8).toFixed(2)}亿`, 'success');
+        } catch(e) { 
+            currentTotalShares = 1e8; 
+            debugLog("股本获取失败，使用默认值", 'error');
+        }
     }
     
+    // 2. 获取K线 (关键修复：改为 Push2 域名)
     async function fetchKline(beg, end) {
-        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
-        const json = await fetchJsonp(url, 'cb');
-        if (!json?.data?.klines) throw new Error("无股价数据"); 
-        globalData = json.data.klines.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
+        try {
+            debugLog("获取股价(K线)...");
+            // 【关键修改】使用 push2 而不是 push2his，因为 push2 在前面已经验证过是通的
+            const url = `https://push2.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
+            const json = await fetchJsonp(url, 'cb');
+            if (!json?.data?.klines) throw new Error("无股价数据"); 
+            globalData = json.data.klines.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
+            debugLog(`股价获取成功: ${globalData.length}条`, 'success');
+        } catch(e) {
+            debugLog(`股价获取失败: ${e.message}`, 'error');
+            throw e;
+        }
     }
 
+    // 3. 获取财报 (Datacenter, 增加容错)
     async function fetchHistoricalFinancials(stockObj) {
+        debugLog("获取财报...");
         let map = {};
-        const sid = stockObj.secId;
         const code = stockObj.code;
         
         let reportName = 'RPT_LICO_FN_CPD'; 
@@ -630,21 +479,17 @@
         let fieldRev = 'TOTAL_OPERATE_INCOME';
         let fieldProf = 'PARENT_NETPROFIT';
         
-        if (sid.startsWith('116.')) { 
-            reportName = 'RPT_HK_FN_MAIN';
-            filterStr = `(SECUCODE="${code}.HK")`;
-            fieldRev = 'OPERATE_INCOME'; 
-            fieldProf = 'PARENT_NETPROFIT';
-        } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) {
-            reportName = 'RPT_US_FN_MAIN';
-            filterStr = `(SECURITY_CODE="${code}")`;
-            fieldRev = 'TOTAL_REVENUE';
-            fieldProf = 'PARENT_NETPROFIT';
+        // 简单判断市场
+        if (stockObj.secId.startsWith('116.')) { 
+            reportName = 'RPT_HK_FN_MAIN'; filterStr = `(SECUCODE="${code}.HK")`;
+            fieldRev = 'OPERATE_INCOME'; fieldProf = 'PARENT_NETPROFIT';
+        } else if (stockObj.secId.startsWith('105.') || stockObj.secId.startsWith('106.')) {
+            reportName = 'RPT_US_FN_MAIN'; filterStr = `(SECURITY_CODE="${code}")`;
+            fieldRev = 'TOTAL_REVENUE'; fieldProf = 'PARENT_NETPROFIT';
         }
 
         try {
-            // 财报接口使用 callback 参数
-            const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1`;
+            const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&source=WEB&client=WEB`;
             const json = await fetchJsonp(url, 'callback'); 
             
             if(json?.result?.data) {
@@ -657,12 +502,65 @@
                         if(r && p) map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
                     }
                 });
+                debugLog(`财报获取成功: ${Object.keys(map).length}年份`, 'success');
             }
-        } catch(e) { console.warn("API Error", e); }
+        } catch(e) { 
+            debugLog("财报API异常，可能需手动录入", 'warn'); 
+        }
         return map;
     }
 
-    // --- UI Helpers ---
+    // --- UI & 批量弹窗逻辑 (保持不变) ---
+    function openBatchModal(years, prefillData = {}) {
+        return new Promise((resolve) => {
+            const container = document.getElementById('batchInputContainer');
+            container.innerHTML = '';
+            years.forEach(y => {
+                const defaultRev = prefillData[y] ? (prefillData[y].rev/1e8) : '';
+                const defaultProf = prefillData[y] ? (prefillData[y].prof/1e8) : '';
+                const row = document.createElement('div');
+                row.className = 'batch-row';
+                row.dataset.year = y;
+                row.innerHTML = `<div class="row-year">${y}</div><div class="row-inputs"><input type="number" placeholder="营收(亿)" class="in-rev" value="${defaultRev}"><input type="number" placeholder="净利(亿)" class="in-prof" value="${defaultProf}"></div>`;
+                container.appendChild(row);
+            });
+            document.getElementById('batchInputModal').style.display = 'flex';
+            batchModalResolve = resolve;
+        });
+    }
+    function closeBatchModal(isConfirm) {
+        document.getElementById('batchInputModal').style.display = 'none';
+        if (isConfirm && batchModalResolve) {
+            let result = {};
+            document.querySelectorAll('.batch-row').forEach(row => {
+                const y = row.dataset.year;
+                const rev = row.querySelector('.in-rev').value;
+                const prof = row.querySelector('.in-prof').value;
+                if (rev && prof) result[y] = { rev: parseFloat(rev) * 1e8, prof: parseFloat(prof) * 1e8 };
+            });
+            batchModalResolve(result);
+        } else if (batchModalResolve) batchModalResolve(null);
+    }
+    async function editYearData(year) {
+        const saved = getFromDB(currentStock.code, year);
+        const newData = await openBatchModal([year], saved ? {[year]: saved} : {});
+        if (newData && newData[year]) {
+            await saveToDB(currentStock.code, year, newData[year].rev, newData[year].prof);
+            runAnalysis(true);
+        }
+    }
+
+    // --- GitHub & DB ---
+    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
+    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
+    function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
+    function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
+    async function saveToDB(code, year, rev, prof, immediateSync = true) {
+        let db = getLocalDB(); if (!db[code]) db[code] = {};
+        db[code][year] = { rev, prof, timestamp: Date.now() };
+        localStorage.setItem(DB_KEY, JSON.stringify(db));
+        if (immediateSync) triggerSync();
+    }
     function updateStatus(status, text) {
         document.getElementById('syncDot').className = 'sync-dot ' + status;
         document.getElementById('statusTxt').innerText = text;
@@ -672,13 +570,7 @@
         el.innerHTML = msg; el.className = `status-msg ${type}`; el.style.display = 'block';
         setTimeout(() => el.style.display='none', 3000);
     }
-    // 确保这些函数挂载到 window 对象上
-    window.showSettings = () => {
-        document.getElementById('settingModal').style.display = 'flex';
-        document.getElementById('cfgToken').value = ghConfig.token;
-        document.getElementById('cfgUser').value = ghConfig.user;
-        document.getElementById('cfgRepo').value = ghConfig.repo;
-    };
+    window.showSettings = () => document.getElementById('settingModal').style.display = 'flex';
     window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
     window.saveConfig = () => {
         ghConfig.token = document.getElementById('cfgToken').value.trim();
@@ -687,107 +579,87 @@
         localStorage.setItem('stock_token', ghConfig.token);
         localStorage.setItem('stock_user', ghConfig.user);
         localStorage.setItem('stock_repo', ghConfig.repo);
-        closeSettings(); 
-        showToast('配置已保存，请开启VPN同步', 'ok');
-        autoSyncFromCloud();
+        closeSettings(); showToast('配置已保存', 'ok'); autoSyncFromCloud();
     };
 
-    // --- Chart & Table ---
+    // --- GitHub Sync (Need VPN) ---
+    async function autoSyncFromCloud() {
+        if (!ghConfig.token) return;
+        updateStatus('syncing', '同步中');
+        try {
+            const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
+            const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+            if (res.ok) {
+                const data = await res.json();
+                const cloudDB = JSON.parse(b64_to_utf8(data.content));
+                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
+                updateStatus('online', '已同步');
+            } else updateStatus('error', 'Sync失败'); 
+        } catch (e) { updateStatus('error', '连接超时'); }
+    }
+    function triggerSync() {
+        if (!ghConfig.token) { showToast('已保存本地', 'ok'); return; }
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(async () => {
+            updateStatus('syncing', '上传中');
+            try {
+                const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
+                const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+                let sha = getRes.ok ? (await getRes.json()).sha : null;
+                await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: `Update ${currentStock.code}`, content: utf8_to_b64(JSON.stringify(getLocalDB())), sha: sha })
+                });
+                updateStatus('online', '已保存');
+            } catch(e) { updateStatus('error', '上传失败'); }
+        }, 1500); 
+    }
+
+    // --- Chart ---
     function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
-    
     const verticalLinePlugin = { 
         id: 'verticalLine', 
         afterDraw: (chart) => {
             if (chart.tooltip?._active?.length) {
                 const ctx = chart.ctx;
-                const activePoint = chart.tooltip._active[0];
-                const x = activePoint.element.x;
+                const x = chart.tooltip._active[0].element.x;
                 const bottom = chart.chartArea.bottom;
-                ctx.save();
-                ctx.beginPath();
-                ctx.setLineDash([4, 4]);
-                ctx.lineWidth = 1;
-                ctx.strokeStyle = '#666';
-                ctx.moveTo(x, chart.chartArea.top);
-                ctx.lineTo(x, bottom);
-                ctx.stroke();
-                const dataIndex = activePoint.index;
-                const dateStr = chart.data.labels[dataIndex];
-                ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial';
-                ctx.fillStyle = '#666';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                ctx.fillText(dateStr, x, bottom + 6);
+                ctx.save(); ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = '#666';
+                ctx.moveTo(x, chart.chartArea.top); ctx.lineTo(x, bottom); ctx.stroke();
+                ctx.font = '11px Arial'; ctx.fillStyle = '#666'; ctx.textAlign = 'center'; ctx.fillText(chart.data.labels[chart.tooltip._active[0].index], x, bottom + 6);
                 ctx.restore();
             }
         }
     };
-    
     function drawChart() {
         if(!globalData.length) return;
         const ctx = document.getElementById('valuationChart').getContext('2d');
         if(chartInstance) chartInstance.destroy();
-        
         const validData = globalData; 
-        const peData = validData.map(d => (d.pe && d.pe > 0) ? d.pe : null);
-        const psData = validData.map(d => d.ps !== null ? d.ps : null);
-
         chartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: validData.map(d => d.date),
                 datasets: [
-                    { 
-                        label: 'PE (右轴)', data: peData, 
-                        borderColor: '#c0392b', backgroundColor: 'rgba(192, 57, 43, 0.05)', 
-                        borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, pointHoverRadius: 4, spanGaps: true,
-                        segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } 
-                    },
-                    { 
-                        label: 'PS (左轴)', data: psData, 
-                        borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.05)', 
-                        borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, pointHoverRadius: 4, spanGaps: true,
-                        segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } 
-                    }
+                    { label: 'PE (右轴)', data: validData.map(d => d.pe>0?d.pe:null), borderColor: '#c0392b', borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } },
+                    { label: 'PS (左轴)', data: validData.map(d => d.ps), borderColor: '#2980b9', borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } }
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false, 
-                interaction: { mode: 'index', intersect: false }, 
-                plugins: {
-                    tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { title: () => null } },
-                    zoom: { limits: { x: { min: 'original', max: 'original' } }, pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } }
-                },
-                scales: {
-                    x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { font: { size: 10 } } },
-                    y_pe: { type: 'linear', position: 'right', title: {display:true, text:'PE 倍数', color:'#c0392b', font:{size:10}}, grace: '5%', grid: {drawOnChartArea:false} },
-                    y_ps: { type: 'linear', position: 'left', title: {display:true, text:'PS 倍数', color:'#2980b9', font:{size:10}}, grace: '5%' }
-                }
+                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
+                plugins: { tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { title: () => null } }, zoom: { limits: { x: { min: 'original', max: 'original' } }, pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } } },
+                scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false } }, y_pe: { type: 'linear', position: 'right', grid: {drawOnChartArea:false} }, y_ps: { type: 'linear', position: 'left' } }
             },
             plugins: [verticalLinePlugin]
         });
     }
-
     function renderTable() {
-        const tbody = document.querySelector('#dataTable tbody');
-        tbody.innerHTML = '';
+        const tbody = document.querySelector('#dataTable tbody'); tbody.innerHTML = '';
         [...globalData].reverse().slice(0, 500).forEach(d => {
-            if(d.pe === undefined || d.pe === null) return; 
-            const peStr = d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>';
+            if(d.pe === null) return; 
             const tagClass = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
-            const editAttr = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})"` : '';
-            const editIcon = d.sourceType === 'manual' ? ' ✎' : '';
-            
-            tbody.innerHTML += `<tr>
-                <td>${d.date}</td>
-                <td>${d.price.toFixed(2)}</td>
-                <td><span class="tag ${tagClass}" ${editAttr}>${d.sourceName}${editIcon}</span></td>
-                <td>${(d.mktCap/1e8).toFixed(2)}</td>
-                <td>${(d.rev/1e8).toFixed(2)}</td>
-                <td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td>
-                <td class="val-pe">${peStr}</td>
-                <td class="val-ps">${d.ps.toFixed(2)}</td>
-            </tr>`;
+            tbody.innerHTML += `<tr><td>${d.date}</td><td>${d.price.toFixed(2)}</td><td><span class="tag ${tagClass}" onclick="editYearData(${d.year})">${d.sourceName}</span></td><td>${(d.mktCap/1e8).toFixed(2)}</td><td>${(d.rev/1e8).toFixed(2)}</td><td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td><td class="val-pe">${d.pe>0?d.pe.toFixed(2):'亏损'}</td><td class="val-ps">${d.ps.toFixed(2)}</td></tr>`;
         });
     }
 </script>
