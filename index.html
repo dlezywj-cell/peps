@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (数据持久化修复版)</title>
+    <title>估值透视 (内核增强版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
@@ -132,7 +132,7 @@
 <div class="container">
     <header>
         <div class="top-bar">
-            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(数据增强版)</span></h2>
+            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(内核增强版)</span></h2>
             <div class="net-status">
                 <div class="badge badge-data" title="无需VPN，直接连接东方财富">
                     <div class="dot"></div> 数据直连
@@ -297,13 +297,19 @@
         });
     }
 
+    // 🌟 移植旧版强大的ID识别逻辑 🌟
     const getEmSecId = c => { 
-        if (!c) return "0.000000"; 
         let raw = c.replace(/\.[A-Z]+$/, '');
-        if (/^\d{5}$/.test(raw)) return '116.' + raw.padStart(5, '0');
-        if (c.includes('.US')) return '105.' + raw; // 美股默认尝试105
+        // 美股逻辑：旧版通过 105/106/107 判断，这里先默认尝试105，K线获取时会自适应
+        if (c.includes('.US')) return '105.' + raw;
+        // 港股逻辑
+        if (/^\d{5}$/.test(raw)) return '116.' + raw;
+        // A股/B股/北交所
         if (raw.startsWith('6')) return '1.' + raw;
-        if (raw.startsWith('8') || raw.startsWith('4')) return '0.' + raw; // 北交所
+        if (raw.startsWith('9')) return '1.' + raw; // B股
+        if (raw.startsWith('0') || raw.startsWith('3') || raw.startsWith('8') || raw.startsWith('4')) return '0.' + raw;
+        
+        // 兜底
         return '0.' + raw; 
     };
 
@@ -321,7 +327,7 @@
             if(json?.QuotationCodeTable?.Data?.length > 0) {
                 const item = json.QuotationCodeTable.Data[0];
                 let suffix = "";
-                // 优化后缀逻辑
+                // 🌟 移植旧版后缀标准化逻辑 🌟
                 if (/^\d{5}$/.test(item.Code)) suffix = item.Code.startsWith('6') ? ".SH" : ".SZ"; 
                 else if (!/^\d+$/.test(item.Code)) suffix = ".US"; 
                 else { 
@@ -330,7 +336,6 @@
                     else if(item.MarketType == "5") suffix = ".HK"; 
                 }
                 const fullCode = item.Code + suffix;
-                // 对美股进行特殊修正，尝试从搜索结果推断
                 let secId = getEmSecId(fullCode);
                 
                 currentStock = { code: fullCode, name: item.Name, secId: secId };
@@ -358,14 +363,12 @@
             // 获取东财财务数据
             let finMap = await fetchHistoricalFinancials(currentStock);
             
-            // 确定需要的年份
             const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0,4))));
             const sortedYears = Array.from(yearsSet).sort((a,b) => a-b);
             let missingYears = [];
             
-            // 混合数据源逻辑：本地 > 东财API > 缺失
             for (let year of sortedYears) {
-                // 强制转为字符串作为Key查询
+                // 强制转为字符串作为Key查询 (防止Key类型不一致)
                 const savedData = getFromDB(currentStock.code, String(year));
                 
                 if (savedData) {
@@ -378,8 +381,6 @@
                     };
                     if(!silent) debugLog(`使用本地数据: ${year}`, 'info');
                 } else if (!finMap[year]) {
-                    // 如果是今年或者去年，且东财没有，才算缺失
-                    // (防止过度索要太久远的数据，但这里逻辑是：只要K线在，就需要财报)
                     missingYears.push(year);
                 }
             }
@@ -391,11 +392,10 @@
                     for (let y in batchData) {
                         const { rev, prof } = batchData[y];
                         const yearInt = parseInt(y);
-                        // 保存时确保 Key 是字符串
+                        // 强制 Key 为 String
                         await saveToDB(currentStock.code, String(yearInt), rev, prof, false); 
                         finMap[yearInt] = { year: yearInt, rev: rev, prof: prof, source: 'manual', name: `★${yearInt}录入` };
                     }
-                    // 所有保存完后，触发一次同步
                     triggerSync();
                 }
             }
@@ -419,7 +419,6 @@
     function calculate(finMap) {
         globalData = globalData.map(item => {
             const y = parseInt(item.date.substring(0,4));
-            // 优先用当年，如果没有，用上一年
             let fin = finMap[y];
             if(!fin && finMap[y-1]) fin = finMap[y-1]; 
             
@@ -433,7 +432,7 @@
                     mktCap, 
                     rev: fin.rev, 
                     prof: fin.prof, 
-                    pe: fin.prof > 0 ? mktCap/fin.prof : -1, // 亏损
+                    pe: fin.prof > 0 ? mktCap/fin.prof : -1, 
                     ps: fin.rev > 0 ? mktCap/fin.rev : 0 
                 };
             } else { 
@@ -452,7 +451,7 @@
             debugLog(`股本: ${(currentTotalShares/1e8).toFixed(2)}亿`, 'success');
         } catch(e) { 
             currentTotalShares = 1e8; 
-            debugLog("股本获取失败，使用默认1亿，估值可能不准", 'warn'); 
+            debugLog("股本获取失败，使用默认1亿", 'warn'); 
         }
     }
     
@@ -462,23 +461,19 @@
         try {
             let json = await jsonpRequest(url, 'cb');
             let data = json?.data?.klines || [];
-            
-            // 如果复权数据没有，尝试不复权
             if (data.length === 0) {
                  let url2 = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&${baseParams}&fqt=0`;
                  let json2 = await jsonpRequest(url2);
                  data = json2?.data?.klines || [];
             }
-            // 针对美股尝试不同的 Market Code (105/106/107)
             if (data.length === 0 && currentStock.secId.startsWith('105.')) {
                 let altUrl = url.replace('105.', '106.');
                 let j3 = await jsonpRequest(altUrl);
                 if(j3?.data?.klines?.length > 0) {
                     data = j3.data.klines;
-                    currentStock.secId = currentStock.secId.replace('105.', '106.'); // 修正ID
+                    currentStock.secId = currentStock.secId.replace('105.', '106.'); 
                 }
             }
-            
             if (data.length === 0) throw new Error("无K线数据");
             globalData = data.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
             debugLog(`股价获取成功: ${globalData.length}条`, 'success');
@@ -487,15 +482,17 @@
 
     async function fetchHistoricalFinancials(stockObj) {
         let map = {};
-        // 修正 Code：如果是美股，API可能需要不同的格式，这里尝试只传数字部分
-        // A股通常是 SecurityCode="600519"
-        const code = stockObj.code.replace(/\.[A-Z]+$/, ''); 
+        let code = stockObj.code.replace(/\.[A-Z]+$/, ''); 
         
-        // 使用更通用的 Report Name
+        // 🌟 修复财报获取的核心：针对不同市场调整Security Code格式 🌟
+        if (stockObj.secId.startsWith('116.')) {
+            // 港股需要5位，例如 00700
+            code = code.padStart(5, '0');
+        }
+        
         let reportName = 'RPT_LICO_FN_CPD'; 
         let filterStr = `(SECURITY_CODE="${code}")`;
-        
-        // 关键：减少 columns 请求量，避免 API 报错
+        // 减少字段，防止API报错
         let fields = 'REPORT_DATE,REPORTDATE,TOTAL_OPERATE_INCOME,OPERATE_INCOME,PARENT_NETPROFIT';
         
         try {
@@ -509,7 +506,6 @@
                         const y = parseInt(d.substring(0,4));
                         const r = item.TOTAL_OPERATE_INCOME || item.OPERATE_INCOME;
                         const p = item.PARENT_NETPROFIT;
-                        // 只有当有真实数据时才加入
                         if((r || r===0) && (p || p===0)) {
                             map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
                         }
@@ -550,7 +546,6 @@
                 const y = row.dataset.year;
                 const rev = row.querySelector('.in-rev').value;
                 const prof = row.querySelector('.in-prof').value;
-                // 修复逻辑：只要不为空字符串，0也是有效值
                 if (rev !== '' && prof !== '') {
                     result[y] = { rev: parseFloat(rev) * 1e8, prof: parseFloat(prof) * 1e8 };
                 }
@@ -568,13 +563,10 @@
         }
     }
 
-    // --- 数据存储层 (核心修复) ---
-    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
-    function b64_to_utf8(str) { 
-        try {
-            return decodeURIComponent(escape(window.atob(str.replace(/\s/g, '')))); 
-        } catch(e) { console.error("Base64 decode error", e); return "{}"; }
-    }
+    // --- 数据存储层 (使用旧版 Base64 逻辑) ---
+    // 🌟 移植旧版更安全的编码方式 🌟
+    function safeB64ToUtf8(str) { return decodeURIComponent(escape(window.atob(str.replace(/\s/g, '')))); }
+    function utf8ToB64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
     
     function getLocalDB() { 
         try {
@@ -584,15 +576,13 @@
     
     function getFromDB(code, year) { 
         let db = getLocalDB(); 
-        // 兼容 key 为数字或字符串的情况
         if (!db[code]) return null;
-        return db[code][String(year)] || db[code][Number(year)] || null;
+        return db[code][String(year)] || null;
     }
     
     async function saveToDB(code, year, rev, prof, immediateSync = true) {
         let db = getLocalDB(); 
         if (!db[code]) db[code] = {};
-        // 统一使用 String Key，防止混淆
         db[code][String(year)] = { rev, prof, timestamp: Date.now() };
         localStorage.setItem(DB_KEY, JSON.stringify(db));
         if (immediateSync) triggerSync();
@@ -637,11 +627,8 @@
         autoSyncFromCloud(true);
     };
 
-    // 智能合并：保留最新时间戳的数据
     function deepMergeDB(local, cloud) {
-        // 如果云端是空的，不要覆盖本地
         if (!cloud || Object.keys(cloud).length === 0) return local;
-
         let merged = { ...local };
         for (let code in cloud) {
             if (!merged[code]) {
@@ -650,8 +637,6 @@
                 for (let year in cloud[code]) {
                     const lData = merged[code][year];
                     const cData = cloud[code][year];
-                    // 逻辑修复：如果本地没有，或者云端时间戳更新，则采用云端
-                    // 增加保护：如果云端数据是空的(异常)，不覆盖
                     if (cData && (!lData || (cData.timestamp > (lData.timestamp || 0)))) {
                         merged[code][year] = cData;
                     }
@@ -671,11 +656,11 @@
             
             if (res.ok) {
                 const data = await res.json();
-                const cloudContent = b64_to_utf8(data.content);
+                // 使用旧版 safeB64ToUtf8
+                const cloudContent = safeB64ToUtf8(data.content);
                 let cloudDB = {};
                 try { cloudDB = JSON.parse(cloudContent); } catch(e) { console.error("Parse Cloud DB Error", e); }
                 
-                // 执行智能合并
                 const localDB = getLocalDB();
                 const mergedDB = deepMergeDB(localDB, cloudDB);
                 
@@ -684,7 +669,6 @@
                 debugLog("GitHub 同步成功", 'success');
                 if(force) showToast("已从云端拉取最新数据", 'ok');
             } else if (res.status === 404) {
-                // 文件不存在，说明是第一次使用，保持 Local 不变，视为 Online
                 debugLog("GitHub 文件未创建，将在下次保存时创建", 'info');
                 updateCloudStatus('online');
             } else {
@@ -700,27 +684,25 @@
     function triggerSync() {
         if (!ghConfig.token) { showToast('已保存到本地', 'ok'); return; }
         
-        // 防抖：如果连续保存，只执行最后一次
         clearTimeout(syncTimer);
         syncTimer = setTimeout(async () => {
             updateCloudStatus('syncing');
             try {
                 const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
                 
-                // 1. 获取当前 SHA
                 let sha = null;
                 try {
                     const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
                     if(getRes.ok) sha = (await getRes.json()).sha;
-                } catch(e) {} // 如果获取失败，可能是文件不存在，尝试直接PUT
+                } catch(e) {}
 
-                // 2. 上传
+                // 使用旧版 utf8ToB64
                 const putRes = await fetch(url, {
                     method: 'PUT',
                     headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         message: `Update ${currentStock.code} ${new Date().toISOString().split('T')[0]}`, 
-                        content: utf8_to_b64(JSON.stringify(getLocalDB())), 
+                        content: utf8ToB64(JSON.stringify(getLocalDB())), 
                         sha: sha 
                     })
                 });
@@ -792,7 +774,6 @@
         [...globalData].reverse().slice(0, 500).forEach(d => {
             if(d.pe === null && d.ps === null) return; 
             const tagClass = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
-            // 修复：确保传递给函数的年份参数是数字
             tbody.innerHTML += `<tr><td>${d.date}</td><td>${d.price.toFixed(2)}</td><td><span class="tag ${tagClass}" onclick="editYearData(${d.year})">${d.sourceName}</span></td><td>${(d.mktCap/1e8).toFixed(2)}</td><td>${(d.rev/1e8).toFixed(2)}</td><td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td><td class="val-pe">${d.pe>0?d.pe.toFixed(2):'亏'}</td><td class="val-ps">${d.ps.toFixed(2)}</td></tr>`;
         });
     }
