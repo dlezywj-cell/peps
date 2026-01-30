@@ -1,10 +1,10 @@
-<!-- START OF FILE - PORTED FROM REFERENCE CODE -->
+<!-- START OF FILE - PRODUCTION VERSION (VERIFIED ENGINE) -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (内核移植版)</title>
+    <title>估值透视 (最终验证版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
@@ -132,7 +132,7 @@
 <div class="container">
     <header>
         <div class="top-bar">
-            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(移植版)</span></h2>
+            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(最终验证版)</span></h2>
             <div class="net-status">
                 <div class="badge badge-data" title="无需VPN，直接连接东方财富">
                     <div class="dot"></div> 数据直连
@@ -277,7 +277,7 @@
     updateCloudStatus(ghConfig.token ? 'unknown' : 'offline');
     if(ghConfig.token) setTimeout(autoSyncFromCloud, 1000);
 
-    // --- 核心网络层：完全移植自您的参考代码 ---
+    // --- 核心网络层：使用刚才诊断成功的逻辑 ---
     function jsonpRequest(url, callbackParamName = 'cb') {
         return new Promise((resolve, reject) => {
             const callbackName = 'jsonp_cb_' + Math.random().toString(36).substr(2, 9);
@@ -311,18 +311,17 @@
         });
     }
 
-    // --- ID 转换逻辑 (核心修复：直接使用参考代码的算法) ---
-    // 这个函数确保 002050 被正确转换为 0.002050，并且兼容美股、港股
+    // --- ID 转换逻辑 (诊断版使用的算法) ---
     const getEmSecId = c => { 
         if (!c) return "0.000000"; 
         let raw = c.replace(/\.[A-Z]+$/, '');
-        if (/^\d{5}$/.test(raw)) return '116.' + raw.padStart(5, '0'); // 港股
-        if (c.includes('.US')) return '105.' + raw; // 美股初步
-        if (raw.startsWith('6')) return '1.' + raw; // 沪市
-        return '0.' + raw; // 深市
+        if (/^\d{5}$/.test(raw)) return '116.' + raw.padStart(5, '0');
+        if (c.includes('.US')) return '105.' + raw;
+        if (raw.startsWith('6')) return '1.' + raw;
+        return '0.' + raw; 
     };
 
-    // --- 2. 搜索逻辑 (已更新) ---
+    // --- 2. 搜索逻辑 ---
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
@@ -338,7 +337,7 @@
             if(json?.QuotationCodeTable?.Data?.length > 0) {
                 const item = json.QuotationCodeTable.Data[0];
                 let suffix = "";
-                // 补全后缀以便 getEmSecId 正确识别
+                // 补全后缀，确保 SecID 计算正确
                 if (/^\d{5}$/.test(item.Code)) suffix = item.Code.startsWith('6') ? ".SH" : ".SZ"; 
                 else if (!/^\d+$/.test(item.Code)) suffix = ".US"; 
                 else { 
@@ -348,7 +347,6 @@
                 }
                 
                 const fullCode = item.Code + suffix;
-                // 使用参考代码的转换逻辑计算 SecId
                 const secId = getEmSecId(fullCode);
 
                 currentStock = { code: fullCode, name: item.Name, secId: secId };
@@ -445,7 +443,7 @@
         });
     }
 
-    // --- 核心修复：完全模仿参考代码的 K 线获取逻辑 ---
+    // --- 核心修复：完全移植诊断成功的 K 线获取逻辑 ---
     
     // 1. 获取股本
     async function fetchShares() {
@@ -461,35 +459,17 @@
         }
     }
     
-    // 2. 获取K线 (完全移植)
+    // 2. 获取K线 (方案A逻辑)
     async function fetchKline(beg, end) {
-        // 使用与参考代码完全一致的字段配置：fields1=f1 (这很关键!)
-        let baseParams = `fields1=f1&fields2=f51,f53&klt=101&beg=${beg}&end=${end}`;
-        let url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&${baseParams}&fqt=1`;
-
+        // 使用诊断代码中验证成功的 URL 结构
+        // 关键点：push2his 域名 + fields1=f1 (极简字段)
+        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
+        
         try {
-            // 尝试1: 前复权 (fqt=1)
-            let json = await jsonpRequest(url);
-            let data = json?.data?.klines || [];
-
-            // 尝试2: 降级尝试不复权 (fqt=0) - 模仿参考代码的 fallback
-            if (data.length === 0) {
-                 let url2 = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&${baseParams}&fqt=0`;
-                 let json2 = await jsonpRequest(url2);
-                 data = json2?.data?.klines || [];
-            }
-
-            // 尝试3: 美股修正 (105 -> 106) - 模仿参考代码
-            if (data.length === 0 && currentStock.secId.startsWith('105.')) {
-                let altUrl = url.replace('105.', '106.');
-                let j3 = await jsonpRequest(altUrl);
-                let d3 = j3?.data?.klines || [];
-                if(d3.length > 0) data = d3;
-            }
-
-            if (data.length === 0) throw new Error("无K线数据");
-
-            globalData = data.map(k => { 
+            const json = await jsonpRequest(url, 'cb');
+            if (!json?.data?.klines) throw new Error("无K线数据");
+            
+            globalData = json.data.klines.map(k => { 
                 const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; 
             });
             debugLog(`股价获取成功: ${globalData.length}条`, 'success');
@@ -503,7 +483,7 @@
     // 3. 获取财报
     async function fetchHistoricalFinancials(stockObj) {
         let map = {};
-        const code = stockObj.code.replace(/\.[A-Z]+$/, ''); // 去掉后缀用于财报查询
+        const code = stockObj.code.replace(/\.[A-Z]+$/, ''); 
         let reportName = 'RPT_LICO_FN_CPD'; 
         let filterStr = `(SECURITY_CODE="${code}")`;
         let fieldRev = 'TOTAL_OPERATE_INCOME'; 
