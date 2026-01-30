@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (直连修复版)</title>
+    <title>估值透视 (完美直连版)</title>
     <!-- Chart.js & Plugins -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
@@ -153,7 +153,7 @@
 <div class="container">
     <header>
         <div class="top-bar">
-            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(直连修复版)</span></h2>
+            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(完美直连版)</span></h2>
             <div class="sync-info" onclick="showSettings()" title="GitHub 配置">
                 <div id="syncDot" class="sync-dot"></div>
                 <span id="statusTxt">未连接</span>
@@ -284,7 +284,7 @@
         updateStatus('ready', '本地模式');
     }
 
-    // --- JSONP 核心工具 (不使用插件、不使用VPN、直连) ---
+    // --- 1. 标准 JSONP (用于股价、财报) ---
     function fetchJsonp(url, callbackParam = 'cb') {
         return new Promise((resolve, reject) => {
             const callbackName = 'jsonp_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
@@ -294,38 +294,66 @@
                 cleanup();
                 resolve(data);
             };
-
             function cleanup() {
                 delete window[callbackName];
                 if (script.parentNode) script.parentNode.removeChild(script);
             }
-
             const separator = url.includes('?') ? '&' : '?';
             script.src = `${url}${separator}${callbackParam}=${callbackName}`;
-            script.onerror = () => {
-                cleanup();
-                reject(new Error('请求失败'));
-            };
-
+            script.onerror = () => { cleanup(); reject(new Error('API 请求失败')); };
             document.head.appendChild(script);
         });
     }
 
-    // --- 搜索 (修复版：使用 suggest3 接口，支持 JSONP) ---
+    // --- 2. 专用搜索函数 (修复转圈问题) ---
+    // 东方财富的 suggest3 接口不使用 callback 回调，而是直接赋值给 window.QuotationCodeTable
+    function searchStockRaw(val) {
+        return new Promise((resolve, reject) => {
+            // 清理旧数据
+            window.QuotationCodeTable = null;
+            
+            const script = document.createElement('script');
+            // 注意：input 必须 encode，防止中文乱码
+            script.src = `https://suggest3.eastmoney.com/suggest/default.aspx?input=${encodeURIComponent(val)}&type=14,31,41`;
+            
+            script.onload = () => {
+                if (window.QuotationCodeTable) {
+                    resolve(window.QuotationCodeTable);
+                } else {
+                    reject(new Error("未找到数据"));
+                }
+                script.remove();
+            };
+            
+            script.onerror = () => {
+                reject(new Error("网络错误，请检查网络"));
+                script.remove();
+            };
+            
+            document.head.appendChild(script);
+        });
+    }
+
+    // --- 搜索 (使用专用函数) ---
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
         
+        const btn = document.getElementById('btnSearch');
+        const originalText = btn.innerHTML;
+        
         try {
-            document.getElementById('btnSearch').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            // 添加一个超时，防止永久转圈
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("搜索超时")), 5000));
             
-            // 使用 suggest3 接口，完美支持 cb 参数，不需要代理
-            const url = `https://suggest3.eastmoney.com/suggest/default.aspx?input=${encodeURIComponent(val)}&type=14,31,41`;
-            const json = await fetchJsonp(url, 'cb'); 
+            // 竞速：数据返回 vs 超时
+            const json = await Promise.race([searchStockRaw(val), timeoutPromise]);
             
-            if(json?.QuotationCodeTable?.Data?.length > 0) {
-                const item = json.QuotationCodeTable.Data[0];
+            if(json?.Data?.length > 0) {
+                const item = json.Data[0];
                 let secId = '';
+                // 构造 secId 逻辑
                 if(item.QuoteID) {
                     secId = item.QuoteID;
                 } else {
@@ -343,13 +371,13 @@
             }
         } catch(e) { 
             console.error(e);
-            showToast("❌ 搜索超时 (请检查网络)", 'error'); 
+            showToast(`❌ ${e.message}`, 'error'); 
         } finally {
-            document.getElementById('btnSearch').innerHTML = '🔍 搜索';
+            btn.innerHTML = originalText;
         }
     }
 
-    // --- 核心分析主流程 ---
+    // --- 核心分析主流程 (无需 VPN) ---
     async function runAnalysis(silent = false) {
         const btn = document.getElementById('btn-run');
         if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
@@ -576,7 +604,7 @@
         }, 1500); 
     }
 
-    // --- 数据获取 (直连版) ---
+    // --- 数据获取 (直连版 - 股价/财报) ---
     async function fetchShares() {
         try {
             const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
@@ -644,7 +672,7 @@
         el.innerHTML = msg; el.className = `status-msg ${type}`; el.style.display = 'block';
         setTimeout(() => el.style.display='none', 3000);
     }
-    // 确保这些函数挂载到 window 对象上，否则 HTML onclick 找不到
+    // 确保这些函数挂载到 window 对象上
     window.showSettings = () => {
         document.getElementById('settingModal').style.display = 'flex';
         document.getElementById('cfgToken').value = ghConfig.token;
