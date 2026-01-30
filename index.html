@@ -1,10 +1,9 @@
-<!-- START OF FILE - FINAL FIX WITH UT TOKEN -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (终极修复版)</title>
+    <title>估值透视 (参考代码移植版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
@@ -132,7 +131,7 @@
 <div class="container">
     <header>
         <div class="top-bar">
-            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(终极版)</span></h2>
+            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(移植版)</span></h2>
             <div class="net-status">
                 <div class="badge badge-data" title="无需VPN，直接连接东方财富">
                     <div class="dot"></div> 数据直连
@@ -277,19 +276,20 @@
     updateCloudStatus(ghConfig.token ? 'unknown' : 'offline');
     if(ghConfig.token) setTimeout(autoSyncFromCloud, 1000);
 
-    // --- 1. 核心网络层：JSONP (直连神器) ---
-    function fetchJsonp(url, callbackParam = 'cb') {
+    // --- 核心网络层：移植自"参考代码"的 JSONP 实现 ---
+    function jsonpRequest(url, callbackParamName = 'cb') {
         return new Promise((resolve, reject) => {
-            const callbackName = 'jsonp_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+            const callbackName = 'jsonp_cb_' + Math.random().toString(36).substr(2, 9);
             const script = document.createElement('script');
-            const separator = url.includes('?') ? '&' : '?';
             
+            // 超时控制
             const timeout = setTimeout(() => {
                 cleanup();
                 reject(new Error("请求超时"));
             }, 10000);
 
-            window[callbackName] = function(data) {
+            // 回调函数
+            window[callbackName] = (data) => {
                 clearTimeout(timeout);
                 cleanup();
                 resolve(data);
@@ -300,17 +300,20 @@
                 if (script.parentNode) script.parentNode.removeChild(script);
             }
 
-            script.src = `${url}${separator}${callbackParam}=${callbackName}`;
-            script.onerror = (e) => { 
+            // 拼接 URL
+            const hasQuery = url.includes('?');
+            script.src = `${url}${hasQuery ? '&' : '?'}${callbackParamName}=${callbackName}`;
+            script.onerror = () => {
                 clearTimeout(timeout);
-                cleanup(); 
-                reject(new Error(`API拒绝连接 (JSONP Fail)`)); 
+                cleanup();
+                reject(new Error("JSONP Load Failed"));
             };
-            document.head.appendChild(script);
+
+            document.body.appendChild(script);
         });
     }
 
-    // --- 2. 搜索逻辑 ---
+    // --- 2. 搜索逻辑 (移植版) ---
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
@@ -321,17 +324,17 @@
         try {
             debugLog(`正在搜索: ${val}`);
             const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14,31,41&token=D43BF722C8E33BD5D50F639205545E43`;
-            const json = await fetchJsonp(url, 'cb');
+            const json = await jsonpRequest(url, 'cb');
             
             if(json?.QuotationCodeTable?.Data?.length > 0) {
                 const item = json.QuotationCodeTable.Data[0];
                 let secId = '';
-                // 修正SecId逻辑
+                
+                // 优先使用 QuoteID
                 if(item.QuoteID) secId = item.QuoteID;
                 else if(item.MarketType == "1") secId = `1.${item.Code}`; 
                 else if(item.MarketType == "2") secId = `0.${item.Code}`; 
                 else if(item.Code.startsWith('6')) secId = `1.${item.Code}`; 
-                else if(item.Code.startsWith('8') || item.Code.startsWith('4')) secId = `0.${item.Code}`; 
                 else secId = `0.${item.Code}`; 
 
                 currentStock = { code: item.Code, name: item.Name, secId };
@@ -435,14 +438,14 @@
         });
     }
 
-    // --- 数据源 (核心修复区域) ---
+    // --- 数据源 (核心修复：移植自参考代码) ---
     
     // 1. 获取股本
     async function fetchShares() {
         try {
-            // 使用 push2.eastmoney.com
+            // Push2 接口在您的环境下一直稳定
             const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
-            const json = await fetchJsonp(url, 'cb'); 
+            const json = await jsonpRequest(url, 'cb'); 
             currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json?.data?.f2) || 0;
             if(!currentTotalShares) throw new Error("股本为0");
             debugLog(`股本: ${(currentTotalShares/1e8).toFixed(2)}亿`, 'success');
@@ -452,22 +455,41 @@
         }
     }
     
-    // 2. 获取K线 (终极修复)
+    // 2. 获取K线 (移植自参考代码的 fetchHistoryKline 逻辑)
     async function fetchKline(beg, end) {
-        // [核心修改] 
-        // 1. 切换回 push2.eastmoney.com，因为你之前的日志显示这个域名能连上
-        // 2. 增加 'ut' 参数 (fa5fd1943c7b386f172d6893dbfba10b)，这是强制API返回脚本格式而不是纯文本JSON的关键
-        // 3. 明确指定 fields1 和 fields2 防止格式错误
-        const utToken = 'fa5fd1943c7b386f172d6893dbfba10b';
-        const url = `https://push2.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}&ut=${utToken}&lmt=1000`;
-        
+        // 使用 push2his
+        const secId = currentStock.secId;
+        // 注意 fields1=f1，这正是参考代码成功的关键
+        let baseParams = `fields1=f1&fields2=f51,f53&klt=101&beg=${beg}&end=${end}`;
+        let url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&${baseParams}&fqt=1`;
+
         try {
-            const json = await fetchJsonp(url, 'cb');
-            if (!json?.data?.klines) throw new Error("无K线数据");
-            globalData = json.data.klines.map(k => { 
+            // 尝试1: 前复权 (fqt=1)
+            let json = await jsonpRequest(url);
+            let data = json?.data?.klines || [];
+
+            // 尝试2: 不复权 (fqt=0) - 兜底
+            if (data.length === 0) {
+                 let url2 = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&${baseParams}&fqt=0`;
+                 let json2 = await jsonpRequest(url2);
+                 data = json2?.data?.klines || [];
+            }
+
+            // 尝试3: 美股代码修正 (105 -> 106) - 兜底
+            if (data.length === 0 && secId.startsWith('105.')) {
+                let altUrl = url.replace('105.', '106.');
+                let j3 = await jsonpRequest(altUrl);
+                let d3 = j3?.data?.klines || [];
+                if(d3.length > 0) data = d3;
+            }
+
+            if (data.length === 0) throw new Error("无K线数据");
+            
+            globalData = data.map(k => { 
                 const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; 
             });
             debugLog(`股价获取成功: ${globalData.length}条`, 'success');
+
         } catch (e) {
             debugLog(`K线获取失败: ${e.message}`, 'error');
             throw e;
@@ -485,7 +507,7 @@
         
         try {
             const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=50&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB`;
-            const json = await fetchJsonp(url, 'callback'); 
+            const json = await jsonpRequest(url, 'callback'); 
             
             if(json?.result?.data) {
                 json.result.data.forEach(item => {
@@ -683,4 +705,3 @@
 </script>
 </body>
 </html>
-<!-- END OF FILE -->
