@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (交互增强版)</title>
+    <title>估值透视 (极速版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
@@ -13,119 +13,47 @@
     <style>
         :root { --primary: #2980b9; --danger: #c0392b; --bg: #f4f6f9; --text: #2c3e50; --success: #27ae60; --border: #e0e0e0; }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
-            background: var(--bg); color: var(--text); margin: 0; padding: 20px; font-size: 13px; 
-        }
-        
-        .container { 
-            max-width: 1200px; margin: 0 auto; background: #fff; 
-            border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
-            display: flex; flex-direction: column; overflow: hidden;
-        }
-        
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; font-size: 13px; }
+        .container { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; flex-direction: column; overflow: hidden; }
         header { background: #fff; border-bottom: 1px solid var(--border); }
-
-        .top-bar {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 12px 20px; border-bottom: 1px solid #f0f0f0;
-        }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid #f0f0f0; }
         h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
-        
-        .sync-info { 
-            font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; 
-            padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.2s;
-        }
+        .sync-info { font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.2s; }
         .sync-info:hover { background: #f0f0f0; }
         .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
         .sync-dot.online { background: var(--success); box-shadow: 0 0 4px var(--success); }
         .sync-dot.syncing { background: var(--primary); animation: pulse 1s infinite; }
         .sync-dot.error { background: var(--danger); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
-
         .tools-bar { padding: 12px 20px; }
-        
-        .input-group input { 
-            padding: 0 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; 
-            height: 34px; width: 100%;
-        }
+        .input-group input { padding: 0 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; height: 34px; width: 100%; }
         .input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
-        
-        button { 
-            height: 34px; padding: 0 16px; border: none; border-radius: 4px; cursor: pointer; 
-            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; 
-            white-space: nowrap; transition: background 0.2s;
-        }
+        button { height: 34px; padding: 0 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; transition: background 0.2s; }
         .btn-primary { background: var(--primary); color: #fff; } .btn-primary:hover { background: #1f618d; }
         .btn-success { background: var(--success); color: #fff; } .btn-success:hover { background: #219150; }
         .btn-outline { background: #fff; border: 1px solid #ccc; color: #666; } .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
         button:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
-
-        @media (min-width: 769px) {
-            .tools-bar { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
-            .group-search { display: flex; gap: 8px; align-items: center; }
-            .group-search .input-group { width: 140px; }
-            .divider-v { width: 1px; height: 20px; background: #ddd; margin: 0 5px; }
-            .group-dates { display: flex; gap: 8px; align-items: center; }
-            .group-dates .input-group input { width: 130px; }
-            .group-actions { display: flex; gap: 8px; align-items: center; }
-        }
-
-        @media (max-width: 768px) {
-            body { padding: 0; }
-            .container { border-radius: 0; box-shadow: none; min-height: 100vh; }
-            .top-bar { padding: 12px 15px; }
-            h2 { font-size: 16px; }
-            .tools-bar { display: flex; flex-direction: column; gap: 10px; padding: 10px 15px; background: #fdfdfd; }
-            .group-search { display: flex; gap: 8px; width: 100%; }
-            .group-search .input-group { flex: 1; }
-            .group-search button { flex: 0 0 auto; }
-            .divider-v { display: none; }
-            .group-dates { display: flex; gap: 8px; width: 100%; }
-            .group-dates .input-group { flex: 1; }
-            .group-actions { display: flex; gap: 8px; width: 100%; }
-            .group-actions button { flex: 1; height: 38px; font-size: 14px; }
-            .chart-container { height: 350px !important; padding: 5px 10px; }
-        }
-
+        @media (min-width: 769px) { .tools-bar { display: flex; align-items: center; gap: 10px; white-space: nowrap; } .group-search { display: flex; gap: 8px; align-items: center; } .group-search .input-group { width: 140px; } .divider-v { width: 1px; height: 20px; background: #ddd; margin: 0 5px; } .group-dates { display: flex; gap: 8px; align-items: center; } .group-dates .input-group input { width: 130px; } .group-actions { display: flex; gap: 8px; align-items: center; } }
+        @media (max-width: 768px) { body { padding: 0; } .container { border-radius: 0; box-shadow: none; min-height: 100vh; } .top-bar { padding: 12px 15px; } h2 { font-size: 16px; } .tools-bar { display: flex; flex-direction: column; gap: 10px; padding: 10px 15px; background: #fdfdfd; } .group-search { display: flex; gap: 8px; width: 100%; } .group-search .input-group { flex: 1; } .group-search button { flex: 0 0 auto; } .divider-v { display: none; } .group-dates { display: flex; gap: 8px; width: 100%; } .group-dates .input-group { flex: 1; } .group-actions { display: flex; gap: 8px; width: 100%; } .group-actions button { flex: 1; height: 38px; font-size: 14px; } .chart-container { height: 350px !important; padding: 5px 10px; } }
         .chart-container { position: relative; height: 500px; padding: 15px 20px; width: 100%; }
-        .chart-tip { 
-            position: absolute; top: 10px; right: 15px; font-size: 11px; 
-            color: #999; background: rgba(255,255,255,0.8); padding: 2px 6px; 
-            border-radius: 4px; pointer-events: none; z-index: 10;
-        }
-
+        .chart-tip { position: absolute; top: 10px; right: 15px; font-size: 11px; color: #999; background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px; pointer-events: none; z-index: 10; }
         .table-wrap { border-top: 1px solid var(--border); overflow-x: auto; -webkit-overflow-scrolling: touch; background: #fff; }
         table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; text-align: right; min-width: 600px; }
         th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
         th { background: #f8f9fa; color: #555; font-weight: 600; position: sticky; top: 0; z-index: 20; }
         th:first-child, td:first-child { position: sticky; left: 0; background: #fff; z-index: 10; text-align: left; border-right: 1px solid #f0f0f0; box-shadow: 2px 0 5px rgba(0,0,0,0.02); }
         th:first-child { z-index: 30; background: #f8f9fa; }
-        .val-pe { color: var(--danger); font-weight: bold; }
-        .val-ps { color: var(--primary); font-weight: bold; }
+        .val-pe { color: var(--danger); font-weight: bold; } .val-ps { color: var(--primary); font-weight: bold; }
         .tag { padding: 1px 5px; border-radius: 3px; font-size: 10px; display: inline-block; transform: scale(0.95); }
-        
-        /* 标签样式细分 */
-        .tag-real { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; } /* 真实年报 */
-        .tag-manual { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; cursor: pointer; } /* 手动/GitHub录入 */
-        
-        /* 修改点：给tag-copy加了 pointer 和 hover效果 */
+        .tag-real { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
+        .tag-manual { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; cursor: pointer; }
         .tag-copy { background: #fffbe6; color: #faad14; border: 1px solid #ffe58f; font-style: italic; cursor: pointer; } 
         .tag-copy:hover { background: #fff7cc; border-color: #ffc400; }
-
         .loss { color: #27ae60; font-style: italic; }
-
-        .status-msg { 
-            display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; 
-            position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
-            z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500;
-            background: #fff; border: 1px solid #eee; pointer-events: none; 
-        }
+        .status-msg { display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500; background: #fff; border: 1px solid #eee; pointer-events: none; }
         .status-msg.ok { color: #389e0d; border-color: #b7eb8f; background: #f6ffed; }
         .status-msg.error { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
         .status-msg.warn { color: #d48806; border-color: #ffe58f; background: #fffbe6; }
-
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
         .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); animation: popIn 0.2s ease-out; }
         @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
@@ -155,9 +83,7 @@
 
         <div class="tools-bar">
             <div class="group-search">
-                <div class="input-group">
-                    <input type="text" id="stockInput" value="" placeholder="代码/名称">
-                </div>
+                <div class="input-group"><input type="text" id="stockInput" value="" placeholder="代码/名称"></div>
                 <button class="btn-primary" id="btnSearch">🔍 搜索</button>
             </div>
             <div class="divider-v"></div>
@@ -184,14 +110,8 @@
         <table id="dataTable">
             <thead>
                 <tr>
-                    <th>日期</th>
-                    <th>股价</th>
-                    <th>财报/预测</th>
-                    <th>市值(亿)</th>
-                    <th>营收(亿)</th>
-                    <th>净利(亿)</th>
-                    <th style="color:var(--danger)">PE(倍)</th>
-                    <th style="color:var(--primary)">PS(倍)</th>
+                    <th>日期</th><th>股价</th><th>财报/预测</th><th>市值(亿)</th><th>营收(亿)</th><th>净利(亿)</th>
+                    <th style="color:var(--danger)">PE(倍)</th><th style="color:var(--primary)">PS(倍)</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -201,22 +121,14 @@
 
 <div id="inputModal" class="modal-overlay">
     <div class="modal-box">
-        <div class="modal-header">
-            <span>✍️ 录入 <span id="modalYear"></span>年 数据</span>
-        </div>
+        <div class="modal-header"><span>✍️ 录入 <span id="modalYear"></span>年 数据</span></div>
         <div style="font-size:12px; color:#c0392b; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:12px;">
             ⚠️ 缺失该年数据，请补充。
             <br><span style="color:#666; font-weight:normal;">(点击取消将自动尝试沿用上一年)</span>
         </div>
         <div class="modal-body">
-            <div class="form-row">
-                <label>预测营业收入 (亿元)</label>
-                <input type="number" id="inRev" placeholder="例如: 1500" inputmode="decimal">
-            </div>
-            <div class="form-row">
-                <label>预测净利润 (亿元)</label>
-                <input type="number" id="inProf" placeholder="例如: 800" inputmode="decimal">
-            </div>
+            <div class="form-row"><label>预测营业收入 (亿元)</label><input type="number" id="inRev" placeholder="例如: 1500" inputmode="decimal"></div>
+            <div class="form-row"><label>预测净利润 (亿元)</label><input type="number" id="inProf" placeholder="例如: 800" inputmode="decimal"></div>
         </div>
         <div class="modal-footer">
             <button class="btn-block btn-cancel" onclick="closeInputModal(false)">取消</button>
@@ -227,46 +139,35 @@
 
 <div class="modal-overlay" id="settingModal">
     <div class="modal-box">
-        <div class="modal-header">
-            <span><i class="fab fa-github"></i> 云同步配置</span>
-            <i class="fas fa-times" onclick="closeSettings()" style="cursor:pointer; color:#999;"></i>
-        </div>
+        <div class="modal-header"><span><i class="fab fa-github"></i> 云同步配置</span><i class="fas fa-times" onclick="closeSettings()" style="cursor:pointer; color:#999;"></i></div>
         <div class="modal-body">
-            <div class="form-row">
-                <label>GitHub Token (必填)</label>
-                <input type="password" id="cfgToken" placeholder="ghp_...">
-            </div>
-            <div class="form-row">
-                <label>用户名</label>
-                <input type="text" id="cfgUser" value="dlezywj-cell">
-            </div>
-            <div class="form-row">
-                <label>仓库名</label>
-                <input type="text" id="cfgRepo" value="pepsdata">
-            </div>
-            <div class="form-row">
-                <label>文件名</label>
-                <input type="text" id="cfgFile" value="data.json" disabled style="background:#f9f9f9">
-            </div>
+            <div class="form-row"><label>GitHub Token</label><input type="password" id="cfgToken" placeholder="ghp_..."></div>
+            <div class="form-row"><label>用户名</label><input type="text" id="cfgUser" value="dlezywj-cell"></div>
+            <div class="form-row"><label>仓库名</label><input type="text" id="cfgRepo" value="pepsdata"></div>
+            <div class="form-row"><label>文件名</label><input type="text" id="cfgFile" value="data.json" disabled style="background:#f9f9f9"></div>
         </div>
-        <div class="modal-footer">
-            <button class="btn-block btn-confirm" onclick="saveConfig()">保存并连接</button>
-        </div>
+        <div class="modal-footer"><button class="btn-block btn-confirm" onclick="saveConfig()">保存并连接</button></div>
     </div>
 </div>
 
 <script>
-    // --- 全局变量 ---
     let currentStock = { code: '', name: '', secId: '' };
     let globalData = [];
     let currentTotalShares = 0;
     let chartInstance = null;
     let inputModalResolve = null;
     let syncTimer = null;
+    
+    // 缓存系统 (加速核心)
+    let APP_CACHE = {
+        key: '', // 缓存标识：code + startDate + endDate
+        kline: null,
+        shares: null,
+        financials: null
+    };
 
     const PROXY_URL = "https://stock-proxy.dlezywj.workers.dev/?";
     const DB_KEY = "stock_valuation_db_v1";
-
     let ghConfig = {
         token: localStorage.getItem('gh_token') || '',
         user: localStorage.getItem('gh_user') || 'dlezywj-cell',
@@ -279,13 +180,9 @@
     document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
     document.getElementById('stockInput').addEventListener('keydown', e => { if(e.keyCode===13) runSearch(); });
 
-    if(ghConfig.token) {
-        setTimeout(autoSyncFromCloud, 500); 
-    } else {
-        updateStatus('ready', '本地模式');
-    }
+    if(ghConfig.token) setTimeout(autoSyncFromCloud, 200); else updateStatus('ready', '本地模式');
 
-    // --- 搜索 ---
+    // --- 极速搜索 ---
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
@@ -298,17 +195,21 @@
             if(json?.QuotationCodeTable?.Data?.length > 0) {
                 const item = json.QuotationCodeTable.Data[0];
                 const secId = (item.MarketType == "1" || item.Code.startsWith('6')) ? `1.${item.Code}` : `0.${item.Code}`;
+                
+                // 切换股票时清空缓存
+                if(currentStock.code !== item.Code) {
+                    APP_CACHE = { key: '', kline: null, shares: null, financials: null };
+                }
+                
                 currentStock = { code: item.Code, name: item.Name, secId };
                 document.getElementById('btn-run').disabled = false;
                 showToast(`✅ 已锁定: ${item.Name}`, 'ok');
-            } else {
-                showToast("❌ 未找到股票", 'error');
-            }
+            } else { showToast("❌ 未找到股票", 'error'); }
         } catch(e) { showToast("❌ 搜索失败", 'error'); 
         } finally { document.getElementById('btnSearch').innerHTML = '🔍 搜索'; }
     }
 
-    // --- 核心逻辑 ---
+    // --- 极速计算 ---
     async function runAnalysis(silent = false) {
         const btn = document.getElementById('btn-run');
         if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
@@ -316,65 +217,80 @@
         try {
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
+            const cacheKey = `${currentStock.code}_${beg}_${end}`;
 
-            if(!silent || globalData.length === 0) {
-                await Promise.all([fetchShares(), fetchKline(beg, end)]);
+            // 1. 检查缓存 (如果缓存有效，直接跳过网络请求)
+            let finMap = {};
+            
+            if (APP_CACHE.key === cacheKey && APP_CACHE.kline) {
+                globalData = APP_CACHE.kline;
+                currentTotalShares = APP_CACHE.shares;
+                finMap = JSON.parse(JSON.stringify(APP_CACHE.financials)); // 深拷贝防止污染缓存
+                if(!silent) console.log("Using Cache");
+            } else {
+                // 2. 并发请求 (极速模式: 同时发起3个请求)
+                if(!silent || globalData.length === 0) {
+                    const [shareRes, klineRes, finRes] = await Promise.all([
+                        fetchShares(), 
+                        fetchKline(beg, end),
+                        fetchHistoricalFinancials(currentStock.code)
+                    ]);
+                    
+                    // 写入缓存
+                    APP_CACHE.key = cacheKey;
+                    APP_CACHE.shares = currentTotalShares; // fetchShares 已更新此全局变量
+                    APP_CACHE.kline = globalData;          // fetchKline 已更新此全局变量
+                    APP_CACHE.financials = finRes;
+                    finMap = JSON.parse(JSON.stringify(finRes));
+                }
             }
-            
-            let finMap = await fetchHistoricalFinancials(currentStock.code);
-            
+
+            // 3. 融合本地/GitHub数据
             const realYears = Object.keys(finMap).map(Number);
             const maxRealYear = realYears.length > 0 ? Math.max(...realYears) : 0;
-
             const localDB = getLocalDB();
             const savedStockData = localDB[currentStock.code] || {};
 
             Object.keys(savedStockData).forEach(yStr => {
                 const y = parseInt(yStr);
                 const record = savedStockData[yStr];
-                
                 if (y > maxRealYear) {
                     const dateObj = new Date(record.timestamp);
-                    const dateStr = `${dateObj.getMonth()+1}-${dateObj.getDate()}`;
-                    
                     finMap[y] = {
-                        year: y,
-                        rev: record.rev,
-                        prof: record.prof,
-                        source: 'manual',
-                        name: `${dateStr}录入`
+                        year: y, rev: record.rev, prof: record.prof, source: 'manual',
+                        name: `${dateObj.getMonth()+1}-${dateObj.getDate()}录入`
                     };
                     if(!silent) showToast(`已加载 ${y} 预测数据`, 'ok');
                 }
             });
 
+            // 4. 弹窗检查 (仅检查当年)
             const currentYear = new Date().getFullYear();
-            const yearsToCheck = [currentYear, currentYear + 1];
-
-            if (!silent) {
-                for (let checkY of yearsToCheck) {
-                    if (checkY > maxRealYear && !finMap[checkY]) {
-                        const manual = await openInputModal(checkY);
-                        if (manual) {
-                            await saveToDB(currentStock.code, checkY, manual.rev, manual.prof);
-                            const now = new Date();
-                            finMap[checkY] = { 
-                                year: checkY, 
-                                rev: manual.rev, 
-                                prof: manual.prof, 
-                                source: 'manual', 
-                                name: `${now.getMonth()+1}-${now.getDate()}录入`
-                            };
-                        } else {
-                            showToast(`${checkY}年未录入，将尝试回溯旧数据`, 'warn');
-                        }
-                    }
+            
+            // 如果非静默模式，且该年比真实年报晚，且没有缓存的数据 -> 弹窗
+            if (!silent && currentYear > maxRealYear && !finMap[currentYear]) {
+                const manual = await openInputModal(currentYear);
+                if (manual) {
+                    await saveToDB(currentStock.code, currentYear, manual.rev, manual.prof);
+                    const now = new Date();
+                    finMap[currentYear] = { 
+                        year: currentYear, rev: manual.rev, prof: manual.prof, source: 'manual', 
+                        name: `${now.getMonth()+1}-${now.getDate()}录入`
+                    };
+                } else {
+                    showToast(`${currentYear}年未录入，回溯旧数据`, 'warn');
+                    // 取消后，无需网络请求，直接进入下一步计算，速度极快
                 }
             }
 
+            // 5. 计算与渲染 (渲染是耗时大户，已优化)
             calculate(finMap);
-            drawChart();
-            renderTable();
+            
+            // 使用 requestAnimationFrame 避免UI卡顿
+            requestAnimationFrame(() => {
+                drawChart();
+                renderTable(); // 内部已优化为只渲染最近数据
+            });
 
             document.getElementById('stockInput').value = '';
             
@@ -389,142 +305,44 @@
     function calculate(finMap) {
         const availableYears = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
         const minYear = availableYears[0];
-
+        // 纯内存计算，极快
         globalData = globalData.map(item => {
             const dateY = new Date(item.date).getFullYear();
-            let effectiveFin = null;
-            let searchY = dateY;
-            
+            let effectiveFin = null, searchY = dateY;
             while (searchY >= minYear) {
-                if (finMap[searchY]) {
-                    effectiveFin = finMap[searchY];
-                    break;
-                }
+                if (finMap[searchY]) { effectiveFin = finMap[searchY]; break; }
                 searchY--;
             }
-
             if(effectiveFin) {
                 const mktCap = item.price * currentTotalShares;
                 let displayName = effectiveFin.name;
                 let displayType = effectiveFin.source;
-                
-                if (effectiveFin.year < dateY) {
-                    displayName = `沿用${effectiveFin.year}数据`;
-                    displayType = 'copy';
-                }
-
+                if (effectiveFin.year < dateY) { displayName = `沿用${effectiveFin.year}数据`; displayType = 'copy'; }
                 return {
-                    ...item,
-                    rowYear: dateY, // 关键：记录这一行本来应该属于哪一年 (2026)
-                    year: effectiveFin.year, // 记录实际使用了哪一年的数据 (2025)
-                    sourceType: displayType,
-                    sourceName: displayName,
-                    mktCap, 
-                    rev: effectiveFin.rev, 
-                    prof: effectiveFin.prof,
-                    pe: effectiveFin.prof > 0 ? mktCap/effectiveFin.prof : -1,
-                    ps: effectiveFin.rev > 0 ? mktCap/effectiveFin.rev : 0
+                    ...item, rowYear: dateY, year: effectiveFin.year, sourceType: displayType, sourceName: displayName,
+                    mktCap, rev: effectiveFin.rev, prof: effectiveFin.prof,
+                    pe: effectiveFin.prof > 0 ? mktCap/effectiveFin.prof : -1, ps: effectiveFin.rev > 0 ? mktCap/effectiveFin.rev : 0
                 };
             }
-
-            return {
-                ...item, mktCap: item.price * currentTotalShares,
-                rev: null, prof: null, pe: null, ps: null
-            };
+            return { ...item, mktCap: item.price * currentTotalShares, rev: null, prof: null, pe: null, ps: null };
         });
     }
 
-    // --- DB (保护非股票Key) ---
-    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
-    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
-    function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
-    function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
-
-    async function autoSyncFromCloud() {
-        if (!ghConfig.token) return;
-        updateStatus('syncing', '同步中');
-        try {
-            const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
-            const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-            if (res.ok) {
-                const data = await res.json();
-                const cloudContent = JSON.parse(b64_to_utf8(data.content));
-                const newDB = { ...getLocalDB(), ...cloudContent };
-                localStorage.setItem(DB_KEY, JSON.stringify(newDB));
-                updateStatus('online', '已同步');
-                if (currentStock.code) runAnalysis(true);
-            } else if(res.status === 404) {
-                updateStatus('online', '新文件');
-            } else {
-                updateStatus('error', '失败');
-            }
-        } catch (e) { updateStatus('error', '错误'); }
-    }
-
-    async function saveToDB(code, year, rev, prof) {
-        let localDB = getLocalDB();
-        if (!localDB[code]) localDB[code] = {};
-        localDB[code][year] = { rev, prof, timestamp: Date.now() };
-        localStorage.setItem(DB_KEY, JSON.stringify(localDB));
-        
-        if (ghConfig.token) {
-            clearTimeout(syncTimer);
-            updateStatus('syncing', '准备上传');
-            try {
-                const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
-                const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-                let finalDB = {};
-                let sha = null;
-
-                if (getRes.ok) {
-                    const getData = await getRes.json();
-                    sha = getData.sha;
-                    finalDB = JSON.parse(b64_to_utf8(getData.content));
-                } else {
-                    finalDB = localDB;
-                }
-
-                if (!finalDB[code]) finalDB[code] = {};
-                finalDB[code][year] = { rev, prof, timestamp: Date.now() };
-
-                const putRes = await fetch(url, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        message: `Update ${code} ${year}`, 
-                        content: utf8_to_b64(JSON.stringify(finalDB)), 
-                        sha: sha 
-                    })
-                });
-
-                if(putRes.ok) {
-                    updateStatus('online', '已保存');
-                    localStorage.setItem(DB_KEY, JSON.stringify(finalDB));
-                } else {
-                    updateStatus('error', '上传失败');
-                }
-            } catch(e) { 
-                console.error(e);
-                updateStatus('error', '网络错误'); 
-            }
-        } else {
-            showToast('已保存至本地', 'ok');
-        }
-    }
-
-    // --- API ---
+    // --- 数据获取 (返回数据而不修改全局，由调用者处理) ---
     async function fetchShares() {
         try {
             const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`));
             const json = await res.json();
             currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json.data.f2) || 1e8;
-        } catch(e) { currentTotalShares = 1e8; }
+            return currentTotalShares;
+        } catch(e) { currentTotalShares = 1e8; return 1e8; }
     }
     async function fetchKline(beg, end) {
         const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`));
         const json = await res.json();
         if (!json?.data?.klines) throw new Error("无股价数据");
         globalData = json.data.klines.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
+        return globalData;
     }
     async function fetchHistoricalFinancials(code) {
         let map = {};
@@ -546,18 +364,59 @@
         return map;
     }
 
-    // --- 界面 ---
-    async function editYearData(year) {
-        // 打开弹窗，因为要录入新数据，这里默认不回填旧数据，让用户输入新的
-        // 也可以选择回填 saved.rev 等，看您喜好，目前逻辑是空白或显示已有的该年草稿
-        const saved = getFromDB(currentStock.code, year);
-        const manual = await openInputModal(year, saved ? (saved.rev/1e8) : '', saved ? (saved.prof/1e8) : '');
-        if (manual) {
-            await saveToDB(currentStock.code, year, manual.rev, manual.prof);
-            runAnalysis(true); 
-        }
+    // --- DB & Sync ---
+    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
+    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
+    function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
+    function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
+
+    async function autoSyncFromCloud() {
+        if (!ghConfig.token) return;
+        updateStatus('syncing', '同步中');
+        try {
+            const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
+            const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+            if (res.ok) {
+                const data = await res.json();
+                const cloudContent = JSON.parse(b64_to_utf8(data.content));
+                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudContent }));
+                updateStatus('online', '已同步');
+                if (currentStock.code) runAnalysis(true);
+            } else if(res.status === 404) updateStatus('online', '新文件');
+            else updateStatus('error', '失败');
+        } catch (e) { updateStatus('error', '错误'); }
     }
 
+    async function saveToDB(code, year, rev, prof) {
+        let localDB = getLocalDB();
+        if (!localDB[code]) localDB[code] = {};
+        localDB[code][year] = { rev, prof, timestamp: Date.now() };
+        localStorage.setItem(DB_KEY, JSON.stringify(localDB));
+        
+        if (ghConfig.token) {
+            clearTimeout(syncTimer);
+            updateStatus('syncing', '准备上传');
+            try {
+                const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
+                const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+                let finalDB = {}; let sha = null;
+                if (getRes.ok) { const d = await getRes.json(); sha = d.sha; finalDB = JSON.parse(b64_to_utf8(d.content)); } else { finalDB = localDB; }
+                
+                if (!finalDB[code]) finalDB[code] = {};
+                finalDB[code][year] = { rev, prof, timestamp: Date.now() };
+                
+                const putRes = await fetch(url, { method: 'PUT', headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: `Update ${code} ${year}`, content: utf8_to_b64(JSON.stringify(finalDB)), sha: sha }) });
+                if(putRes.ok) { updateStatus('online', '已保存'); localStorage.setItem(DB_KEY, JSON.stringify(finalDB)); } else updateStatus('error', '上传失败');
+            } catch(e) { updateStatus('error', '网络错误'); }
+        } else { showToast('已保存至本地', 'ok'); }
+    }
+
+    // --- UI Utils ---
+    async function editYearData(year) {
+        const saved = getFromDB(currentStock.code, year);
+        const manual = await openInputModal(year, saved ? (saved.rev/1e8) : '', saved ? (saved.prof/1e8) : '');
+        if (manual) { await saveToDB(currentStock.code, year, manual.rev, manual.prof); runAnalysis(true); }
+    }
     function openInputModal(year, defRev='', defProf='') {
         return new Promise((resolve) => {
             document.getElementById('modalYear').innerText = year;
@@ -567,74 +426,29 @@
             inputModalResolve = resolve;
         });
     }
-
     function closeInputModal(isConfirm) {
         document.getElementById('inputModal').style.display = 'none';
-        if (isConfirm && inputModalResolve) {
-            const r = parseFloat(document.getElementById('inRev').value);
-            const p = parseFloat(document.getElementById('inProf').value);
-            if (!isNaN(r) && !isNaN(p)) inputModalResolve({ rev: r * 1e8, prof: p * 1e8 });
-            else { inputModalResolve(null); }
-        } else if (inputModalResolve) {
-            inputModalResolve(null); 
-        }
+        const r = parseFloat(document.getElementById('inRev').value);
+        const p = parseFloat(document.getElementById('inProf').value);
+        if (isConfirm && inputModalResolve && !isNaN(r) && !isNaN(p)) inputModalResolve({ rev: r * 1e8, prof: p * 1e8 });
+        else if (inputModalResolve) inputModalResolve(null);
     }
-
-    function updateStatus(status, text) {
-        document.getElementById('syncDot').className = 'sync-dot ' + status;
-        document.getElementById('statusTxt').innerText = text;
-    }
-    function showToast(msg, type='ok') {
-        const el = document.getElementById('toastMsg');
-        el.innerHTML = msg; el.className = `status-msg ${type}`; el.style.display = 'block';
-        setTimeout(() => el.style.display='none', 3000);
-    }
-    window.showSettings = () => {
-        document.getElementById('settingModal').style.display = 'flex';
-        document.getElementById('cfgToken').value = ghConfig.token;
-        document.getElementById('cfgUser').value = ghConfig.user;
-        document.getElementById('cfgRepo').value = ghConfig.repo;
-    };
+    function updateStatus(status, text) { document.getElementById('syncDot').className = 'sync-dot ' + status; document.getElementById('statusTxt').innerText = text; }
+    function showToast(msg, type='ok') { const el = document.getElementById('toastMsg'); el.innerHTML = msg; el.className = `status-msg ${type}`; el.style.display = 'block'; setTimeout(() => el.style.display='none', 3000); }
+    window.showSettings = () => { document.getElementById('settingModal').style.display = 'flex'; document.getElementById('cfgToken').value = ghConfig.token; document.getElementById('cfgUser').value = ghConfig.user; document.getElementById('cfgRepo').value = ghConfig.repo; };
     window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
-    window.saveConfig = () => {
-        ghConfig.token = document.getElementById('cfgToken').value.trim();
-        ghConfig.user = document.getElementById('cfgUser').value.trim();
-        ghConfig.repo = document.getElementById('cfgRepo').value.trim();
-        localStorage.setItem('gh_token', ghConfig.token);
-        localStorage.setItem('gh_user', ghConfig.user);
-        localStorage.setItem('gh_repo', ghConfig.repo);
-        closeSettings(); autoSyncFromCloud();
-    };
-
-    // --- Chart & Table ---
+    window.saveConfig = () => { ghConfig.token = document.getElementById('cfgToken').value.trim(); ghConfig.user = document.getElementById('cfgUser').value.trim(); ghConfig.repo = document.getElementById('cfgRepo').value.trim(); localStorage.setItem('gh_token', ghConfig.token); localStorage.setItem('gh_user', ghConfig.user); localStorage.setItem('gh_repo', ghConfig.repo); closeSettings(); autoSyncFromCloud(); };
     function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
-    
-    const verticalLinePlugin = { 
-        id: 'verticalLine', 
-        afterDraw: (chart) => {
-            if (chart.tooltip?._active?.length) {
-                const ctx = chart.ctx;
-                const activePoint = chart.tooltip._active[0];
-                const x = activePoint.element.x;
-                const bottom = chart.chartArea.bottom;
-                ctx.save();
-                ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = '#666'; 
-                ctx.moveTo(x, chart.chartArea.top); ctx.lineTo(x, bottom); ctx.stroke();
-                const dateStr = chart.data.labels[activePoint.index];
-                ctx.font = '11px Arial'; ctx.fillStyle = '#666'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-                ctx.fillText(dateStr, x, bottom + 6);
-                ctx.restore();
-            }
-        }
-    };
-    
+
+    // --- Chart & Table Optimized ---
+    const verticalLinePlugin = { id: 'verticalLine', afterDraw: (chart) => { if (chart.tooltip?._active?.length) { const ctx = chart.ctx; const activePoint = chart.tooltip._active[0]; const x = activePoint.element.x; const bottom = chart.chartArea.bottom; ctx.save(); ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = '#666'; ctx.moveTo(x, chart.chartArea.top); ctx.lineTo(x, bottom); ctx.stroke(); const dateStr = chart.data.labels[activePoint.index]; ctx.font = '11px Arial'; ctx.fillStyle = '#666'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(dateStr, x, bottom + 6); ctx.restore(); } } };
+
     function drawChart() {
         if(!globalData.length) return;
         const ctx = document.getElementById('valuationChart').getContext('2d');
         if(chartInstance) chartInstance.destroy();
         const validData = globalData;
         const peData = validData.map(d => (d.pe && d.pe > 0) ? d.pe : null);
-
         chartInstance = new Chart(ctx, {
             type: 'line',
             data: {
@@ -645,59 +459,38 @@
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false, 
-                interaction: { mode: 'index', intersect: false }, 
-                plugins: {
-                    tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { title: () => null } },
-                    zoom: { limits: { x: { min: 'original', max: 'original' } }, pan: { enabled: true, mode: 'x', limits: { x: { min: 'original', max: 'original' } } }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', limits: { x: { min: 'original', max: 'original' } } } }
-                },
-                scales: {
-                    x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { font: { size: 10 } } },
-                    y_pe: { type: 'linear', position: 'right', title: {display:true, text:'PE 倍数', color:'#c0392b', font:{size:10}}, grace: '5%', grid: {drawOnChartArea:false} },
-                    y_ps: { type: 'linear', position: 'left', title: {display:true, text:'PS 倍数', color:'#2980b9', font:{size:10}}, grace: '5%' }
-                }
-            },
-            plugins: [verticalLinePlugin]
+                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
+                plugins: { tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { title: () => null } }, zoom: { limits: { x: { min: 'original', max: 'original' } }, pan: { enabled: true, mode: 'x', limits: { x: { min: 'original', max: 'original' } } }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', limits: { x: { min: 'original', max: 'original' } } } } },
+                scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { font: { size: 10 } } }, y_pe: { type: 'linear', position: 'right', title: {display:true, text:'PE 倍数', color:'#c0392b', font:{size:10}}, grace: '5%', grid: {drawOnChartArea:false} }, y_ps: { type: 'linear', position: 'left', title: {display:true, text:'PS 倍数', color:'#2980b9', font:{size:10}}, grace: '5%' } }
+            }, plugins: [verticalLinePlugin]
         });
     }
 
     function renderTable() {
         const tbody = document.querySelector('#dataTable tbody');
-        tbody.innerHTML = '';
-        [...globalData].reverse().forEach(d => {
+        // 渲染优化：只渲染最近的 250 条数据 (约1年)，避免DOM操作过多导致页面卡顿
+        // 之前的代码渲染了 1500+ 条，是导致“点击取消慢”的元凶
+        const renderList = [...globalData].reverse().slice(0, 250);
+        
+        let html = ''; // 构建大字符串一次性插入，比逐条插入快
+        renderList.forEach(d => {
             const peStr = d.pe ? (d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>') : '-';
             const psStr = d.ps ? d.ps.toFixed(2) : '-';
             
             let tagClass = 'tag-real';
             let editAttr = '';
             let editIcon = '';
-
-            // 修改点：根据sourceType设置可点击属性
-            if (d.sourceType === 'manual') {
-                tagClass = 'tag-manual';
-                editAttr = `onclick="editYearData(${d.year})"`; // 编辑已录入的数据
-                editIcon = ' ✎';
-            } else if (d.sourceType === 'copy') {
-                tagClass = 'tag-copy';
-                // 关键点：沿用时，点击传入的是 rowYear (2026)，而不是 year (2025)
-                // 这样点击后弹出的就是“2026年”的录入框
-                editAttr = `onclick="editYearData(${d.rowYear})"`; 
-                editIcon = ' ✎';
-            }
-
+            if (d.sourceType === 'manual') { tagClass = 'tag-manual'; editAttr = `onclick="editYearData(${d.year})"`; editIcon = ' ✎'; }
+            else if (d.sourceType === 'copy') { tagClass = 'tag-copy'; editAttr = `onclick="editYearData(${d.rowYear})"`; editIcon = ' ✎'; }
             const sourceText = d.sourceName || '-';
-            
-            tbody.innerHTML += `<tr>
-                <td>${d.date}</td>
-                <td>${d.price.toFixed(2)}</td>
-                <td><span class="tag ${tagClass}" ${editAttr} title="点击修改或录入">${sourceText}${editIcon}</span></td>
-                <td>${d.mktCap ? (d.mktCap/1e8).toFixed(2) : '-'}</td>
-                <td>${d.rev ? (d.rev/1e8).toFixed(2) : '-'}</td>
-                <td class="${d.prof>0?'':'loss'}">${d.prof ? (d.prof/1e8).toFixed(2) : '-'}</td>
-                <td class="val-pe">${peStr}</td>
-                <td class="val-ps">${psStr}</td>
-            </tr>`;
+
+            html += `<tr><td>${d.date}</td><td>${d.price.toFixed(2)}</td><td><span class="tag ${tagClass}" ${editAttr} title="点击修改">${sourceText}${editIcon}</span></td><td>${d.mktCap ? (d.mktCap/1e8).toFixed(2) : '-'}</td><td>${d.rev ? (d.rev/1e8).toFixed(2) : '-'}</td><td class="${d.prof>0?'':'loss'}">${d.prof ? (d.prof/1e8).toFixed(2) : '-'}</td><td class="val-pe">${peStr}</td><td class="val-ps">${psStr}</td></tr>`;
         });
+        tbody.innerHTML = html;
+        
+        if (globalData.length > 250) {
+            tbody.innerHTML += `<tr><td colspan="8" style="text-align:center; color:#999;">... 更多历史数据请在图表中查看 ...</td></tr>`;
+        }
     }
 </script>
 </body>
