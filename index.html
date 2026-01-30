@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (直连版)</title>
+    <title>估值透视 (直连修复版)</title>
     <!-- Chart.js & Plugins -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
@@ -153,7 +153,7 @@
 <div class="container">
     <header>
         <div class="top-bar">
-            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(直连版)</span></h2>
+            <h2>📈 估值透视 <span style="font-size:12px; font-weight:normal; color:#999; margin-left:5px;">(直连修复版)</span></h2>
             <div class="sync-info" onclick="showSettings()" title="GitHub 配置">
                 <div id="syncDot" class="sync-dot"></div>
                 <span id="statusTxt">未连接</span>
@@ -236,7 +236,7 @@
             <div class="form-row">
                 <label>GitHub Token (可选)</label>
                 <input type="password" id="cfgToken" placeholder="ghp_...">
-                <div class="form-hint">⚠️ 保存时请开启 VPN，否则无法连接 GitHub</div>
+                <div class="form-hint">⚠️ 保存/同步时请开启 VPN，否则无法连接 GitHub</div>
             </div>
             <div class="form-row">
                 <label>用户名</label>
@@ -262,5 +262,506 @@
     let batchModalResolve = null;
     let syncTimer = null;
 
-    // 移除了 PROXY_URL，改用 JSONP 方式
-    const DB_
+    const DB_KEY = "stock_valuation_db_v1";
+
+    let ghConfig = {
+        token: localStorage.getItem('stock_token') || '',
+        user: localStorage.getItem('stock_user') || 'dlezywj-cell',
+        repo: localStorage.getItem('stock_repo') || 'pepsdata',
+        file: 'data.json'
+    };
+
+    // 初始化
+    document.getElementById('endDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('btnSearch').addEventListener('click', runSearch);
+    document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
+    document.getElementById('stockInput').addEventListener('keydown', e => { if(e.keyCode===13) runSearch(); });
+
+    // 尝试同步
+    if(ghConfig.token) {
+        setTimeout(autoSyncFromCloud, 500); 
+    } else {
+        updateStatus('ready', '本地模式');
+    }
+
+    // --- JSONP 核心工具 (不使用插件、不使用VPN、直连) ---
+    function fetchJsonp(url, callbackParam = 'cb') {
+        return new Promise((resolve, reject) => {
+            const callbackName = 'jsonp_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+            const script = document.createElement('script');
+            
+            window[callbackName] = function(data) {
+                cleanup();
+                resolve(data);
+            };
+
+            function cleanup() {
+                delete window[callbackName];
+                if (script.parentNode) script.parentNode.removeChild(script);
+            }
+
+            const separator = url.includes('?') ? '&' : '?';
+            script.src = `${url}${separator}${callbackParam}=${callbackName}`;
+            script.onerror = () => {
+                cleanup();
+                reject(new Error('请求失败'));
+            };
+
+            document.head.appendChild(script);
+        });
+    }
+
+    // --- 搜索 (修复版：使用 suggest3 接口，支持 JSONP) ---
+    async function runSearch() {
+        const val = document.getElementById('stockInput').value.trim();
+        if (!val) return;
+        
+        try {
+            document.getElementById('btnSearch').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            
+            // 使用 suggest3 接口，完美支持 cb 参数，不需要代理
+            const url = `https://suggest3.eastmoney.com/suggest/default.aspx?input=${encodeURIComponent(val)}&type=14,31,41`;
+            const json = await fetchJsonp(url, 'cb'); 
+            
+            if(json?.QuotationCodeTable?.Data?.length > 0) {
+                const item = json.QuotationCodeTable.Data[0];
+                let secId = '';
+                if(item.QuoteID) {
+                    secId = item.QuoteID;
+                } else {
+                    if(item.MarketType == "1") secId = `1.${item.Code}`; 
+                    else if(item.MarketType == "2") secId = `0.${item.Code}`; 
+                    else if(item.MarketType == "31" || item.MarketType == "5") secId = `116.${item.Code}`; 
+                    else if(item.Code.startsWith('6')) secId = `1.${item.Code}`;
+                    else secId = `0.${item.Code}`;
+                }
+                currentStock = { code: item.Code, name: item.Name, secId };
+                document.getElementById('btn-run').disabled = false;
+                showToast(`✅ 已锁定: ${item.Name} (${item.Code})`, 'ok');
+            } else {
+                showToast("❌ 未找到股票", 'error');
+            }
+        } catch(e) { 
+            console.error(e);
+            showToast("❌ 搜索超时 (请检查网络)", 'error'); 
+        } finally {
+            document.getElementById('btnSearch').innerHTML = '🔍 搜索';
+        }
+    }
+
+    // --- 核心分析主流程 ---
+    async function runAnalysis(silent = false) {
+        const btn = document.getElementById('btn-run');
+        if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+        
+        try {
+            const beg = document.getElementById('startDate').value.replace(/-/g, '');
+            const end = document.getElementById('endDate').value.replace(/-/g, '');
+            
+            // 1. 获取股价和股本 (直连)
+            if(!silent || globalData.length === 0) {
+                await Promise.all([fetchShares(), fetchKline(beg, end)]);
+            }
+            if(globalData.length === 0) throw new Error("该时间段无股价数据");
+
+            // 2. 获取API历史财报 (直连)
+            let finMap = await fetchHistoricalFinancials(currentStock);
+
+            // 3. 计算所有年份
+            const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0,4))));
+            const sortedYears = Array.from(yearsSet).sort((a,b) => a-b);
+
+            // 4. 识别需要录入的年份
+            let missingYears = [];
+            
+            for (let year of sortedYears) {
+                const savedData = getFromDB(currentStock.code, year);
+                if (savedData) {
+                    finMap[year] = { 
+                        year: year, rev: savedData.rev, prof: savedData.prof, 
+                        source: 'manual', name: `★${year}录入` 
+                    };
+                } else if (!finMap[year]) {
+                    missingYears.push(year);
+                }
+            }
+
+            // 5. 补录逻辑
+            if (missingYears.length > 0 && !silent) {
+                showToast(`⚠️ 需补录 ${missingYears.length} 年数据`, 'warn');
+                const batchData = await openBatchModal(missingYears);
+                
+                if (batchData) {
+                    for (let y in batchData) {
+                        const { rev, prof } = batchData[y];
+                        const yearInt = parseInt(y);
+                        await saveToDB(currentStock.code, yearInt, rev, prof, false); 
+                        finMap[yearInt] = { 
+                            year: yearInt, rev: rev, prof: prof, 
+                            source: 'manual', name: `★${yearInt}录入` 
+                        };
+                    }
+                    triggerSync();
+                } else {
+                    showToast('取消录入，部分数据将缺失', 'error');
+                }
+            }
+
+            // 6. 绘图
+            calculate(finMap);
+            drawChart();
+            renderTable();
+            
+            if(!silent) showToast("计算完成", 'ok');
+            document.getElementById('stockInput').value = ''; 
+            
+        } catch(e) {
+            console.error(e);
+            if(!silent) showToast(e.message || "运行出错", 'error');
+        } finally {
+            if(!silent) { btn.disabled = false; btn.innerHTML = '⚡ 计算'; }
+        }
+    }
+
+    function calculate(finMap) {
+        if(Object.keys(finMap).length === 0) return;
+        globalData = globalData.map(item => {
+            const y = parseInt(item.date.substring(0,4));
+            let fin = finMap[y];
+            if(fin) {
+                const mktCap = item.price * currentTotalShares;
+                return {
+                    ...item,
+                    year: fin.year,
+                    sourceType: fin.source,
+                    sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name,
+                    mktCap, rev: fin.rev, prof: fin.prof,
+                    pe: fin.prof>0 ? mktCap/fin.prof : -1,
+                    ps: fin.rev>0 ? mktCap/fin.rev : 0
+                };
+            } else {
+                return { ...item, pe: null, ps: null };
+            }
+        });
+    }
+
+    // --- 批量弹窗逻辑 ---
+    function openBatchModal(years, prefillData = {}) {
+        return new Promise((resolve) => {
+            const container = document.getElementById('batchInputContainer');
+            container.innerHTML = '';
+            
+            years.forEach(y => {
+                const defaultRev = prefillData[y] ? (prefillData[y].rev/1e8) : '';
+                const defaultProf = prefillData[y] ? (prefillData[y].prof/1e8) : '';
+                
+                const row = document.createElement('div');
+                row.className = 'batch-row';
+                row.dataset.year = y;
+                row.innerHTML = `
+                    <div class="row-year">${y}</div>
+                    <div class="row-inputs">
+                        <input type="number" placeholder="营收(亿)" class="in-rev" value="${defaultRev}" inputmode="decimal">
+                        <input type="number" placeholder="净利(亿)" class="in-prof" value="${defaultProf}" inputmode="decimal">
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+
+            document.getElementById('batchInputModal').style.display = 'flex';
+            batchModalResolve = resolve;
+            
+            const firstInput = container.querySelector('input');
+            if(firstInput) firstInput.focus();
+        });
+    }
+
+    function closeBatchModal(isConfirm) {
+        document.getElementById('batchInputModal').style.display = 'none';
+        if (isConfirm && batchModalResolve) {
+            let result = {};
+            const rows = document.querySelectorAll('.batch-row');
+            
+            rows.forEach(row => {
+                const y = row.dataset.year;
+                const revVal = row.querySelector('.in-rev').value;
+                const profVal = row.querySelector('.in-prof').value;
+                
+                if (revVal && profVal) {
+                    result[y] = { 
+                        rev: parseFloat(revVal) * 1e8, 
+                        prof: parseFloat(profVal) * 1e8 
+                    };
+                }
+            });
+            batchModalResolve(result);
+        } else if (batchModalResolve) {
+            batchModalResolve(null);
+        }
+    }
+
+    async function editYearData(year) {
+        const saved = getFromDB(currentStock.code, year);
+        const prefill = saved ? { [year]: saved } : {};
+        const newData = await openBatchModal([year], prefill);
+        
+        if (newData && newData[year]) {
+            await saveToDB(currentStock.code, year, newData[year].rev, newData[year].prof);
+            runAnalysis(true);
+        }
+    }
+
+    // --- GitHub & DB ---
+    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
+    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
+    function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
+    function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
+
+    async function autoSyncFromCloud() {
+        if (!ghConfig.token) return;
+        updateStatus('syncing', '同步中');
+        // 同步逻辑保持 fetch，需要 VPN
+        try {
+            const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
+            const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+            if (res.ok) {
+                const data = await res.json();
+                const cloudDB = JSON.parse(b64_to_utf8(data.content));
+                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
+                updateStatus('online', '已同步');
+            } else if(res.status === 404) updateStatus('online', '新文件');
+            else updateStatus('error', 'Sync失败'); 
+        } catch (e) { 
+            console.warn("GitHub需要VPN");
+            updateStatus('error', '连接超时');
+        }
+    }
+
+    async function saveToDB(code, year, rev, prof, immediateSync = true) {
+        let db = getLocalDB();
+        if (!db[code]) db[code] = {};
+        db[code][year] = { rev, prof, timestamp: Date.now() };
+        localStorage.setItem(DB_KEY, JSON.stringify(db));
+        if (immediateSync) triggerSync();
+    }
+
+    function triggerSync() {
+        if (!ghConfig.token) {
+            showToast('已保存本地', 'ok');
+            return;
+        }
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(async () => {
+            updateStatus('syncing', '上传中');
+            try {
+                const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
+                // 保存逻辑保持 fetch，需要 VPN
+                const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
+                let sha = getRes.ok ? (await getRes.json()).sha : null;
+                
+                await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        message: `Update ${currentStock.code} data`, 
+                        content: utf8_to_b64(JSON.stringify(getLocalDB())), 
+                        sha: sha 
+                    })
+                });
+                updateStatus('online', '已保存');
+            } catch(e) { 
+                updateStatus('error', '上传失败'); 
+                showToast('上传GitHub失败(请检查VPN)', 'warn');
+            }
+        }, 1500); 
+    }
+
+    // --- 数据获取 (直连版) ---
+    async function fetchShares() {
+        try {
+            const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
+            const json = await fetchJsonp(url, 'cb'); 
+            currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json.data.f2) || 1e8;
+        } catch(e) { currentTotalShares = 1e8; }
+    }
+    
+    async function fetchKline(beg, end) {
+        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
+        const json = await fetchJsonp(url, 'cb');
+        if (!json?.data?.klines) throw new Error("无股价数据"); 
+        globalData = json.data.klines.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
+    }
+
+    async function fetchHistoricalFinancials(stockObj) {
+        let map = {};
+        const sid = stockObj.secId;
+        const code = stockObj.code;
+        
+        let reportName = 'RPT_LICO_FN_CPD'; 
+        let filterStr = `(SECURITY_CODE="${code}")`;
+        let fieldRev = 'TOTAL_OPERATE_INCOME';
+        let fieldProf = 'PARENT_NETPROFIT';
+        
+        if (sid.startsWith('116.')) { 
+            reportName = 'RPT_HK_FN_MAIN';
+            filterStr = `(SECUCODE="${code}.HK")`;
+            fieldRev = 'OPERATE_INCOME'; 
+            fieldProf = 'PARENT_NETPROFIT';
+        } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) {
+            reportName = 'RPT_US_FN_MAIN';
+            filterStr = `(SECURITY_CODE="${code}")`;
+            fieldRev = 'TOTAL_REVENUE';
+            fieldProf = 'PARENT_NETPROFIT';
+        }
+
+        try {
+            // 财报接口使用 callback 参数
+            const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1`;
+            const json = await fetchJsonp(url, 'callback'); 
+            
+            if(json?.result?.data) {
+                json.result.data.forEach(item => {
+                    const d = item.REPORT_DATE || item.REPORTDATE;
+                    if(d && d.includes("-12-31")) {
+                        const y = parseInt(d.substring(0,4));
+                        const r = item[fieldRev] || item['OPERATE_INCOME'] || item['TOTAL_OPERATE_INCOME'];
+                        const p = item[fieldProf];
+                        if(r && p) map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
+                    }
+                });
+            }
+        } catch(e) { console.warn("API Error", e); }
+        return map;
+    }
+
+    // --- UI Helpers ---
+    function updateStatus(status, text) {
+        document.getElementById('syncDot').className = 'sync-dot ' + status;
+        document.getElementById('statusTxt').innerText = text;
+    }
+    function showToast(msg, type='ok') {
+        const el = document.getElementById('toastMsg');
+        el.innerHTML = msg; el.className = `status-msg ${type}`; el.style.display = 'block';
+        setTimeout(() => el.style.display='none', 3000);
+    }
+    // 确保这些函数挂载到 window 对象上，否则 HTML onclick 找不到
+    window.showSettings = () => {
+        document.getElementById('settingModal').style.display = 'flex';
+        document.getElementById('cfgToken').value = ghConfig.token;
+        document.getElementById('cfgUser').value = ghConfig.user;
+        document.getElementById('cfgRepo').value = ghConfig.repo;
+    };
+    window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
+    window.saveConfig = () => {
+        ghConfig.token = document.getElementById('cfgToken').value.trim();
+        ghConfig.user = document.getElementById('cfgUser').value.trim();
+        ghConfig.repo = document.getElementById('cfgRepo').value.trim();
+        localStorage.setItem('stock_token', ghConfig.token);
+        localStorage.setItem('stock_user', ghConfig.user);
+        localStorage.setItem('stock_repo', ghConfig.repo);
+        closeSettings(); 
+        showToast('配置已保存，请开启VPN同步', 'ok');
+        autoSyncFromCloud();
+    };
+
+    // --- Chart & Table ---
+    function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
+    
+    const verticalLinePlugin = { 
+        id: 'verticalLine', 
+        afterDraw: (chart) => {
+            if (chart.tooltip?._active?.length) {
+                const ctx = chart.ctx;
+                const activePoint = chart.tooltip._active[0];
+                const x = activePoint.element.x;
+                const bottom = chart.chartArea.bottom;
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([4, 4]);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = '#666';
+                ctx.moveTo(x, chart.chartArea.top);
+                ctx.lineTo(x, bottom);
+                ctx.stroke();
+                const dataIndex = activePoint.index;
+                const dateStr = chart.data.labels[dataIndex];
+                ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial';
+                ctx.fillStyle = '#666';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText(dateStr, x, bottom + 6);
+                ctx.restore();
+            }
+        }
+    };
+    
+    function drawChart() {
+        if(!globalData.length) return;
+        const ctx = document.getElementById('valuationChart').getContext('2d');
+        if(chartInstance) chartInstance.destroy();
+        
+        const validData = globalData; 
+        const peData = validData.map(d => (d.pe && d.pe > 0) ? d.pe : null);
+        const psData = validData.map(d => d.ps !== null ? d.ps : null);
+
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: validData.map(d => d.date),
+                datasets: [
+                    { 
+                        label: 'PE (右轴)', data: peData, 
+                        borderColor: '#c0392b', backgroundColor: 'rgba(192, 57, 43, 0.05)', 
+                        borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, pointHoverRadius: 4, spanGaps: true,
+                        segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } 
+                    },
+                    { 
+                        label: 'PS (左轴)', data: psData, 
+                        borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.05)', 
+                        borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, pointHoverRadius: 4, spanGaps: true,
+                        segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } 
+                    }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, 
+                interaction: { mode: 'index', intersect: false }, 
+                plugins: {
+                    tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { title: () => null } },
+                    zoom: { limits: { x: { min: 'original', max: 'original' } }, pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } }
+                },
+                scales: {
+                    x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { font: { size: 10 } } },
+                    y_pe: { type: 'linear', position: 'right', title: {display:true, text:'PE 倍数', color:'#c0392b', font:{size:10}}, grace: '5%', grid: {drawOnChartArea:false} },
+                    y_ps: { type: 'linear', position: 'left', title: {display:true, text:'PS 倍数', color:'#2980b9', font:{size:10}}, grace: '5%' }
+                }
+            },
+            plugins: [verticalLinePlugin]
+        });
+    }
+
+    function renderTable() {
+        const tbody = document.querySelector('#dataTable tbody');
+        tbody.innerHTML = '';
+        [...globalData].reverse().slice(0, 500).forEach(d => {
+            if(d.pe === undefined || d.pe === null) return; 
+            const peStr = d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>';
+            const tagClass = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
+            const editAttr = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})"` : '';
+            const editIcon = d.sourceType === 'manual' ? ' ✎' : '';
+            
+            tbody.innerHTML += `<tr>
+                <td>${d.date}</td>
+                <td>${d.price.toFixed(2)}</td>
+                <td><span class="tag ${tagClass}" ${editAttr}>${d.sourceName}${editIcon}</span></td>
+                <td>${(d.mktCap/1e8).toFixed(2)}</td>
+                <td>${(d.rev/1e8).toFixed(2)}</td>
+                <td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td>
+                <td class="val-pe">${peStr}</td>
+                <td class="val-ps">${d.ps.toFixed(2)}</td>
+            </tr>`;
+        });
+    }
+</script>
+</body>
+</html>
