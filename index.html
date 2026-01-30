@@ -3,13 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (数据保护版)</title>
-    <!-- Chart.js & Plugins -->
+    <title>估值透视 (精准回溯版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
-    <!-- Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
@@ -27,7 +25,6 @@
             display: flex; flex-direction: column; overflow: hidden;
         }
         
-        /* --- 顶部区域 --- */
         header { background: #fff; border-bottom: 1px solid var(--border); }
 
         .top-bar {
@@ -108,9 +105,12 @@
         .val-pe { color: var(--danger); font-weight: bold; }
         .val-ps { color: var(--primary); font-weight: bold; }
         .tag { padding: 1px 5px; border-radius: 3px; font-size: 10px; display: inline-block; transform: scale(0.95); }
-        .tag-real { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
-        .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; cursor: pointer; }
-        .tag-est { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; } /* 自动沿用 */
+        
+        /* 标签样式细分 */
+        .tag-real { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; } /* 真实年报 */
+        .tag-manual { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; cursor: pointer; } /* 手动/GitHub录入 */
+        .tag-copy { background: #fffbe6; color: #faad14; border: 1px solid #ffe58f; font-style: italic; } /* 沿用数据 */
+        
         .loss { color: #27ae60; font-style: italic; }
 
         .status-msg { 
@@ -196,15 +196,14 @@
     </div>
 </div>
 
-<!-- 录入弹窗 -->
 <div id="inputModal" class="modal-overlay">
     <div class="modal-box">
         <div class="modal-header">
             <span>✍️ 录入 <span id="modalYear"></span>年 数据</span>
         </div>
         <div style="font-size:12px; color:#c0392b; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:12px;">
-            ⚠️ 缺失当前年份数据，请补充。
-            <br><span style="color:#666; font-weight:normal;">(取消则沿用上一年数据)</span>
+            ⚠️ 缺失该年数据，请补充。
+            <br><span style="color:#666; font-weight:normal;">(点击取消将自动尝试沿用上一年)</span>
         </div>
         <div class="modal-body">
             <div class="form-row">
@@ -217,7 +216,6 @@
             </div>
         </div>
         <div class="modal-footer">
-            <!-- 关键修改：取消按钮调用 closeInputModal(false) -->
             <button class="btn-block btn-cancel" onclick="closeInputModal(false)">取消</button>
             <button class="btn-block btn-confirm" onclick="closeInputModal(true)">保存</button>
         </div>
@@ -310,7 +308,7 @@
         } finally { document.getElementById('btnSearch').innerHTML = '🔍 搜索'; }
     }
 
-    // --- 分析主流程 ---
+    // --- 核心逻辑: 数据获取与分析 ---
     async function runAnalysis(silent = false) {
         const btn = document.getElementById('btn-run');
         if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
@@ -318,82 +316,87 @@
         try {
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
-            const checkYear = new Date().getFullYear();
 
-            // 1. 获取基础数据
+            // 1. 基础数据 (股价 + 总股本)
             if(!silent || globalData.length === 0) {
                 await Promise.all([fetchShares(), fetchKline(beg, end)]);
             }
             
-            // 2. 获取财报
+            // 2. 获取东财真实年报 (优先级 1)
+            // finMap 结构: { 2024: {year:2024, rev:..., prof:..., source:'real', name:'2024年报'} }
             let finMap = await fetchHistoricalFinancials(currentStock.code);
+            
+            // 找出东财已有的最新年份
+            const realYears = Object.keys(finMap).map(Number);
+            const maxRealYear = realYears.length > 0 ? Math.max(...realYears) : 0;
 
-            // 3. 尝试获取云端 stockdata/data.json
-            let extForecast = null;
-            try {
-                const extRes = await fetch(PROXY_URL + encodeURIComponent("https://raw.githubusercontent.com/dlezywj-cell/stockdata/main/data.json"));
-                const extList = await extRes.json();
-                extForecast = extList.find(item => item.code.includes(currentStock.code));
-            } catch(e) { console.warn("外部预测数据获取失败", e); }
+            // 3. 获取GitHub/本地存储的预测数据 (优先级 2)
+            // 读取本地缓存 (已包含自动同步下来的GitHub数据)
+            const localDB = getLocalDB();
+            const savedStockData = localDB[currentStock.code] || {};
 
-            // 4. 数据融合
-            const savedData = getFromDB(currentStock.code, checkYear);
-            let hasRealReport = !!finMap[checkYear];
-            let hasSavedPredict = !!savedData;
+            // 合并逻辑: 只合并比东财更晚的年份，或者东财没有的年份
+            // 如果GitHub有2025，东财没有，则采纳
+            Object.keys(savedStockData).forEach(yStr => {
+                const y = parseInt(yStr);
+                const record = savedStockData[yStr];
+                
+                // 如果是真实年报没有覆盖的年份（如2025, 2026），且我们有存储数据，则加载
+                if (y > maxRealYear) {
+                    const dateObj = new Date(record.timestamp);
+                    const dateStr = `${dateObj.getMonth()+1}-${dateObj.getDate()}`; // 格式: 12-19
+                    
+                    finMap[y] = {
+                        year: y,
+                        rev: record.rev,
+                        prof: record.prof,
+                        source: 'manual',
+                        name: `${dateStr}录入` // 满足需求: 显示录入日期
+                    };
+                    if(!silent) showToast(`已加载 ${y} 预测数据`, 'ok');
+                }
+            });
 
-            // 逻辑优先级: 
-            // 1. 本地/云端存储的手动数据
-            if (hasSavedPredict) {
-                finMap[checkYear] = { 
-                    year: checkYear, 
-                    rev: savedData.rev, 
-                    prof: savedData.prof, 
-                    source: 'manual', 
-                    name: `★${checkYear}录入` 
-                };
-                if(!silent) showToast(`已加载 ${checkYear} 预测数据`, 'ok');
-            } 
-            // 2. 真实年报
-            else if (hasRealReport) {
-                // do nothing, use real
-            }
-            // 3. 云端公共库预测
-            else if (extForecast && (extForecast.revenue || extForecast.profit)) {
-                let rev = (extForecast.revenue || 0) * 1e8; 
-                let prof = (extForecast.profit || 0) * 1e8; 
-                let note = '★云端预测';
-                if(extForecast.logs && extForecast.logs.length > 0) {
-                    extForecast.logs.sort((a,b) => new Date(b.date) - new Date(a.date));
-                    const lastDate = new Date(extForecast.logs[0].date);
-                    if(!isNaN(lastDate)) {
-                        note = `★${lastDate.getMonth()+1}-${lastDate.getDate()}更新`;
+            // 4. 缺失数据弹窗检查 (优先级 3)
+            // 规则：2025、2026年没数据，先查GitHub(上面已查)，如果还没有，则弹窗。
+            // 我们检查当前年和下一年。
+            const currentYear = new Date().getFullYear(); // 2025 or 2026
+            const yearsToCheck = [currentYear, currentYear + 1];
+
+            if (!silent) {
+                for (let checkY of yearsToCheck) {
+                    // 如果该年比东财最新年报还要晚，且 finMap 中还没有（说明GitHub也没存）
+                    // 则弹出录入框
+                    if (checkY > maxRealYear && !finMap[checkY]) {
+                        const manual = await openInputModal(checkY);
+                        if (manual) {
+                            // 用户录入并保存
+                            await saveToDB(currentStock.code, checkY, manual.rev, manual.prof);
+                            
+                            // 立即更新到 finMap 供本次计算使用
+                            const now = new Date();
+                            finMap[checkY] = { 
+                                year: checkY, 
+                                rev: manual.rev, 
+                                prof: manual.prof, 
+                                source: 'manual', 
+                                name: `${now.getMonth()+1}-${now.getDate()}录入`
+                            };
+                        } else {
+                            // 用户点击取消:
+                            // 不做任何操作，finMap[checkY] 保持 undefined。
+                            // 关键点：calculate 函数会处理回溯。
+                            showToast(`${checkY}年未录入，将尝试回溯旧数据`, 'warn');
+                        }
                     }
                 }
-                finMap[checkYear] = { year: checkYear, rev: rev, prof: prof, source: 'manual', name: note };
-                if(!silent) showToast(`已加载云端最新预测`, 'ok');
-            }
-            // 4. 手动录入 (仅在非静默模式且无任何数据时)
-            else if (!silent) {
-                const manual = await openInputModal(checkYear);
-                if (manual) {
-                    // 用户录入了数据
-                    await saveToDB(currentStock.code, checkYear, manual.rev, manual.prof);
-                    finMap[checkYear] = { 
-                        year: checkYear, 
-                        rev: manual.rev, 
-                        prof: manual.prof, 
-                        source: 'manual', 
-                        name: `★${checkYear}录入` 
-                    };
-                } else {
-                    // 用户点击了取消 -> 流程继续，依靠 calculate 中的兜底逻辑
-                    showToast('未录入，尝试沿用旧数据', 'warn');
-                }
             }
 
+            // 5. 执行计算 (回溯逻辑在此处)
             calculate(finMap);
             drawChart();
             renderTable();
+
             document.getElementById('stockInput').value = '';
             
         } catch(e) {
@@ -404,31 +407,61 @@
         }
     }
 
+    // --- 计算逻辑: 自动回溯 (Waterfill) ---
     function calculate(finMap) {
-        const years = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
-        if(!years.length) return;
-        
+        // 找出所有可用数据的年份
+        const availableYears = Object.keys(finMap).map(Number).sort((a,b)=>a-b);
+        const minYear = availableYears[0];
+
         globalData = globalData.map(item => {
-            const y = new Date(item.date).getFullYear();
-            let fin = finMap[y];
+            const dateY = new Date(item.date).getFullYear(); // 当前股价对应的年份
             
-            // 兜底逻辑：如果当年没有数据，沿用上一年 (无论是历史还是当前年，响应用户需求)
-            if (!fin && finMap[y-1]) {
-                fin = { ...finMap[y-1], year: y, sourceName: `${y-1}数据(沿用)`, sourceType: 'est' };
+            // 核心逻辑: 寻找适用于 dateY 的财务数据
+            // 1. 先找 dateY 当年的数据
+            // 2. 如果没有，找 dateY - 1
+            // 3. 直到找到或者小于最小年份
+            
+            let effectiveFin = null;
+            let searchY = dateY;
+            
+            // 向前回溯循环
+            while (searchY >= minYear) {
+                if (finMap[searchY]) {
+                    effectiveFin = finMap[searchY];
+                    break; // 找到了最近的有效数据
+                }
+                searchY--;
             }
-            
-            if(fin) {
+
+            // 如果找到了数据
+            if(effectiveFin) {
                 const mktCap = item.price * currentTotalShares;
+                
+                // 决定显示名称和样式
+                let displayName = effectiveFin.name;
+                let displayType = effectiveFin.source;
+                
+                // 如果使用的数据年份 < 当前股价年份，说明是“沿用”
+                // 例如: 股价在2026年，用的却是2025年的录入数据
+                if (effectiveFin.year < dateY) {
+                    displayName = `沿用${effectiveFin.year}数据`; // 满足需求: "沿用2025数据"
+                    displayType = 'copy';
+                }
+
                 return {
                     ...item,
-                    year: fin.year,
-                    sourceType: fin.sourceType || fin.source,
-                    sourceName: fin.sourceName || fin.name,
-                    mktCap, rev: fin.rev, prof: fin.prof,
-                    pe: fin.prof>0 ? mktCap/fin.prof : -1,
-                    ps: fin.rev>0 ? mktCap/fin.rev : 0
+                    year: effectiveFin.year, // 实际使用的财务年份
+                    sourceType: displayType,
+                    sourceName: displayName,
+                    mktCap, 
+                    rev: effectiveFin.rev, 
+                    prof: effectiveFin.prof,
+                    pe: effectiveFin.prof > 0 ? mktCap/effectiveFin.prof : -1,
+                    ps: effectiveFin.rev > 0 ? mktCap/effectiveFin.rev : 0
                 };
             }
+
+            // 如果连回溯都找不到数据 (比如股价在2019，但我们只有2020以后的数据)
             return {
                 ...item, mktCap: item.price * currentTotalShares,
                 rev: null, prof: null, pe: null, ps: null
@@ -436,13 +469,13 @@
         });
     }
 
-    // --- GitHub & DB (关键修复区域) ---
+    // --- 数据存储: 保护非股票字段 ---
     function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
     function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
     function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
     function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
 
-    // 下载时：全量下载并存入本地（包含您的非股票数据）
+    // 全量同步 (下载)
     async function autoSyncFromCloud() {
         if (!ghConfig.token) return;
         updateStatus('syncing', '同步中');
@@ -453,7 +486,7 @@
                 const data = await res.json();
                 const cloudContent = JSON.parse(b64_to_utf8(data.content));
                 
-                // 合并逻辑：云端覆盖本地，确保您之前的 "0", "1" 等待办事项数据被保留在本地
+                // 合并: 云端覆盖本地，保留本地的Todo等非股票Key
                 const newDB = { ...getLocalDB(), ...cloudContent };
                 localStorage.setItem(DB_KEY, JSON.stringify(newDB));
                 
@@ -467,56 +500,52 @@
         } catch (e) { updateStatus('error', '错误'); }
     }
 
-    // 保存时：先拉取云端，精准注入，保留其他字段
+    // 增量保存 (上传)
     async function saveToDB(code, year, rev, prof) {
-        // 1. 先更新本地缓存，让界面立即响应
+        // 1. 更新本地
         let localDB = getLocalDB();
         if (!localDB[code]) localDB[code] = {};
-        localDB[code][year] = { rev, prof, timestamp: Date.now() };
+        localDB[code][year] = { rev, prof, timestamp: Date.now() }; // 存入时间戳
         localStorage.setItem(DB_KEY, JSON.stringify(localDB));
         
-        // 2. 如果配置了 GitHub，进行安全增量更新
+        // 2. 更新云端
         if (ghConfig.token) {
             clearTimeout(syncTimer);
             updateStatus('syncing', '准备上传');
-            
             try {
                 const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
                 
-                // A. 获取云端最新版本 (包含您的Todo数据)
+                // 先拉取最新的云端文件 (包含您的工作/生活记录)
                 const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-                
                 let finalDB = {};
                 let sha = null;
 
                 if (getRes.ok) {
                     const getData = await getRes.json();
                     sha = getData.sha;
-                    // 解析云端数据
                     finalDB = JSON.parse(b64_to_utf8(getData.content));
                 } else {
-                    // 文件不存在，使用本地数据作为初始数据
                     finalDB = localDB;
                 }
 
-                // B. 只修改本次涉及的股票代码，绝对不碰 "0", "1" 等其他 Key
+                // 只更新当前股票的当前年份
                 if (!finalDB[code]) finalDB[code] = {};
                 finalDB[code][year] = { rev, prof, timestamp: Date.now() };
 
-                // C. 回写
+                // 回写
                 const putRes = await fetch(url, {
                     method: 'PUT',
                     headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         message: `Update ${code} ${year}`, 
-                        content: utf8_to_b64(JSON.stringify(finalDB)), // 发送包含了Todo+股票的完整数据
+                        content: utf8_to_b64(JSON.stringify(finalDB)), 
                         sha: sha 
                     })
                 });
 
                 if(putRes.ok) {
                     updateStatus('online', '已保存');
-                    // 更新本地以匹配最新云端结构
+                    // 更新本地以保持一致
                     localStorage.setItem(DB_KEY, JSON.stringify(finalDB));
                 } else {
                     updateStatus('error', '上传失败');
@@ -526,11 +555,11 @@
                 updateStatus('error', '网络错误'); 
             }
         } else {
-            showToast('已保存至本地 (未配置Token)', 'ok');
+            showToast('已保存至本地', 'ok');
         }
     }
 
-    // --- 数据获取 ---
+    // --- 数据源API ---
     async function fetchShares() {
         try {
             const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`));
@@ -556,7 +585,8 @@
                         const y = parseInt(d.substring(0,4));
                         const r = item.TOTAL_OPERATE_INCOME || item.OPERATE_INCOME;
                         const p = item.PARENT_NETPROFIT || item.NETPROFIT;
-                        if(r && p) map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
+                        // 真实年报标记
+                        if(r && p) map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: `${y}年报` };
                     }
                 });
             }
@@ -564,7 +594,7 @@
         return map;
     }
 
-    // --- 交互与工具 ---
+    // --- 界面交互 ---
     async function editYearData(year) {
         const saved = getFromDB(currentStock.code, year);
         const manual = await openInputModal(year, saved ? (saved.rev/1e8) : '', saved ? (saved.prof/1e8) : '');
@@ -585,16 +615,14 @@
     }
 
     function closeInputModal(isConfirm) {
-        // 关键修复：立即隐藏弹窗
         document.getElementById('inputModal').style.display = 'none';
-        
         if (isConfirm && inputModalResolve) {
             const r = parseFloat(document.getElementById('inRev').value);
             const p = parseFloat(document.getElementById('inProf').value);
             if (!isNaN(r) && !isNaN(p)) inputModalResolve({ rev: r * 1e8, prof: p * 1e8 });
             else { inputModalResolve(null); }
         } else if (inputModalResolve) {
-            inputModalResolve(null); // 返回 null 代表用户取消
+            inputModalResolve(null); 
         }
     }
 
@@ -624,7 +652,7 @@
         closeSettings(); autoSyncFromCloud();
     };
 
-    // --- Chart ---
+    // --- Chart & Table ---
     function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
     
     const verticalLinePlugin = { 
@@ -636,15 +664,9 @@
                 const x = activePoint.element.x;
                 const bottom = chart.chartArea.bottom;
                 ctx.save();
-                ctx.beginPath();
-                ctx.setLineDash([4, 4]); 
-                ctx.lineWidth = 1;
-                ctx.strokeStyle = '#666'; 
-                ctx.moveTo(x, chart.chartArea.top);
-                ctx.lineTo(x, bottom); 
-                ctx.stroke();
-                const dataIndex = activePoint.index;
-                const dateStr = chart.data.labels[dataIndex];
+                ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = '#666'; 
+                ctx.moveTo(x, chart.chartArea.top); ctx.lineTo(x, bottom); ctx.stroke();
+                const dateStr = chart.data.labels[activePoint.index];
                 ctx.font = '11px Arial'; ctx.fillStyle = '#666'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
                 ctx.fillText(dateStr, x, bottom + 6);
                 ctx.restore();
@@ -672,15 +694,8 @@
                 responsive: true, maintainAspectRatio: false, 
                 interaction: { mode: 'index', intersect: false }, 
                 plugins: {
-                    tooltip: { 
-                        backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1,
-                        callbacks: { title: () => null }
-                    },
-                    zoom: { 
-                        limits: { x: { min: 'original', max: 'original' } },
-                        pan: { enabled: true, mode: 'x', limits: { x: { min: 'original', max: 'original' } } },
-                        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', limits: { x: { min: 'original', max: 'original' } } } 
-                    }
+                    tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { title: () => null } },
+                    zoom: { limits: { x: { min: 'original', max: 'original' } }, pan: { enabled: true, mode: 'x', limits: { x: { min: 'original', max: 'original' } } }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', limits: { x: { min: 'original', max: 'original' } } } }
                 },
                 scales: {
                     x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -699,9 +714,10 @@
             const peStr = d.pe ? (d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>') : '-';
             const psStr = d.ps ? d.ps.toFixed(2) : '-';
             
+            // 样式类名
             let tagClass = 'tag-real';
             if (d.sourceType === 'manual') tagClass = 'tag-manual';
-            else if (d.sourceType === 'est') tagClass = 'tag-est';
+            else if (d.sourceType === 'copy') tagClass = 'tag-copy';
 
             const editAttr = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})"` : '';
             const editIcon = d.sourceType === 'manual' ? ' ✎' : '';
