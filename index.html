@@ -3,68 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>估值透视 (批量录入版)</title>
-    <!-- Chart.js & Plugins -->
+    <title>估值透视</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
-    <!-- Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
         :root { --primary: #2980b9; --danger: #c0392b; --bg: #f4f6f9; --text: #2c3e50; --success: #27ae60; --border: #e0e0e0; }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
-            background: var(--bg); color: var(--text); margin: 0; padding: 20px; font-size: 13px; 
-        }
-        
-        .container { 
-            max-width: 1200px; margin: 0 auto; background: #fff; 
-            border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
-            display: flex; flex-direction: column; overflow: hidden;
-        }
-        
-        /* --- 顶部区域 --- */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; font-size: 13px; }
+        .container { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; flex-direction: column; overflow: hidden; }
         header { background: #fff; border-bottom: 1px solid var(--border); }
-
-        .top-bar {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 12px 20px; border-bottom: 1px solid #f0f0f0;
-        }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid #f0f0f0; }
         h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
-        
-        .sync-info { 
-            font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; 
-            padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.2s;
-        }
+        .sync-info { font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.2s; }
         .sync-info:hover { background: #f0f0f0; }
         .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
         .sync-dot.online { background: var(--success); box-shadow: 0 0 4px var(--success); }
         .sync-dot.syncing { background: var(--primary); animation: pulse 1s infinite; }
         .sync-dot.error { background: var(--danger); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
-
         .tools-bar { padding: 12px 20px; }
-        
-        .input-group input { 
-            padding: 0 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; 
-            height: 34px; width: 100%;
-        }
+        .input-group input { padding: 0 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; height: 34px; width: 100%; }
         .input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
-        
-        button { 
-            height: 34px; padding: 0 16px; border: none; border-radius: 4px; cursor: pointer; 
-            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; 
-            white-space: nowrap; transition: background 0.2s;
-        }
+        button { height: 34px; padding: 0 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; transition: background 0.2s; }
         .btn-primary { background: var(--primary); color: #fff; } .btn-primary:hover { background: #1f618d; }
         .btn-success { background: var(--success); color: #fff; } .btn-success:hover { background: #219150; }
         .btn-outline { background: #fff; border: 1px solid #ccc; color: #666; } .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
         button:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
-
         @media (min-width: 769px) {
             .tools-bar { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
             .group-search { display: flex; gap: 8px; align-items: center; }
@@ -74,7 +42,6 @@
             .group-dates .input-group input { width: 130px; }
             .group-actions { display: flex; gap: 8px; align-items: center; }
         }
-
         @media (max-width: 768px) {
             body { padding: 0; }
             .container { border-radius: 0; box-shadow: none; min-height: 100vh; }
@@ -91,14 +58,8 @@
             .group-actions button { flex: 1; height: 38px; font-size: 14px; }
             .chart-container { height: 350px !important; padding: 5px 10px; }
         }
-
         .chart-container { position: relative; height: 500px; padding: 15px 20px; width: 100%; }
-        .chart-tip { 
-            position: absolute; top: 10px; right: 15px; font-size: 11px; 
-            color: #999; background: rgba(255,255,255,0.8); padding: 2px 6px; 
-            border-radius: 4px; pointer-events: none; z-index: 10;
-        }
-
+        .chart-tip { position: absolute; top: 10px; right: 15px; font-size: 11px; color: #999; background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px; pointer-events: none; z-index: 10; }
         .table-wrap { border-top: 1px solid var(--border); overflow-x: auto; -webkit-overflow-scrolling: touch; background: #fff; }
         table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; text-align: right; min-width: 600px; }
         th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
@@ -111,38 +72,25 @@
         .tag-real { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
         .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; cursor: pointer; }
         .loss { color: #27ae60; font-style: italic; }
-
-        /* 提示框穿透 */
-        .status-msg { 
-            display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; 
-            position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
-            z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500;
-            background: #fff; border: 1px solid #eee;
-            pointer-events: none; 
-        }
+        .status-msg { display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500; background: #fff; border: 1px solid #eee; pointer-events: none; }
         .status-msg.ok { color: #389e0d; border-color: #b7eb8f; background: #f6ffed; }
         .status-msg.error { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
         .status-msg.warn { color: #d48806; border-color: #ffe58f; background: #fffbe6; }
-
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
         .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); animation: popIn 0.2s ease-out; display: flex; flex-direction: column; max-height: 80vh; }
         @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .modal-header { font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #333; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; }
         .modal-body { display: flex; flex-direction: column; gap: 0; overflow-y: auto; padding-right: 5px; margin-bottom: 15px; }
-        
         .batch-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px dashed #eee; }
         .batch-row:last-child { border-bottom: none; }
         .row-year { font-weight: 600; width: 50px; color: #2980b9; font-size: 14px; }
         .row-inputs { flex: 1; display: flex; gap: 8px; }
         .row-inputs input { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
         .row-inputs input:focus { border-color: var(--primary); outline: none; }
-
         .modal-footer { margin-top: auto; display: flex; gap: 10px; }
         .btn-block { flex: 1; padding: 10px; border-radius: 4px; font-weight: 600; cursor: pointer; border:none; }
         .btn-cancel { background: #f5f5f5; color: #666; border: 1px solid #eee; }
         .btn-confirm { background: var(--primary); color: #fff; }
-
-        /* 配置弹窗的样式复用 */
         .form-row label { display: block; margin-bottom: 5px; font-size: 12px; color: #666; font-weight: 600; }
         .form-row input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
     </style>
@@ -159,7 +107,6 @@
                 <i class="fas fa-cog" style="opacity:0.5; margin-left:4px;"></i>
             </div>
         </div>
-
         <div class="tools-bar">
             <div class="group-search">
                 <div class="input-group">
@@ -179,7 +126,7 @@
             </div>
         </div>
     </header>
-    
+
     <div id="toastMsg" class="status-msg"></div>
 
     <div class="chart-container">
@@ -191,12 +138,8 @@
         <table id="dataTable">
             <thead>
                 <tr>
-                    <th>日期</th>
-                    <th>股价</th>
-                    <th>财报/预测</th>
-                    <th>市值(亿)</th>
-                    <th>营收(亿)</th>
-                    <th>净利(亿)</th>
+                    <th>日期</th><th>股价</th><th>财报/预测</th><th>市值(亿)</th>
+                    <th>营收(亿)</th><th>净利(亿)</th>
                     <th style="color:var(--danger)">PE(倍)</th>
                     <th style="color:var(--primary)">PS(倍)</th>
                 </tr>
@@ -209,15 +152,11 @@
 <!-- 批量录入弹窗 -->
 <div id="batchInputModal" class="modal-overlay">
     <div class="modal-box">
-        <div class="modal-header">
-            <span>✍️ 补充财务数据</span>
-        </div>
+        <div class="modal-header"><span>✍️ 补充财务数据</span></div>
         <div style="font-size:12px; color:#c0392b; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:8px;">
             ⚠️ 请补全以下年份的数据 (单位: 亿元)
         </div>
-        <div class="modal-body" id="batchInputContainer">
-            <!-- 动态生成行 -->
-        </div>
+        <div class="modal-body" id="batchInputContainer"></div>
         <div class="modal-footer">
             <button class="btn-block btn-cancel" onclick="closeBatchModal(false)">取消</button>
             <button class="btn-block btn-confirm" onclick="closeBatchModal(true)">保存全部</button>
@@ -228,12 +167,12 @@
 <div class="modal-overlay" id="settingModal">
     <div class="modal-box" style="height:auto;">
         <div class="modal-header">
-            <span><i class="fab fa-github"></i> 独立配置 (Stock)</span>
+            <span><i class="fab fa-github"></i> GitHub 同步配置</span>
             <i class="fas fa-times" onclick="closeSettings()" style="cursor:pointer; color:#999;"></i>
         </div>
         <div class="modal-body" style="gap:12px;">
             <div class="form-row">
-                <label>GitHub Token (可选)</label>
+                <label>GitHub Token (可选，用于多设备同步)</label>
                 <input type="password" id="cfgToken" placeholder="ghp_...">
             </div>
             <div class="form-row">
@@ -252,7 +191,9 @@
 </div>
 
 <script>
-    // --- 全局变量 ---
+    // ============================================================
+    // 全局变量
+    // ============================================================
     let currentStock = { code: '', name: '', secId: '' };
     let globalData = [];
     let currentTotalShares = 0;
@@ -260,7 +201,8 @@
     let batchModalResolve = null;
     let syncTimer = null;
 
-    const PROXY_URL = "https://stock-proxy.dlezywj.workers.dev/?";
+    // ✅ 直接访问东方财富API，无需代理
+    // 使用 JSONP 兼容方案：先尝试直接 fetch，失败则用 script 标签 JSONP
     const DB_KEY = "stock_valuation_db_v1";
 
     let ghConfig = {
@@ -276,33 +218,79 @@
     document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
     document.getElementById('stockInput').addEventListener('keydown', e => { if(e.keyCode===13) runSearch(); });
 
-    // 尝试同步
     if(ghConfig.token) {
-        setTimeout(autoSyncFromCloud, 500); 
+        setTimeout(autoSyncFromCloud, 500);
     } else {
         updateStatus('ready', '本地模式');
     }
 
-    // --- 搜索 (支持美股/港股) ---
+    // ============================================================
+    // 核心请求函数：JSONP 方式（绕过 CORS）
+    // ============================================================
+    function fetchJSONP(url, callbackParam = 'cb') {
+        return new Promise((resolve, reject) => {
+            const cbName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+            const script = document.createElement('script');
+            const timer = setTimeout(() => {
+                cleanup();
+                reject(new Error('JSONP timeout'));
+            }, 10000);
+
+            window[cbName] = (data) => {
+                cleanup();
+                resolve(data);
+            };
+
+            function cleanup() {
+                clearTimeout(timer);
+                delete window[cbName];
+                if (script.parentNode) script.parentNode.removeChild(script);
+            }
+
+            const sep = url.includes('?') ? '&' : '?';
+            script.src = url + sep + callbackParam + '=' + cbName;
+            script.onerror = () => { cleanup(); reject(new Error('JSONP load error')); };
+            document.head.appendChild(script);
+        });
+    }
+
+    // 通用 fetch，先尝试直接请求，CORS 失败则尝试 JSONP
+    async function apiFetch(url, jsonpParam) {
+        // 先尝试直接 fetch（有些接口支持 CORS）
+        try {
+            const res = await fetch(url, {
+                headers: { 'Referer': 'https://www.eastmoney.com/' }
+            });
+            if (res.ok) return await res.json();
+        } catch(e) { /* CORS 失败，继续尝试 JSONP */ }
+
+        // JSONP 兜底
+        if (jsonpParam) {
+            return await fetchJSONP(url, jsonpParam);
+        }
+        throw new Error('请求失败，请检查网络');
+    }
+
+    // ============================================================
+    // 搜索
+    // ============================================================
     async function runSearch() {
         const val = document.getElementById('stockInput').value.trim();
         if (!val) return;
-        
         try {
             document.getElementById('btnSearch').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14,31,41&token=D43BF722C8E33BD5D50F639205545E43`;
-            const res = await fetch(PROXY_URL + encodeURIComponent(url));
-            const json = await res.json();
-            
+            const json = await apiFetch(url, 'cb');
+
             if(json?.QuotationCodeTable?.Data?.length > 0) {
                 const item = json.QuotationCodeTable.Data[0];
                 let secId = '';
                 if(item.QuoteID) {
                     secId = item.QuoteID;
                 } else {
-                    if(item.MarketType == "1") secId = `1.${item.Code}`; 
-                    else if(item.MarketType == "2") secId = `0.${item.Code}`; 
-                    else if(item.MarketType == "31" || item.MarketType == "5") secId = `116.${item.Code}`; 
+                    if(item.MarketType == "1") secId = `1.${item.Code}`;
+                    else if(item.MarketType == "2") secId = `0.${item.Code}`;
+                    else if(item.MarketType == "31" || item.MarketType == "5") secId = `116.${item.Code}`;
                     else if(item.Code.startsWith('6')) secId = `1.${item.Code}`;
                     else secId = `0.${item.Code}`;
                 }
@@ -312,82 +300,65 @@
             } else {
                 showToast("❌ 未找到股票", 'error');
             }
-        } catch(e) { showToast("❌ 搜索失败", 'error'); 
+        } catch(e) {
+            showToast("❌ 搜索失败: " + e.message, 'error');
         } finally {
             document.getElementById('btnSearch').innerHTML = '🔍 搜索';
         }
     }
 
-    // --- 核心分析主流程 (批量录入版) ---
+    // ============================================================
+    // 核心分析主流程
+    // ============================================================
     async function runAnalysis(silent = false) {
         const btn = document.getElementById('btn-run');
         if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
-        
+
         try {
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
             const end = document.getElementById('endDate').value.replace(/-/g, '');
-            
-            // 1. 获取股价和股本
+
             if(!silent || globalData.length === 0) {
                 await Promise.all([fetchShares(), fetchKline(beg, end)]);
             }
             if(globalData.length === 0) throw new Error("该时间段无股价数据");
 
-            // 2. 获取API历史财报
             let finMap = await fetchHistoricalFinancials(currentStock);
 
-            // 3. 计算所有年份
             const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0,4))));
             const sortedYears = Array.from(yearsSet).sort((a,b) => a-b);
 
-            // 4. 识别需要录入的年份
             let missingYears = [];
-            
             for (let year of sortedYears) {
-                // 先查本地DB，再查API
                 const savedData = getFromDB(currentStock.code, year);
                 if (savedData) {
-                    finMap[year] = { 
-                        year: year, rev: savedData.rev, prof: savedData.prof, 
-                        source: 'manual', name: `★${year}录入` 
-                    };
+                    finMap[year] = { year, rev: savedData.rev, prof: savedData.prof, source: 'manual', name: `★${year}录入` };
                 } else if (!finMap[year]) {
                     missingYears.push(year);
                 }
             }
 
-            // 5. 如果有缺失年份，弹出批量录入框
             if (missingYears.length > 0 && !silent) {
                 showToast(`⚠️ 需补录 ${missingYears.length} 年数据`, 'warn');
                 const batchData = await openBatchModal(missingYears);
-                
                 if (batchData) {
-                    // 保存数据并更新 finMap
-                    let dbUpdates = {};
                     for (let y in batchData) {
                         const { rev, prof } = batchData[y];
                         const yearInt = parseInt(y);
-                        await saveToDB(currentStock.code, yearInt, rev, prof, false); // false = delay sync
-                        finMap[yearInt] = { 
-                            year: yearInt, rev: rev, prof: prof, 
-                            source: 'manual', name: `★${yearInt}录入` 
-                        };
+                        await saveToDB(currentStock.code, yearInt, rev, prof, false);
+                        finMap[yearInt] = { year: yearInt, rev, prof, source: 'manual', name: `★${yearInt}录入` };
                     }
-                    // 批量保存后触发一次同步
                     triggerSync();
                 } else {
                     showToast('取消录入，部分数据将缺失', 'error');
                 }
             }
 
-            // 6. 计算与绘图
             calculate(finMap);
             drawChart();
             renderTable();
-            
             if(!silent) showToast("计算完成", 'ok');
-            document.getElementById('stockInput').value = ''; 
-            
+            document.getElementById('stockInput').value = '';
         } catch(e) {
             console.error(e);
             if(!silent) showToast(e.message || "运行出错", 'error');
@@ -403,31 +374,23 @@
             let fin = finMap[y];
             if(fin) {
                 const mktCap = item.price * currentTotalShares;
-                return {
-                    ...item,
-                    year: fin.year,
-                    sourceType: fin.source,
-                    sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name,
-                    mktCap, rev: fin.rev, prof: fin.prof,
-                    pe: fin.prof>0 ? mktCap/fin.prof : -1,
-                    ps: fin.rev>0 ? mktCap/fin.rev : 0
-                };
+                return { ...item, year: fin.year, sourceType: fin.source, sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name, mktCap, rev: fin.rev, prof: fin.prof, pe: fin.prof>0 ? mktCap/fin.prof : -1, ps: fin.rev>0 ? mktCap/fin.rev : 0 };
             } else {
                 return { ...item, pe: null, ps: null };
             }
         });
     }
 
-    // --- 批量弹窗逻辑 ---
+    // ============================================================
+    // 批量弹窗
+    // ============================================================
     function openBatchModal(years, prefillData = {}) {
         return new Promise((resolve) => {
             const container = document.getElementById('batchInputContainer');
             container.innerHTML = '';
-            
             years.forEach(y => {
                 const defaultRev = prefillData[y] ? (prefillData[y].rev/1e8) : '';
                 const defaultProf = prefillData[y] ? (prefillData[y].prof/1e8) : '';
-                
                 const row = document.createElement('div');
                 row.className = 'batch-row';
                 row.dataset.year = y;
@@ -436,15 +399,11 @@
                     <div class="row-inputs">
                         <input type="number" placeholder="营收(亿)" class="in-rev" value="${defaultRev}" inputmode="decimal">
                         <input type="number" placeholder="净利(亿)" class="in-prof" value="${defaultProf}" inputmode="decimal">
-                    </div>
-                `;
+                    </div>`;
                 container.appendChild(row);
             });
-
             document.getElementById('batchInputModal').style.display = 'flex';
             batchModalResolve = resolve;
-            
-            // 聚焦第一个输入框
             const firstInput = container.querySelector('input');
             if(firstInput) firstInput.focus();
         });
@@ -454,19 +413,12 @@
         document.getElementById('batchInputModal').style.display = 'none';
         if (isConfirm && batchModalResolve) {
             let result = {};
-            const rows = document.querySelectorAll('.batch-row');
-            let hasError = false;
-            
-            rows.forEach(row => {
+            document.querySelectorAll('.batch-row').forEach(row => {
                 const y = row.dataset.year;
                 const revVal = row.querySelector('.in-rev').value;
                 const profVal = row.querySelector('.in-prof').value;
-                
                 if (revVal && profVal) {
-                    result[y] = { 
-                        rev: parseFloat(revVal) * 1e8, 
-                        prof: parseFloat(profVal) * 1e8 
-                    };
+                    result[y] = { rev: parseFloat(revVal)*1e8, prof: parseFloat(profVal)*1e8 };
                 }
             });
             batchModalResolve(result);
@@ -476,18 +428,18 @@
     }
 
     async function editYearData(year) {
-        // 复用批量弹窗来编辑单一年份
         const saved = getFromDB(currentStock.code, year);
         const prefill = saved ? { [year]: saved } : {};
         const newData = await openBatchModal([year], prefill);
-        
         if (newData && newData[year]) {
             await saveToDB(currentStock.code, year, newData[year].rev, newData[year].prof);
             runAnalysis(true);
         }
     }
 
-    // --- GitHub & DB ---
+    // ============================================================
+    // GitHub 同步 & 本地 DB
+    // ============================================================
     function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
     function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
     function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
@@ -518,10 +470,7 @@
     }
 
     function triggerSync() {
-        if (!ghConfig.token) {
-            showToast('已保存本地', 'ok');
-            return;
-        }
+        if (!ghConfig.token) { showToast('已保存本地', 'ok'); return; }
         clearTimeout(syncTimer);
         syncTimer = setTimeout(async () => {
             updateStatus('syncing', '上传中');
@@ -529,34 +478,31 @@
                 const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
                 const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
                 let sha = getRes.ok ? (await getRes.json()).sha : null;
-                
                 await fetch(url, {
                     method: 'PUT',
                     headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        message: `Update ${currentStock.code} data`, 
-                        content: utf8_to_b64(JSON.stringify(getLocalDB())), 
-                        sha: sha 
-                    })
+                    body: JSON.stringify({ message: `Update ${currentStock.code} data`, content: utf8_to_b64(JSON.stringify(getLocalDB())), sha })
                 });
                 updateStatus('online', '已保存');
             } catch(e) { updateStatus('error', '上传失败'); }
-        }, 1500); // 延迟一点，方便批量操作合并
+        }, 1500);
     }
 
-    // --- 数据获取 ---
+    // ============================================================
+    // 数据获取（直接请求东方财富，支持 JSONP 兜底）
+    // ============================================================
     async function fetchShares() {
         try {
-            const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`));
-            const json = await res.json();
-            currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json.data.f2) || 1e8;
+            const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
+            const json = await apiFetch(url, 'cb');
+            currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json?.data?.f2) || 1e8;
         } catch(e) { currentTotalShares = 1e8; }
     }
-    
+
     async function fetchKline(beg, end) {
-        const res = await fetch(PROXY_URL + encodeURIComponent(`https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`));
-        const json = await res.json();
-        if (!json?.data?.klines) throw new Error("无股价数据"); 
+        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
+        const json = await apiFetch(url, 'cb');
+        if (!json?.data?.klines) throw new Error("无股价数据");
         globalData = json.data.klines.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
     }
 
@@ -564,29 +510,25 @@
         let map = {};
         const sid = stockObj.secId;
         const code = stockObj.code;
-        
-        let reportName = 'RPT_LICO_FN_CPD'; 
+
+        let reportName = 'RPT_LICO_FN_CPD';
         let filterStr = `(SECURITY_CODE="${code}")`;
         let fieldRev = 'TOTAL_OPERATE_INCOME';
         let fieldProf = 'PARENT_NETPROFIT';
-        
-        if (sid.startsWith('116.')) { // 港股
+
+        if (sid.startsWith('116.')) {
             reportName = 'RPT_HK_FN_MAIN';
             filterStr = `(SECUCODE="${code}.HK")`;
-            fieldRev = 'OPERATE_INCOME'; 
-            fieldProf = 'PARENT_NETPROFIT';
-        } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) { // 美股
+            fieldRev = 'OPERATE_INCOME';
+        } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) {
             reportName = 'RPT_US_FN_MAIN';
             filterStr = `(SECURITY_CODE="${code}")`;
             fieldRev = 'TOTAL_REVENUE';
-            fieldProf = 'PARENT_NETPROFIT';
         }
 
         try {
             const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1`;
-            const res = await fetch(PROXY_URL + encodeURIComponent(url));
-            const json = await res.json();
-            
+            const json = await apiFetch(url, 'cb');
             if(json?.result?.data) {
                 json.result.data.forEach(item => {
                     const d = item.REPORT_DATE || item.REPORTDATE;
@@ -598,11 +540,13 @@
                     }
                 });
             }
-        } catch(e) { console.warn("API Error"); }
+        } catch(e) { console.warn("财报API失败:", e.message); }
         return map;
     }
 
-    // --- UI Helpers ---
+    // ============================================================
+    // UI 辅助
+    // ============================================================
     function updateStatus(status, text) {
         document.getElementById('syncDot').className = 'sync-dot ' + status;
         document.getElementById('statusTxt').innerText = text;
@@ -629,18 +573,19 @@
         closeSettings(); autoSyncFromCloud();
     };
 
-    // --- Chart & Table ---
+    // ============================================================
+    // 图表 & 表格
+    // ============================================================
     function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
-    
-    const verticalLinePlugin = { 
-        id: 'verticalLine', 
+
+    const verticalLinePlugin = {
+        id: 'verticalLine',
         afterDraw: (chart) => {
             if (chart.tooltip?._active?.length) {
                 const ctx = chart.ctx;
                 const activePoint = chart.tooltip._active[0];
                 const x = activePoint.element.x;
                 const bottom = chart.chartArea.bottom;
-                
                 ctx.save();
                 ctx.beginPath();
                 ctx.setLineDash([4, 4]);
@@ -649,11 +594,8 @@
                 ctx.moveTo(x, chart.chartArea.top);
                 ctx.lineTo(x, bottom);
                 ctx.stroke();
-
-                const dataIndex = activePoint.index;
-                const dateStr = chart.data.labels[dataIndex];
-                
-                ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial';
+                const dateStr = chart.data.labels[activePoint.index];
+                ctx.font = '11px Arial';
                 ctx.fillStyle = '#666';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
@@ -662,13 +604,12 @@
             }
         }
     };
-    
+
     function drawChart() {
         if(!globalData.length) return;
         const ctx = document.getElementById('valuationChart').getContext('2d');
         if(chartInstance) chartInstance.destroy();
-        
-        const validData = globalData; 
+        const validData = globalData;
         const peData = validData.map(d => (d.pe && d.pe > 0) ? d.pe : null);
         const psData = validData.map(d => d.ps !== null ? d.ps : null);
 
@@ -677,31 +618,21 @@
             data: {
                 labels: validData.map(d => d.date),
                 datasets: [
-                    { 
-                        label: 'PE (右轴)', data: peData, 
-                        borderColor: '#c0392b', backgroundColor: 'rgba(192, 57, 43, 0.05)', 
-                        borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, pointHoverRadius: 4, spanGaps: true,
-                        segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } 
-                    },
-                    { 
-                        label: 'PS (左轴)', data: psData, 
-                        borderColor: '#2980b9', backgroundColor: 'rgba(41, 128, 185, 0.05)', 
-                        borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, pointHoverRadius: 4, spanGaps: true,
-                        segment: { borderDash: ctx => validData[ctx.p0DataIndex]?.sourceType === 'manual' ? [4, 4] : undefined } 
-                    }
+                    { label: 'PE (右轴)', data: peData, borderColor: '#c0392b', backgroundColor: 'rgba(192,57,43,0.05)', borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, pointHoverRadius: 4, spanGaps: true, segment: { borderDash: c => validData[c.p0DataIndex]?.sourceType === 'manual' ? [4,4] : undefined } },
+                    { label: 'PS (左轴)', data: psData, borderColor: '#2980b9', backgroundColor: 'rgba(41,128,185,0.05)', borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, pointHoverRadius: 4, spanGaps: true, segment: { borderDash: c => validData[c.p0DataIndex]?.sourceType === 'manual' ? [4,4] : undefined } }
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false, 
-                interaction: { mode: 'index', intersect: false }, 
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
                 plugins: {
                     tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { title: () => null } },
                     zoom: { limits: { x: { min: 'original', max: 'original' } }, pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } }
                 },
                 scales: {
                     x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { font: { size: 10 } } },
-                    y_pe: { type: 'linear', position: 'right', title: {display:true, text:'PE 倍数', color:'#c0392b', font:{size:10}}, grace: '5%', grid: {drawOnChartArea:false} },
-                    y_ps: { type: 'linear', position: 'left', title: {display:true, text:'PS 倍数', color:'#2980b9', font:{size:10}}, grace: '5%' }
+                    y_pe: { type: 'linear', position: 'right', title: { display:true, text:'PE 倍数', color:'#c0392b', font:{size:10} }, grace: '5%', grid: { drawOnChartArea:false } },
+                    y_ps: { type: 'linear', position: 'left', title: { display:true, text:'PS 倍数', color:'#2980b9', font:{size:10} }, grace: '5%' }
                 }
             },
             plugins: [verticalLinePlugin]
@@ -712,12 +643,11 @@
         const tbody = document.querySelector('#dataTable tbody');
         tbody.innerHTML = '';
         [...globalData].reverse().slice(0, 500).forEach(d => {
-            if(d.pe === undefined || d.pe === null) return; 
+            if(d.pe === undefined || d.pe === null) return;
             const peStr = d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>';
             const tagClass = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
             const editAttr = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})"` : '';
             const editIcon = d.sourceType === 'manual' ? ' ✎' : '';
-            
             tbody.innerHTML += `<tr>
                 <td>${d.date}</td>
                 <td>${d.price.toFixed(2)}</td>
