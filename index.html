@@ -201,8 +201,6 @@
     let batchModalResolve = null;
     let syncTimer = null;
 
-    // ✅ 直接访问东方财富API，无需代理
-    // 使用 JSONP 兼容方案：先尝试直接 fetch，失败则用 script 标签 JSONP
     const DB_KEY = "stock_valuation_db_v1";
 
     let ghConfig = {
@@ -225,7 +223,7 @@
     }
 
     // ============================================================
-    // 核心请求函数：JSONP 方式（绕过 CORS）
+    // JSONP 方式（最后兜底）
     // ============================================================
     function fetchJSONP(url, callbackParam = 'cb') {
         return new Promise((resolve, reject) => {
@@ -234,7 +232,7 @@
             const timer = setTimeout(() => {
                 cleanup();
                 reject(new Error('JSONP timeout'));
-            }, 10000);
+            }, 15000); // 延长至15秒
 
             window[cbName] = (data) => {
                 cleanup();
@@ -254,21 +252,72 @@
         });
     }
 
-    // 通用 fetch，先尝试直接请求，CORS 失败则尝试 JSONP
+    // ============================================================
+    // ✅ 核心请求函数：多策略链（直接→代理1→代理2→JSONP）
+    // ============================================================
     async function apiFetch(url, jsonpParam) {
-        // 先尝试直接 fetch（有些接口支持 CORS）
+        // 策略1：直接请求（有些接口支持CORS）
         try {
             const res = await fetch(url, {
-                headers: { 'Referer': 'https://www.eastmoney.com/' }
+                signal: AbortSignal.timeout(6000),
+                headers: { 'Accept': 'application/json' }
             });
-            if (res.ok) return await res.json();
-        } catch(e) { /* CORS 失败，继续尝试 JSONP */ }
+            if (res.ok) {
+                const text = await res.text();
+                return safeParseJSON(text);
+            }
+        } catch(e) { /* CORS失败，继续 */ }
 
-        // JSONP 兜底
+        // 策略2：corsproxy.io 代理
+        try {
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+            const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+            if (res.ok) {
+                const text = await res.text();
+                return safeParseJSON(text);
+            }
+        } catch(e) { /* 代理1失败，继续 */ }
+
+        // 策略3：allorigins.win 代理
+        try {
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+            const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+            if (res.ok) {
+                const text = await res.text();
+                return safeParseJSON(text);
+            }
+        } catch(e) { /* 代理2失败，继续 */ }
+
+        // 策略4：thingproxy 代理
+        try {
+            const proxyUrl = `https://thingproxy.freeboard.io/fetch/${url}`;
+            const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+            if (res.ok) {
+                const text = await res.text();
+                return safeParseJSON(text);
+            }
+        } catch(e) { /* 代理3失败，继续 */ }
+
+        // 策略5：JSONP 最终兜底
         if (jsonpParam) {
             return await fetchJSONP(url, jsonpParam);
         }
-        throw new Error('请求失败，请检查网络');
+
+        throw new Error('所有请求方式均失败，请检查网络或稍后重试');
+    }
+
+    // 安全解析JSON（兼容 allorigins 包一层 {contents:...} 的情况）
+    function safeParseJSON(text) {
+        try {
+            const obj = JSON.parse(text);
+            // allorigins.win 有时会包一层 {contents: "..."}
+            if (obj && typeof obj.contents === 'string') {
+                return JSON.parse(obj.contents);
+            }
+            return obj;
+        } catch(e) {
+            throw new Error('JSON解析失败');
+        }
     }
 
     // ============================================================
@@ -312,7 +361,7 @@
     // ============================================================
     async function runAnalysis(silent = false) {
         const btn = document.getElementById('btn-run');
-        if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+        if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 计算中...'; }
 
         try {
             const beg = document.getElementById('startDate').value.replace(/-/g, '');
@@ -357,7 +406,7 @@
             calculate(finMap);
             drawChart();
             renderTable();
-            if(!silent) showToast("计算完成", 'ok');
+            if(!silent) showToast("计算完成 ✅", 'ok');
             document.getElementById('stockInput').value = '';
         } catch(e) {
             console.error(e);
@@ -489,20 +538,23 @@
     }
 
     // ============================================================
-    // 数据获取（直接请求东方财富，支持 JSONP 兜底）
+    // 数据获取（多策略请求，支持A股/港股/美股）
     // ============================================================
     async function fetchShares() {
         try {
             const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
             const json = await apiFetch(url, 'cb');
             currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json?.data?.f2) || 1e8;
-        } catch(e) { currentTotalShares = 1e8; }
+        } catch(e) {
+            console.warn('fetchShares 失败，使用默认值:', e.message);
+            currentTotalShares = 1e8;
+        }
     }
 
     async function fetchKline(beg, end) {
         const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
         const json = await apiFetch(url, 'cb');
-        if (!json?.data?.klines) throw new Error("无股价数据");
+        if (!json?.data?.klines) throw new Error("无股价数据，请检查股票代码或时间范围");
         globalData = json.data.klines.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
     }
 
