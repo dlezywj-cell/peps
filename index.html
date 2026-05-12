@@ -324,7 +324,7 @@
 // 全局状态
 // ============================================================
 let currentStock   = { code: '', name: '', secId: '' };
-let globalData     = [];
+let globalData     =[];
 let currentTotalShares = 0;
 let chartInstance  = null;
 let batchModalResolve = null;
@@ -354,17 +354,12 @@ if (ghConfig.token && ghConfig.user && ghConfig.repo) {
     updateStatus('ready', '本地模式');
 }
 
-// ============================================================
-// ✅ 修复版：safeParseJSON — 失败返回 null，不 throw
-// ============================================================
 function safeParseJSON(text) {
     if (!text || typeof text !== 'string') return null;
     const trimmed = text.trim();
-    // 快速预检：JSON 必须以 { 或 [ 开头
     if (trimmed[0] !== '{' && trimmed[0] !== '[') return null;
     try {
         const obj = JSON.parse(trimmed);
-        // allorigins.win/get 返回 { contents: "原始JSON字符串", status: {...} }
         if (obj && typeof obj.contents === 'string') {
             const inner = obj.contents.trim();
             if (inner[0] === '{' || inner[0] === '[') {
@@ -379,11 +374,20 @@ function safeParseJSON(text) {
 }
 
 // ============================================================
-// ✅ 修复版：apiFetch — 多策略链，json=null 时继续下一个
+// ✅ 核心修复：优先使用原生的 JSONP，避开所有失效的跨域代理服务器
 // ============================================================
 async function apiFetch(url, jsonpParam) {
+    // 策略 1：如果接口支持 JSONP，必须优先使用！速度最快，无 CORS 限制
+    if (jsonpParam) {
+        try {
+            const data = await fetchJSONP(url, jsonpParam);
+            if (data) return data;
+        } catch (e) {
+            console.warn('[JSONP 失败，准备降级尝试代理]', e.message);
+        }
+    }
+
     const timeout = (ms) => {
-        // 兼容不支持 AbortSignal.timeout 的旧浏览器
         if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
             return AbortSignal.timeout(ms);
         }
@@ -392,10 +396,10 @@ async function apiFetch(url, jsonpParam) {
         return ctrl.signal;
     };
 
-    // --- 策略 1：直接请求（若 API 支持 CORS）---
+    // 策略 2：直接请求（适用于同源或目标接口临时放开了 CORS 的情况）
     try {
         const res = await fetch(url, {
-            signal : timeout(6000),
+            signal : timeout(4000),
             headers: { 'Accept': 'application/json' }
         });
         if (res.ok) {
@@ -404,81 +408,50 @@ async function apiFetch(url, jsonpParam) {
         }
     } catch (e) { /* 继续 */ }
 
-    // --- 策略 2：corsproxy.io（修复：加 url= 参数）---
+    // 策略 3：备用代理兜底（平时极大概率走不到这里，被墙时备用）
     try {
         const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-        const res = await fetch(proxyUrl, { signal: timeout(8000) });
+        const res = await fetch(proxyUrl, { signal: timeout(6000) });
         if (res.ok) {
             const json = safeParseJSON(await res.text());
             if (json) return json;
         }
     } catch (e) { /* 继续 */ }
 
-    // --- 策略 3：allorigins.win/raw（返回原始内容）---
-    try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        const res = await fetch(proxyUrl, { signal: timeout(9000) });
-        if (res.ok) {
-            const json = safeParseJSON(await res.text());
-            if (json) return json;
-        }
-    } catch (e) { /* 继续 */ }
-
-    // --- 策略 4：allorigins.win/get（返回包装格式）---
-    try {
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-        const res = await fetch(proxyUrl, { signal: timeout(9000) });
-        if (res.ok) {
-            const json = safeParseJSON(await res.text());
-            if (json) return json;
-        }
-    } catch (e) { /* 继续 */ }
-
-    // --- 策略 5：thingproxy ---
-    try {
-        const proxyUrl = `https://thingproxy.freeboard.io/fetch/${url}`;
-        const res = await fetch(proxyUrl, { signal: timeout(8000) });
-        if (res.ok) {
-            const json = safeParseJSON(await res.text());
-            if (json) return json;
-        }
-    } catch (e) { /* 继续 */ }
-
-    // --- 策略 6：JSONP（仅作兜底，接口必须支持 callback 参数）---
-    if (jsonpParam) {
-        try {
-            return await fetchJSONP(url, jsonpParam);
-        } catch (e) {
-            console.warn('[JSONP 失败]', e.message);
-        }
-    }
-
-    throw new Error('网络请求失败：所有代理均不可用，请检查网络或稍后重试');
+    throw new Error('网络请求失败：连接超时或被拦截，请检查网络后重试');
 }
 
 // ============================================================
-// JSONP 实现
+// JSONP 实现：已优化回调函数名防止被严格接口过滤
 // ============================================================
 function fetchJSONP(url, callbackParam = 'cb') {
     return new Promise((resolve, reject) => {
-        const cbName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        // 生成标准 jQuery 风格的回调函数名，东方财富等大多数 API 都认这个格式
+        const cbName = 'jQuery' + Math.floor(Math.random() * 1e15) + '_' + Date.now();
         const script = document.createElement('script');
+        
         const timer = setTimeout(() => {
             cleanup();
-            reject(new Error('JSONP 超时'));
-        }, 12000);
+            reject(new Error('请求超时'));
+        }, 8000); // 8 秒超时足矣，避免死等
 
-        window[cbName] = (data) => { cleanup(); resolve(data); };
+        window[cbName] = (data) => { 
+            cleanup(); 
+            resolve(data); 
+        };
 
         function cleanup() {
             clearTimeout(timer);
-            delete window[cbName];
+            try { delete window[cbName]; } catch (e) {}
             if (script.parentNode) script.parentNode.removeChild(script);
         }
 
         const sep = url.includes('?') ? '&' : '?';
         script.src = url + sep + callbackParam + '=' + cbName;
-        script.onerror = () => { cleanup(); reject(new Error('JSONP 脚本加载失败')); };
+        script.onerror = () => { 
+            cleanup(); 
+            reject(new Error('JSONP 加载失败')); 
+        };
         document.head.appendChild(script);
     });
 }
@@ -566,10 +539,9 @@ async function runAnalysis(silent = false) {
         let finMap = await fetchHistoricalFinancials(currentStock);
         setProgress(70);
 
-        // 读取本地手动数据 / 找出缺失年份
         const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0, 4))));
         const sortedYears = Array.from(yearsSet).sort((a, b) => a - b);
-        let missingYears = [];
+        let missingYears =[];
 
         for (const year of sortedYears) {
             const saved = getFromDB(currentStock.code, year);
@@ -580,7 +552,6 @@ async function runAnalysis(silent = false) {
             }
         }
 
-        // 弹窗补录缺失数据
         if (missingYears.length > 0 && !silent) {
             loader.classList.remove('show');
             showToast(`⚠️ ${missingYears.length} 个年份缺少财报，请手动补录`, 'warn');
@@ -743,20 +714,17 @@ async function fetchHistoricalFinancials(stockObj) {
     const sid  = stockObj.secId;
     const code = stockObj.code;
 
-    // 根据市场类型选择财报接口
     let reportName = 'RPT_LICO_FN_CPD';
     let filterStr  = `(SECURITY_CODE="${code}")`;
     let fieldRev   = 'TOTAL_OPERATE_INCOME';
     let fieldProf  = 'PARENT_NETPROFIT';
 
     if (sid.startsWith('116.')) {
-        // 港股
         reportName = 'RPT_HK_FN_MAIN';
         filterStr  = `(SECUCODE="${code}.HK")`;
         fieldRev   = 'OPERATE_INCOME';
         fieldProf  = 'PARENT_NETPROFIT';
     } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) {
-        // 美股
         reportName = 'RPT_US_FN_MAIN';
         filterStr  = `(SECURITY_CODE="${code}")`;
         fieldRev   = 'TOTAL_REVENUE';
@@ -770,19 +738,12 @@ async function fetchHistoricalFinancials(stockObj) {
         if (json?.result?.data && Array.isArray(json.result.data)) {
             json.result.data.forEach(item => {
                 const dateStr = item.REPORT_DATE || item.REPORTDATE || '';
-                // 只取年报（12-31）
                 if (!dateStr.includes('-12-31') && !dateStr.endsWith('1231')) return;
                 const y = parseInt(dateStr.substring(0, 4));
                 if (!y || isNaN(y)) return;
 
-                // 尝试多个字段名兼容不同接口
-                const r = item[fieldRev]
-                    || item['TOTAL_OPERATE_INCOME']
-                    || item['OPERATE_INCOME']
-                    || item['TOTAL_REVENUE'];
-                const p = item[fieldProf]
-                    || item['PARENT_NETPROFIT']
-                    || item['NET_PROFIT'];
+                const r = item[fieldRev] || item['TOTAL_OPERATE_INCOME'] || item['OPERATE_INCOME'] || item['TOTAL_REVENUE'];
+                const p = item[fieldProf] || item['PARENT_NETPROFIT'] || item['NET_PROFIT'];
 
                 if (r != null && p != null) {
                     map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
@@ -791,7 +752,6 @@ async function fetchHistoricalFinancials(stockObj) {
         }
     } catch (e) {
         console.warn('[fetchHistoricalFinancials] 财报接口失败:', e.message);
-        // 财报获取失败不中断流程，后续由手动录入补全
     }
     return map;
 }
@@ -954,7 +914,7 @@ function drawChart() {
         type: 'line',
         data: {
             labels  : globalData.map(d => d.date),
-            datasets: [
+            datasets:[
                 {
                     label          : 'PE（右轴）',
                     data           : peData,
