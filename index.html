@@ -216,7 +216,6 @@
             <div class="sync-info">
                 <div id="syncDot" class="sync-dot"></div>
                 <span id="statusTxt">未连接</span>
-                <!-- 保留调试入口以防万一 -->
                 <i class="fas fa-bug" onclick="showDebug()" style="opacity:0.6; margin-left:12px; cursor:pointer;" title="查看调试日志"></i>
                 <i class="fas fa-cog" onclick="showSettings()" style="opacity:0.6; margin-left:8px; cursor:pointer;" title="配置同步"></i>
             </div>
@@ -431,7 +430,6 @@ function safeParseJSON(text) {
     if (!text || typeof text !== 'string') return null;
     let trimmed = text.trim();
     
-    // 脱除可能的 JSONP 回调壳
     const match = trimmed.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
     if (match) trimmed = match[1].trim();
     
@@ -439,7 +437,6 @@ function safeParseJSON(text) {
     
     try { 
         const obj = JSON.parse(trimmed); 
-        // 应对部分代理返回 {"contents": "..."} 的包装格式
         if (obj && typeof obj.contents === 'string') {
             let inner = obj.contents.trim();
             const innerMatch = inner.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
@@ -483,7 +480,6 @@ function fetchJSONP(url, callbackParam, timeoutMs = 4000) {
 async function apiFetch(url, jsonpParam, context = 'API') {
     Logger.log(`[${context}] Req: ${url.split('?')[0]}...`);
     
-    // 策略1: JSONP
     if (jsonpParam) {
         try {
             Logger.log(`[${context}] Try JSONP...`);
@@ -497,7 +493,6 @@ async function apiFetch(url, jsonpParam, context = 'API') {
         }
     }
     
-    // 策略2: 直连
     try {
         Logger.log(`[${context}] Try Fetch...`);
         const ctrl = new AbortController();
@@ -509,7 +504,7 @@ async function apiFetch(url, jsonpParam, context = 'API') {
             Logger.log(`[${context}] Fetch OK. Length: ${text.length}`);
             const data = safeParseJSON(text);
             if (data) return data;
-            Logger.log(`[${context}] Fetch Parse Error.`);
+            Logger.log(`[${context}] Fetch Parse Error. Raw: ${text.substring(0,60)}`);
         } else {
             Logger.log(`[${context}] Fetch Fail: HTTP ${res.status}`);
         }
@@ -517,7 +512,6 @@ async function apiFetch(url, jsonpParam, context = 'API') {
         Logger.log(`[${context}] Fetch Fail: ${e.message}`);
     }
 
-    // 策略3: 跨域代理兜底 (增加超时至 12s 以对抗海外延迟，且增加节点)
     const proxies = [
         `https://api.allorigins.win/raw?url=`,
         `https://corsproxy.io/?url=`,
@@ -528,7 +522,7 @@ async function apiFetch(url, jsonpParam, context = 'API') {
             const proxyUrl = proxy + encodeURIComponent(url);
             Logger.log(`[${context}] Try Proxy: ${proxy.split('/')[2]}...`);
             const ctrl = new AbortController();
-            const timerId = setTimeout(() => ctrl.abort(), 12000); // 12秒充足时间
+            const timerId = setTimeout(() => ctrl.abort(), 12000); 
             const res = await fetch(proxyUrl, { signal: ctrl.signal });
             clearTimeout(timerId);
             if (res.ok) {
@@ -809,8 +803,6 @@ async function fetchShares() {
 
 async function fetchKline(beg, end) {
     let success = false;
-
-    // 通道 1：东方财富多域名穿透重试 (防广告拦截：依次尝试3个域名)
     const emDomains = [
         'push2his.eastmoney.com',
         'push2.eastmoney.com',
@@ -835,13 +827,10 @@ async function fetchKline(beg, end) {
         }
     }
 
-    // 通道 2：智能独立无拦截通道 (新浪美股 / 腾讯A股港股)
     if (!success) {
-        // 判断是否为美股 (东方财富美股secId以105/106/107开头)
         const isUS = currentStock.secId.startsWith('105.') || currentStock.secId.startsWith('106.') || currentStock.secId.startsWith('107.');
         
         if (isUS) {
-            // ⭐ 美股专属通道走新浪财经！
             const sinaSymbol = currentStock.code.toLowerCase();
             Logger.log(`[Kline] Route 2 (Sina US) Start for: ${sinaSymbol}`);
             try {
@@ -868,8 +857,8 @@ async function fetchKline(beg, end) {
 
                 if (sJson && Array.isArray(sJson)) {
                     globalData = sJson.map(k => ({
-                        date: k.d, // "2023-01-01"
-                        price: parseFloat(k.c) // "12.34"
+                        date: k.d,
+                        price: parseFloat(k.c)
                     })).filter(d => {
                         const dStr = d.date.replace(/-/g, '');
                         return dStr >= beg && dStr <= end;
@@ -883,7 +872,6 @@ async function fetchKline(beg, end) {
                 Logger.error(`[Kline] Sina US Exception`, e);
             }
         } else {
-            // A股/港股通道走腾讯财经
             const tSymbol = getTencentSymbol(currentStock.secId, currentStock.code);
             let tParams = [`${tSymbol},day,,,5000,qfq`, `${tSymbol},day,,,5000`];
             
@@ -943,6 +931,7 @@ async function fetchKline(beg, end) {
     }
 }
 
+// ⭐【核心修复区】双引擎财报抓取机制
 async function fetchHistoricalFinancials(stockObj) {
     const map  = {};
     const sid  = stockObj.secId;
@@ -953,6 +942,11 @@ async function fetchHistoricalFinancials(stockObj) {
     let filterStr  = `(SECURITY_CODE="${code}")`;
     let fieldRev   = 'TOTAL_OPERATE_INCOME';
     let fieldProf  = 'PARENT_NETPROFIT';
+
+    // 构建A股带后缀的代号，用于备选引擎
+    let aShareSecuCode = code;
+    if (sid.startsWith('1.')) aShareSecuCode += '.SH';
+    else if (sid.startsWith('0.')) aShareSecuCode += '.SZ';
 
     if (sid.startsWith('116.')) {
         reportName = 'RPT_HK_FN_MAIN';
@@ -967,9 +961,19 @@ async function fetchHistoricalFinancials(stockObj) {
     }
 
     try {
-        // ⭐核心修复点2：必须显式传入 source=WEB & client=WEB，否则财报接口强制拒绝 JSONP 格式，导致A股提取失效
         const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
-        const json = await apiFetch(url, 'callback', 'FinAPI');
+        Logger.log(`[FinAPI] Primary URL: ${url}`);
+        let json = await apiFetch(url, 'callback', 'FinAPI');
+
+        // A股财报专属备选引擎：如果使用 SECURITY_CODE 查不到，自动使用 SECUCODE 再次查询利润表
+        if ((!json?.result?.data || json.result.data.length === 0) && (sid.startsWith('1.') || sid.startsWith('0.'))) {
+            Logger.log(`[FinAPI] Primary returned empty. Trying fallback RPT_DMSK_FN_INCOME...`);
+            reportName = 'RPT_DMSK_FN_INCOME';
+            filterStr = `(SECUCODE="${aShareSecuCode}")`;
+            const fallbackUrl = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
+            Logger.log(`[FinAPI] Fallback URL: ${fallbackUrl}`);
+            json = await apiFetch(fallbackUrl, 'callback', 'FinAPI-Fallback');
+        }
 
         if (json?.result?.data && Array.isArray(json.result.data)) {
             Logger.log(`[Fin] Processed ${json.result.data.length} financial reports.`);
@@ -997,8 +1001,9 @@ async function fetchHistoricalFinancials(stockObj) {
                     map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
                 }
             });
+            Logger.log(`[Fin] Extracted ${Object.keys(map).length} yearly reports successfully.`);
         } else {
-            Logger.log(`[Fin] No valid financial data Array in response.`);
+            Logger.log(`[Fin] No valid financial data Array. Snippet: ${JSON.stringify(json || {}).substring(0, 150)}`);
         }
     } catch (e) {
         Logger.error('[Fin] API Exception', e);
