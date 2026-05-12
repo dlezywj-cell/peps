@@ -11,32 +11,65 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
-        :root { --primary: #2980b9; --danger: #c0392b; --bg: #f4f6f9; --text: #2c3e50; --success: #27ae60; --border: #e0e0e0; }
+        :root {
+            --primary: #2980b9;
+            --danger: #c0392b;
+            --bg: #f4f6f9;
+            --text: #2c3e50;
+            --success: #27ae60;
+            --border: #e0e0e0;
+        }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; font-size: 13px; }
-        .container { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; flex-direction: column; overflow: hidden; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg); color: var(--text); margin: 0; padding: 20px; font-size: 13px;
+        }
+        .container {
+            max-width: 1200px; margin: 0 auto; background: #fff;
+            border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            display: flex; flex-direction: column; overflow: hidden;
+        }
         header { background: #fff; border-bottom: 1px solid var(--border); }
-        .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid #f0f0f0; }
+        .top-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 20px; border-bottom: 1px solid #f0f0f0;
+        }
         h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
-        .sync-info { font-size: 12px; color: #666; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.2s; }
+        .sync-info {
+            font-size: 12px; color: #666; display: flex; align-items: center;
+            gap: 6px; padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.2s;
+        }
         .sync-info:hover { background: #f0f0f0; }
-        .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
-        .sync-dot.online { background: var(--success); box-shadow: 0 0 4px var(--success); }
+        .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
+        .sync-dot.online  { background: var(--success); box-shadow: 0 0 4px var(--success); }
         .sync-dot.syncing { background: var(--primary); animation: pulse 1s infinite; }
-        .sync-dot.error { background: var(--danger); }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        .sync-dot.error   { background: var(--danger); }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
         .tools-bar { padding: 12px 20px; }
-        .input-group input { padding: 0 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; outline: none; transition: 0.2s; height: 34px; width: 100%; }
+        .input-group input {
+            padding: 0 10px; border: 1px solid #ccc; border-radius: 4px;
+            font-size: 13px; outline: none; transition: 0.2s; height: 34px; width: 100%;
+        }
         .input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
-        button { height: 34px; padding: 0 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; transition: background 0.2s; }
-        .btn-primary { background: var(--primary); color: #fff; } .btn-primary:hover { background: #1f618d; }
-        .btn-success { background: var(--success); color: #fff; } .btn-success:hover { background: #219150; }
-        .btn-outline { background: #fff; border: 1px solid #ccc; color: #666; } .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
+
+        button {
+            height: 34px; padding: 0 16px; border: none; border-radius: 4px; cursor: pointer;
+            font-size: 13px; font-weight: 600; display: inline-flex; align-items: center;
+            justify-content: center; gap: 5px; white-space: nowrap; transition: background 0.2s;
+        }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: #1f618d; }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-success:hover { background: #219150; }
+        .btn-outline { background: #fff; border: 1px solid #ccc; color: #666; }
+        .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
         button:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
+
         @media (min-width: 769px) {
             .tools-bar { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
             .group-search { display: flex; gap: 8px; align-items: center; }
-            .group-search .input-group { width: 140px; }
+            .group-search .input-group { width: 160px; }
             .divider-v { width: 1px; height: 20px; background: #ddd; margin: 0 5px; }
             .group-dates { display: flex; gap: 8px; align-items: center; }
             .group-dates .input-group input { width: 130px; }
@@ -56,43 +89,122 @@
             .group-dates .input-group { flex: 1; }
             .group-actions { display: flex; gap: 8px; width: 100%; }
             .group-actions button { flex: 1; height: 38px; font-size: 14px; }
-            .chart-container { height: 350px !important; padding: 5px 10px; }
+            .chart-container { height: 300px !important; padding: 5px 10px; }
         }
-        .chart-container { position: relative; height: 500px; padding: 15px 20px; width: 100%; }
-        .chart-tip { position: absolute; top: 10px; right: 15px; font-size: 11px; color: #999; background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px; pointer-events: none; z-index: 10; }
-        .table-wrap { border-top: 1px solid var(--border); overflow-x: auto; -webkit-overflow-scrolling: touch; background: #fff; }
-        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; text-align: right; min-width: 600px; }
+
+        .chart-container { position: relative; height: 460px; padding: 15px 20px; width: 100%; }
+        .chart-tip {
+            position: absolute; top: 10px; right: 15px; font-size: 11px; color: #999;
+            background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px;
+            pointer-events: none; z-index: 10;
+        }
+
+        .table-wrap {
+            border-top: 1px solid var(--border); overflow-x: auto;
+            -webkit-overflow-scrolling: touch; background: #fff;
+        }
+        table {
+            width: 100%; border-collapse: separate; border-spacing: 0;
+            font-size: 12px; text-align: right; min-width: 600px;
+        }
         th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
         th { background: #f8f9fa; color: #555; font-weight: 600; position: sticky; top: 0; z-index: 20; }
-        th:first-child, td:first-child { position: sticky; left: 0; background: #fff; z-index: 10; text-align: left; border-right: 1px solid #f0f0f0; box-shadow: 2px 0 5px rgba(0,0,0,0.02); }
+        th:first-child, td:first-child {
+            position: sticky; left: 0; background: #fff; z-index: 10;
+            text-align: left; border-right: 1px solid #f0f0f0; box-shadow: 2px 0 5px rgba(0,0,0,0.02);
+        }
         th:first-child { z-index: 30; background: #f8f9fa; }
         .val-pe { color: var(--danger); font-weight: bold; }
         .val-ps { color: var(--primary); font-weight: bold; }
-        .tag { padding: 1px 5px; border-radius: 3px; font-size: 10px; display: inline-block; transform: scale(0.95); }
-        .tag-real { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
+        .tag { padding: 2px 6px; border-radius: 3px; font-size: 10px; display: inline-block; }
+        .tag-real   { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
         .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; cursor: pointer; }
         .loss { color: #27ae60; font-style: italic; }
-        .status-msg { display: none; padding: 8px 16px; border-radius: 4px; font-size: 13px; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500; background: #fff; border: 1px solid #eee; pointer-events: none; }
-        .status-msg.ok { color: #389e0d; border-color: #b7eb8f; background: #f6ffed; }
-        .status-msg.error { color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
+
+        /* Toast 消息 */
+        .status-msg {
+            display: none; padding: 10px 20px; border-radius: 6px; font-size: 13px;
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 2000; box-shadow: 0 4px 15px rgba(0,0,0,0.15); font-weight: 500;
+            background: #fff; border: 1px solid #eee; pointer-events: none;
+            max-width: 90vw; text-align: center; white-space: pre-line;
+        }
+        .status-msg.ok   { color: #389e0d; border-color: #b7eb8f; background: #f6ffed; }
+        .status-msg.error{ color: #cf1322; border-color: #ffa39e; background: #fff1f0; }
         .status-msg.warn { color: #d48806; border-color: #ffe58f; background: #fffbe6; }
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
-        .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 10px 40px rgba(0,0,0,0.25); animation: popIn 0.2s ease-out; display: flex; flex-direction: column; max-height: 80vh; }
-        @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .modal-header { font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #333; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        .modal-body { display: flex; flex-direction: column; gap: 0; overflow-y: auto; padding-right: 5px; margin-bottom: 15px; }
-        .batch-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px dashed #eee; }
+        .status-msg.info { color: #096dd9; border-color: #91d5ff; background: #e6f7ff; }
+
+        /* 弹窗 */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999;
+            display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px);
+        }
+        .modal-box {
+            background: #fff; padding: 20px; border-radius: 10px; width: 90%; max-width: 420px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.25); animation: popIn 0.2s ease-out;
+            display: flex; flex-direction: column; max-height: 80vh;
+        }
+        @keyframes popIn { from{transform:scale(0.95);opacity:0} to{transform:scale(1);opacity:1} }
+        .modal-header {
+            font-size: 16px; font-weight: 700; margin-bottom: 15px; color: #333;
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #eee; padding-bottom: 10px;
+        }
+        .modal-body {
+            display: flex; flex-direction: column; gap: 0;
+            overflow-y: auto; padding-right: 5px; margin-bottom: 15px;
+        }
+        .batch-row {
+            display: flex; gap: 10px; align-items: center;
+            padding: 9px 0; border-bottom: 1px dashed #eee;
+        }
         .batch-row:last-child { border-bottom: none; }
-        .row-year { font-weight: 600; width: 50px; color: #2980b9; font-size: 14px; }
+        .row-year { font-weight: 700; width: 46px; color: #2980b9; font-size: 14px; flex-shrink: 0; }
         .row-inputs { flex: 1; display: flex; gap: 8px; }
-        .row-inputs input { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
-        .row-inputs input:focus { border-color: var(--primary); outline: none; }
+        .row-inputs input {
+            width: 100%; padding: 7px 8px; border: 1px solid #ccc;
+            border-radius: 4px; font-size: 13px;
+        }
+        .row-inputs input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
         .modal-footer { margin-top: auto; display: flex; gap: 10px; }
-        .btn-block { flex: 1; padding: 10px; border-radius: 4px; font-weight: 600; cursor: pointer; border:none; }
-        .btn-cancel { background: #f5f5f5; color: #666; border: 1px solid #eee; }
+        .btn-block { flex: 1; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; font-size: 14px; }
+        .btn-cancel  { background: #f5f5f5; color: #666; border: 1px solid #eee; }
         .btn-confirm { background: var(--primary); color: #fff; }
+        .form-row { margin-bottom: 12px; }
         .form-row label { display: block; margin-bottom: 5px; font-size: 12px; color: #666; font-weight: 600; }
-        .form-row input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+        .form-row input {
+            width: 100%; padding: 8px 10px; border: 1px solid #ccc;
+            border-radius: 4px; font-size: 14px;
+        }
+        .form-row input:focus { border-color: var(--primary); outline: none; }
+
+        /* 加载指示 */
+        .loading-overlay {
+            display: none; position: absolute; inset: 0; background: rgba(255,255,255,0.7);
+            justify-content: center; align-items: center; z-index: 50; border-radius: 4px;
+        }
+        .loading-overlay.show { display: flex; }
+        .spinner {
+            width: 36px; height: 36px; border: 3px solid #eee;
+            border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 空状态 */
+        .empty-state {
+            text-align: center; padding: 60px 20px; color: #aaa; display: none;
+        }
+        .empty-state i { font-size: 48px; margin-bottom: 12px; display: block; opacity: 0.3; }
+
+        /* 进度条 */
+        .progress-bar {
+            height: 2px; background: #eee; overflow: hidden; display: none;
+        }
+        .progress-bar.show { display: block; }
+        .progress-fill {
+            height: 100%; background: var(--primary);
+            transition: width 0.3s ease; width: 0%;
+        }
     </style>
 </head>
 <body>
@@ -101,16 +213,17 @@
     <header>
         <div class="top-bar">
             <h2>📈 估值透视</h2>
-            <div class="sync-info" onclick="showSettings()" title="GitHub 配置">
+            <div class="sync-info" onclick="showSettings()" title="GitHub 同步配置">
                 <div id="syncDot" class="sync-dot"></div>
                 <span id="statusTxt">未连接</span>
                 <i class="fas fa-cog" style="opacity:0.5; margin-left:4px;"></i>
             </div>
         </div>
+        <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
         <div class="tools-bar">
             <div class="group-search">
                 <div class="input-group">
-                    <input type="text" id="stockInput" value="" placeholder="代码/名称/美股/港股" autocomplete="off">
+                    <input type="text" id="stockInput" value="" placeholder="代码/名称/港股/美股" autocomplete="off">
                 </div>
                 <button class="btn-primary" id="btnSearch">🔍 搜索</button>
             </div>
@@ -129,17 +242,26 @@
 
     <div id="toastMsg" class="status-msg"></div>
 
-    <div class="chart-container">
+    <div class="chart-container" style="position:relative;">
         <canvas id="valuationChart"></canvas>
-        <div class="chart-tip">滚轮缩放 / 拖拽</div>
+        <div class="chart-tip">滚轮缩放 · 拖拽平移</div>
+        <div class="loading-overlay" id="chartLoading"><div class="spinner"></div></div>
     </div>
 
     <div class="table-wrap">
-        <table id="dataTable">
+        <div class="empty-state" id="emptyState">
+            <i class="fas fa-chart-line"></i>
+            搜索股票后点击「计算」查看估值数据
+        </div>
+        <table id="dataTable" style="display:none;">
             <thead>
                 <tr>
-                    <th>日期</th><th>股价</th><th>财报/预测</th><th>市值(亿)</th>
-                    <th>营收(亿)</th><th>净利(亿)</th>
+                    <th>日期</th>
+                    <th>股价</th>
+                    <th>财报来源</th>
+                    <th>市值(亿)</th>
+                    <th>营收(亿)</th>
+                    <th>净利(亿)</th>
                     <th style="color:var(--danger)">PE(倍)</th>
                     <th style="color:var(--primary)">PS(倍)</th>
                 </tr>
@@ -152,566 +274,805 @@
 <!-- 批量录入弹窗 -->
 <div id="batchInputModal" class="modal-overlay">
     <div class="modal-box">
-        <div class="modal-header"><span>✍️ 补充财务数据</span></div>
-        <div style="font-size:12px; color:#c0392b; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:8px;">
-            ⚠️ 请补全以下年份的数据 (单位: 亿元)
+        <div class="modal-header">
+            <span>✍️ 补充财务数据</span>
+        </div>
+        <div style="font-size:12px;color:#c0392b;background:#fff1f0;padding:8px 10px;border-radius:4px;margin-bottom:10px;">
+            ⚠️ 以下年份未能自动获取财报，请手动补录（单位：亿元）
         </div>
         <div class="modal-body" id="batchInputContainer"></div>
         <div class="modal-footer">
             <button class="btn-block btn-cancel" onclick="closeBatchModal(false)">取消</button>
-            <button class="btn-block btn-confirm" onclick="closeBatchModal(true)">保存全部</button>
+            <button class="btn-block btn-confirm" onclick="closeBatchModal(true)">💾 保存全部</button>
         </div>
     </div>
 </div>
 
+<!-- GitHub 设置弹窗 -->
 <div class="modal-overlay" id="settingModal">
     <div class="modal-box" style="height:auto;">
         <div class="modal-header">
             <span><i class="fab fa-github"></i> GitHub 同步配置</span>
-            <i class="fas fa-times" onclick="closeSettings()" style="cursor:pointer; color:#999;"></i>
+            <i class="fas fa-times" onclick="closeSettings()" style="cursor:pointer;color:#999;"></i>
         </div>
-        <div class="modal-body" style="gap:12px;">
+        <div class="modal-body" style="gap:0;">
             <div class="form-row">
-                <label>GitHub Token (可选，用于多设备同步)</label>
-                <input type="password" id="cfgToken" placeholder="ghp_...">
+                <label>GitHub Token（用于多设备同步，可选）</label>
+                <input type="password" id="cfgToken" placeholder="ghp_xxxxxxxxxxxxxxxxx">
             </div>
             <div class="form-row">
                 <label>用户名</label>
-                <input type="text" id="cfgUser" value="dlezywj-cell">
+                <input type="text" id="cfgUser" placeholder="your-github-username">
             </div>
             <div class="form-row">
                 <label>仓库名</label>
-                <input type="text" id="cfgRepo" value="pepsdata">
+                <input type="text" id="cfgRepo" placeholder="my-stock-data">
             </div>
         </div>
+        <div style="font-size:11px;color:#999;margin-bottom:12px;">
+            不填 Token 则仅保存在本地 localStorage，数据不会丢失但无法跨设备同步。
+        </div>
         <div class="modal-footer">
-            <button class="btn-block btn-confirm" onclick="saveConfig()">保存配置</button>
+            <button class="btn-block btn-cancel" onclick="closeSettings()">关闭</button>
+            <button class="btn-block btn-confirm" onclick="saveConfig()">保存并同步</button>
         </div>
     </div>
 </div>
 
 <script>
-    // ============================================================
-    // 全局变量
-    // ============================================================
-    let currentStock = { code: '', name: '', secId: '' };
-    let globalData = [];
-    let currentTotalShares = 0;
-    let chartInstance = null;
-    let batchModalResolve = null;
-    let syncTimer = null;
+// ============================================================
+// 全局状态
+// ============================================================
+let currentStock   = { code: '', name: '', secId: '' };
+let globalData     = [];
+let currentTotalShares = 0;
+let chartInstance  = null;
+let batchModalResolve = null;
+let syncTimer      = null;
 
-    const DB_KEY = "stock_valuation_db_v1";
+const DB_KEY = 'stock_valuation_db_v2';
 
-    let ghConfig = {
-        token: localStorage.getItem('stock_token') || '',
-        user: localStorage.getItem('stock_user') || 'dlezywj-cell',
-        repo: localStorage.getItem('stock_repo') || 'pepsdata',
-        file: 'data.json'
+let ghConfig = {
+    token : localStorage.getItem('stock_token') || '',
+    user  : localStorage.getItem('stock_user')  || '',
+    repo  : localStorage.getItem('stock_repo')  || '',
+    file  : 'data.json'
+};
+
+// ============================================================
+// 初始化
+// ============================================================
+document.getElementById('endDate').value = new Date().toISOString().split('T')[0];
+document.getElementById('btnSearch').addEventListener('click', runSearch);
+document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
+document.getElementById('stockInput').addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
+document.getElementById('emptyState').style.display = 'block';
+
+if (ghConfig.token && ghConfig.user && ghConfig.repo) {
+    setTimeout(autoSyncFromCloud, 600);
+} else {
+    updateStatus('ready', '本地模式');
+}
+
+// ============================================================
+// ✅ 修复版：safeParseJSON — 失败返回 null，不 throw
+// ============================================================
+function safeParseJSON(text) {
+    if (!text || typeof text !== 'string') return null;
+    const trimmed = text.trim();
+    // 快速预检：JSON 必须以 { 或 [ 开头
+    if (trimmed[0] !== '{' && trimmed[0] !== '[') return null;
+    try {
+        const obj = JSON.parse(trimmed);
+        // allorigins.win/get 返回 { contents: "原始JSON字符串", status: {...} }
+        if (obj && typeof obj.contents === 'string') {
+            const inner = obj.contents.trim();
+            if (inner[0] === '{' || inner[0] === '[') {
+                try { return JSON.parse(inner); } catch (e) { return null; }
+            }
+            return null;
+        }
+        return obj;
+    } catch (e) {
+        return null;
+    }
+}
+
+// ============================================================
+// ✅ 修复版：apiFetch — 多策略链，json=null 时继续下一个
+// ============================================================
+async function apiFetch(url, jsonpParam) {
+    const timeout = (ms) => {
+        // 兼容不支持 AbortSignal.timeout 的旧浏览器
+        if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+            return AbortSignal.timeout(ms);
+        }
+        const ctrl = new AbortController();
+        setTimeout(() => ctrl.abort(), ms);
+        return ctrl.signal;
     };
 
-    // 初始化
-    document.getElementById('endDate').value = new Date().toISOString().split('T')[0];
-    document.getElementById('btnSearch').addEventListener('click', runSearch);
-    document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
-    document.getElementById('stockInput').addEventListener('keydown', e => { if(e.keyCode===13) runSearch(); });
-
-    if(ghConfig.token) {
-        setTimeout(autoSyncFromCloud, 500);
-    } else {
-        updateStatus('ready', '本地模式');
-    }
-
-    // ============================================================
-    // JSONP 方式（最后兜底）
-    // ============================================================
-    function fetchJSONP(url, callbackParam = 'cb') {
-        return new Promise((resolve, reject) => {
-            const cbName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-            const script = document.createElement('script');
-            const timer = setTimeout(() => {
-                cleanup();
-                reject(new Error('JSONP timeout'));
-            }, 15000); // 延长至15秒
-
-            window[cbName] = (data) => {
-                cleanup();
-                resolve(data);
-            };
-
-            function cleanup() {
-                clearTimeout(timer);
-                delete window[cbName];
-                if (script.parentNode) script.parentNode.removeChild(script);
-            }
-
-            const sep = url.includes('?') ? '&' : '?';
-            script.src = url + sep + callbackParam + '=' + cbName;
-            script.onerror = () => { cleanup(); reject(new Error('JSONP load error')); };
-            document.head.appendChild(script);
+    // --- 策略 1：直接请求（若 API 支持 CORS）---
+    try {
+        const res = await fetch(url, {
+            signal : timeout(6000),
+            headers: { 'Accept': 'application/json' }
         });
-    }
+        if (res.ok) {
+            const json = safeParseJSON(await res.text());
+            if (json) return json;
+        }
+    } catch (e) { /* 继续 */ }
 
-    // ============================================================
-    // ✅ 核心请求函数：多策略链（直接→代理1→代理2→JSONP）
-    // ============================================================
-    async function apiFetch(url, jsonpParam) {
-        // 策略1：直接请求（有些接口支持CORS）
+    // --- 策略 2：corsproxy.io（修复：加 url= 参数）---
+    try {
+        const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+        const res = await fetch(proxyUrl, { signal: timeout(8000) });
+        if (res.ok) {
+            const json = safeParseJSON(await res.text());
+            if (json) return json;
+        }
+    } catch (e) { /* 继续 */ }
+
+    // --- 策略 3：allorigins.win/raw（返回原始内容）---
+    try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        const res = await fetch(proxyUrl, { signal: timeout(9000) });
+        if (res.ok) {
+            const json = safeParseJSON(await res.text());
+            if (json) return json;
+        }
+    } catch (e) { /* 继续 */ }
+
+    // --- 策略 4：allorigins.win/get（返回包装格式）---
+    try {
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        const res = await fetch(proxyUrl, { signal: timeout(9000) });
+        if (res.ok) {
+            const json = safeParseJSON(await res.text());
+            if (json) return json;
+        }
+    } catch (e) { /* 继续 */ }
+
+    // --- 策略 5：thingproxy ---
+    try {
+        const proxyUrl = `https://thingproxy.freeboard.io/fetch/${url}`;
+        const res = await fetch(proxyUrl, { signal: timeout(8000) });
+        if (res.ok) {
+            const json = safeParseJSON(await res.text());
+            if (json) return json;
+        }
+    } catch (e) { /* 继续 */ }
+
+    // --- 策略 6：JSONP（仅作兜底，接口必须支持 callback 参数）---
+    if (jsonpParam) {
         try {
-            const res = await fetch(url, {
-                signal: AbortSignal.timeout(6000),
-                headers: { 'Accept': 'application/json' }
-            });
-            if (res.ok) {
-                const text = await res.text();
-                return safeParseJSON(text);
-            }
-        } catch(e) { /* CORS失败，继续 */ }
-
-        // 策略2：corsproxy.io 代理
-        try {
-            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-            const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-            if (res.ok) {
-                const text = await res.text();
-                return safeParseJSON(text);
-            }
-        } catch(e) { /* 代理1失败，继续 */ }
-
-        // 策略3：allorigins.win 代理
-        try {
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-            const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-            if (res.ok) {
-                const text = await res.text();
-                return safeParseJSON(text);
-            }
-        } catch(e) { /* 代理2失败，继续 */ }
-
-        // 策略4：thingproxy 代理
-        try {
-            const proxyUrl = `https://thingproxy.freeboard.io/fetch/${url}`;
-            const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-            if (res.ok) {
-                const text = await res.text();
-                return safeParseJSON(text);
-            }
-        } catch(e) { /* 代理3失败，继续 */ }
-
-        // 策略5：JSONP 最终兜底
-        if (jsonpParam) {
             return await fetchJSONP(url, jsonpParam);
-        }
-
-        throw new Error('所有请求方式均失败，请检查网络或稍后重试');
-    }
-
-    // 安全解析JSON（兼容 allorigins 包一层 {contents:...} 的情况）
-    function safeParseJSON(text) {
-        try {
-            const obj = JSON.parse(text);
-            // allorigins.win 有时会包一层 {contents: "..."}
-            if (obj && typeof obj.contents === 'string') {
-                return JSON.parse(obj.contents);
-            }
-            return obj;
-        } catch(e) {
-            throw new Error('JSON解析失败');
+        } catch (e) {
+            console.warn('[JSONP 失败]', e.message);
         }
     }
 
-    // ============================================================
-    // 搜索
-    // ============================================================
-    async function runSearch() {
-        const val = document.getElementById('stockInput').value.trim();
-        if (!val) return;
-        try {
-            document.getElementById('btnSearch').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-            const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14,31,41&token=D43BF722C8E33BD5D50F639205545E43`;
-            const json = await apiFetch(url, 'cb');
+    throw new Error('网络请求失败：所有代理均不可用，请检查网络或稍后重试');
+}
 
-            if(json?.QuotationCodeTable?.Data?.length > 0) {
-                const item = json.QuotationCodeTable.Data[0];
-                let secId = '';
-                if(item.QuoteID) {
-                    secId = item.QuoteID;
-                } else {
-                    if(item.MarketType == "1") secId = `1.${item.Code}`;
-                    else if(item.MarketType == "2") secId = `0.${item.Code}`;
-                    else if(item.MarketType == "31" || item.MarketType == "5") secId = `116.${item.Code}`;
-                    else if(item.Code.startsWith('6')) secId = `1.${item.Code}`;
-                    else secId = `0.${item.Code}`;
-                }
-                currentStock = { code: item.Code, name: item.Name, secId };
-                document.getElementById('btn-run').disabled = false;
-                showToast(`✅ 已锁定: ${item.Name} (${item.Code})`, 'ok');
-            } else {
-                showToast("❌ 未找到股票", 'error');
-            }
-        } catch(e) {
-            showToast("❌ 搜索失败: " + e.message, 'error');
-        } finally {
-            document.getElementById('btnSearch').innerHTML = '🔍 搜索';
+// ============================================================
+// JSONP 实现
+// ============================================================
+function fetchJSONP(url, callbackParam = 'cb') {
+    return new Promise((resolve, reject) => {
+        const cbName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        const script = document.createElement('script');
+        const timer = setTimeout(() => {
+            cleanup();
+            reject(new Error('JSONP 超时'));
+        }, 12000);
+
+        window[cbName] = (data) => { cleanup(); resolve(data); };
+
+        function cleanup() {
+            clearTimeout(timer);
+            delete window[cbName];
+            if (script.parentNode) script.parentNode.removeChild(script);
         }
-    }
 
-    // ============================================================
-    // 核心分析主流程
-    // ============================================================
-    async function runAnalysis(silent = false) {
-        const btn = document.getElementById('btn-run');
-        if(!silent) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 计算中...'; }
+        const sep = url.includes('?') ? '&' : '?';
+        script.src = url + sep + callbackParam + '=' + cbName;
+        script.onerror = () => { cleanup(); reject(new Error('JSONP 脚本加载失败')); };
+        document.head.appendChild(script);
+    });
+}
 
-        try {
-            const beg = document.getElementById('startDate').value.replace(/-/g, '');
-            const end = document.getElementById('endDate').value.replace(/-/g, '');
+// ============================================================
+// 进度条辅助
+// ============================================================
+function setProgress(pct) {
+    const bar  = document.getElementById('progressBar');
+    const fill = document.getElementById('progressFill');
+    if (pct <= 0) { bar.classList.remove('show'); fill.style.width = '0%'; return; }
+    bar.classList.add('show');
+    fill.style.width = Math.min(pct, 100) + '%';
+    if (pct >= 100) setTimeout(() => setProgress(0), 400);
+}
 
-            if(!silent || globalData.length === 0) {
-                await Promise.all([fetchShares(), fetchKline(beg, end)]);
-            }
-            if(globalData.length === 0) throw new Error("该时间段无股价数据");
+// ============================================================
+// 搜索
+// ============================================================
+async function runSearch() {
+    const val = document.getElementById('stockInput').value.trim();
+    if (!val) { showToast('请输入股票代码或名称', 'warn'); return; }
 
-            let finMap = await fetchHistoricalFinancials(currentStock);
+    const btn = document.getElementById('btnSearch');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
-            const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0,4))));
-            const sortedYears = Array.from(yearsSet).sort((a,b) => a-b);
-
-            let missingYears = [];
-            for (let year of sortedYears) {
-                const savedData = getFromDB(currentStock.code, year);
-                if (savedData) {
-                    finMap[year] = { year, rev: savedData.rev, prof: savedData.prof, source: 'manual', name: `★${year}录入` };
-                } else if (!finMap[year]) {
-                    missingYears.push(year);
-                }
-            }
-
-            if (missingYears.length > 0 && !silent) {
-                showToast(`⚠️ 需补录 ${missingYears.length} 年数据`, 'warn');
-                const batchData = await openBatchModal(missingYears);
-                if (batchData) {
-                    for (let y in batchData) {
-                        const { rev, prof } = batchData[y];
-                        const yearInt = parseInt(y);
-                        await saveToDB(currentStock.code, yearInt, rev, prof, false);
-                        finMap[yearInt] = { year: yearInt, rev, prof, source: 'manual', name: `★${yearInt}录入` };
-                    }
-                    triggerSync();
-                } else {
-                    showToast('取消录入，部分数据将缺失', 'error');
-                }
-            }
-
-            calculate(finMap);
-            drawChart();
-            renderTable();
-            if(!silent) showToast("计算完成 ✅", 'ok');
-            document.getElementById('stockInput').value = '';
-        } catch(e) {
-            console.error(e);
-            if(!silent) showToast(e.message || "运行出错", 'error');
-        } finally {
-            if(!silent) { btn.disabled = false; btn.innerHTML = '⚡ 计算'; }
-        }
-    }
-
-    function calculate(finMap) {
-        if(Object.keys(finMap).length === 0) return;
-        globalData = globalData.map(item => {
-            const y = parseInt(item.date.substring(0,4));
-            let fin = finMap[y];
-            if(fin) {
-                const mktCap = item.price * currentTotalShares;
-                return { ...item, year: fin.year, sourceType: fin.source, sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name, mktCap, rev: fin.rev, prof: fin.prof, pe: fin.prof>0 ? mktCap/fin.prof : -1, ps: fin.rev>0 ? mktCap/fin.rev : 0 };
-            } else {
-                return { ...item, pe: null, ps: null };
-            }
-        });
-    }
-
-    // ============================================================
-    // 批量弹窗
-    // ============================================================
-    function openBatchModal(years, prefillData = {}) {
-        return new Promise((resolve) => {
-            const container = document.getElementById('batchInputContainer');
-            container.innerHTML = '';
-            years.forEach(y => {
-                const defaultRev = prefillData[y] ? (prefillData[y].rev/1e8) : '';
-                const defaultProf = prefillData[y] ? (prefillData[y].prof/1e8) : '';
-                const row = document.createElement('div');
-                row.className = 'batch-row';
-                row.dataset.year = y;
-                row.innerHTML = `
-                    <div class="row-year">${y}</div>
-                    <div class="row-inputs">
-                        <input type="number" placeholder="营收(亿)" class="in-rev" value="${defaultRev}" inputmode="decimal">
-                        <input type="number" placeholder="净利(亿)" class="in-prof" value="${defaultProf}" inputmode="decimal">
-                    </div>`;
-                container.appendChild(row);
-            });
-            document.getElementById('batchInputModal').style.display = 'flex';
-            batchModalResolve = resolve;
-            const firstInput = container.querySelector('input');
-            if(firstInput) firstInput.focus();
-        });
-    }
-
-    function closeBatchModal(isConfirm) {
-        document.getElementById('batchInputModal').style.display = 'none';
-        if (isConfirm && batchModalResolve) {
-            let result = {};
-            document.querySelectorAll('.batch-row').forEach(row => {
-                const y = row.dataset.year;
-                const revVal = row.querySelector('.in-rev').value;
-                const profVal = row.querySelector('.in-prof').value;
-                if (revVal && profVal) {
-                    result[y] = { rev: parseFloat(revVal)*1e8, prof: parseFloat(profVal)*1e8 };
-                }
-            });
-            batchModalResolve(result);
-        } else if (batchModalResolve) {
-            batchModalResolve(null);
-        }
-    }
-
-    async function editYearData(year) {
-        const saved = getFromDB(currentStock.code, year);
-        const prefill = saved ? { [year]: saved } : {};
-        const newData = await openBatchModal([year], prefill);
-        if (newData && newData[year]) {
-            await saveToDB(currentStock.code, year, newData[year].rev, newData[year].prof);
-            runAnalysis(true);
-        }
-    }
-
-    // ============================================================
-    // GitHub 同步 & 本地 DB
-    // ============================================================
-    function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
-    function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
-    function getLocalDB() { return JSON.parse(localStorage.getItem(DB_KEY) || "{}"); }
-    function getFromDB(code, year) { let db = getLocalDB(); return (db[code] && db[code][year]) || null; }
-
-    async function autoSyncFromCloud() {
-        if (!ghConfig.token) return;
-        updateStatus('syncing', '同步中');
-        try {
-            const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
-            const res = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-            if (res.ok) {
-                const data = await res.json();
-                const cloudDB = JSON.parse(b64_to_utf8(data.content));
-                localStorage.setItem(DB_KEY, JSON.stringify({ ...getLocalDB(), ...cloudDB }));
-                updateStatus('online', '已同步');
-            } else if(res.status === 404) updateStatus('online', '新文件');
-            else updateStatus('error', '失败');
-        } catch (e) { updateStatus('error', '错误'); }
-    }
-
-    async function saveToDB(code, year, rev, prof, immediateSync = true) {
-        let db = getLocalDB();
-        if (!db[code]) db[code] = {};
-        db[code][year] = { rev, prof, timestamp: Date.now() };
-        localStorage.setItem(DB_KEY, JSON.stringify(db));
-        if (immediateSync) triggerSync();
-    }
-
-    function triggerSync() {
-        if (!ghConfig.token) { showToast('已保存本地', 'ok'); return; }
-        clearTimeout(syncTimer);
-        syncTimer = setTimeout(async () => {
-            updateStatus('syncing', '上传中');
-            try {
-                const url = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
-                const getRes = await fetch(url, { headers: { 'Authorization': `token ${ghConfig.token}` } });
-                let sha = getRes.ok ? (await getRes.json()).sha : null;
-                await fetch(url, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `token ${ghConfig.token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: `Update ${currentStock.code} data`, content: utf8_to_b64(JSON.stringify(getLocalDB())), sha })
-                });
-                updateStatus('online', '已保存');
-            } catch(e) { updateStatus('error', '上传失败'); }
-        }, 1500);
-    }
-
-    // ============================================================
-    // 数据获取（多策略请求，支持A股/港股/美股）
-    // ============================================================
-    async function fetchShares() {
-        try {
-            const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
-            const json = await apiFetch(url, 'cb');
-            currentTotalShares = json?.data?.f84 || (json?.data?.f20 / json?.data?.f2) || 1e8;
-        } catch(e) {
-            console.warn('fetchShares 失败，使用默认值:', e.message);
-            currentTotalShares = 1e8;
-        }
-    }
-
-    async function fetchKline(beg, end) {
-        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
+    try {
+        const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14,31,41&token=D43BF722C8E33BD5D50F639205545E43`;
         const json = await apiFetch(url, 'cb');
-        if (!json?.data?.klines) throw new Error("无股价数据，请检查股票代码或时间范围");
-        globalData = json.data.klines.map(k => { const p=k.split(','); return { date: p[0], price: parseFloat(p[1]) }; });
+
+        const list = json?.QuotationCodeTable?.Data;
+        if (list && list.length > 0) {
+            const item = list[0];
+            let secId = item.QuoteID || '';
+            if (!secId) {
+                const m = item.MarketType;
+                if      (m === '1')                   secId = `1.${item.Code}`;
+                else if (m === '2')                   secId = `0.${item.Code}`;
+                else if (m === '31' || m === '5')     secId = `116.${item.Code}`;
+                else if (item.Code.startsWith('6'))   secId = `1.${item.Code}`;
+                else                                   secId = `0.${item.Code}`;
+            }
+            currentStock = { code: item.Code, name: item.Name, secId };
+            document.getElementById('btn-run').disabled = false;
+            showToast(`✅ 已选定：${item.Name}（${item.Code}）`, 'ok');
+        } else {
+            showToast('未找到匹配的股票，请检查输入', 'error');
+        }
+    } catch (e) {
+        showToast('搜索失败：' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🔍 搜索';
+    }
+}
+
+// ============================================================
+// 核心分析主流程
+// ============================================================
+async function runAnalysis(silent = false) {
+    const btn = document.getElementById('btn-run');
+    const loader = document.getElementById('chartLoading');
+
+    if (!silent) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 计算中...';
+        loader.classList.add('show');
+        setProgress(10);
     }
 
-    async function fetchHistoricalFinancials(stockObj) {
-        let map = {};
-        const sid = stockObj.secId;
-        const code = stockObj.code;
+    try {
+        const beg = document.getElementById('startDate').value.replace(/-/g, '');
+        const end = document.getElementById('endDate').value.replace(/-/g, '');
 
-        let reportName = 'RPT_LICO_FN_CPD';
-        let filterStr = `(SECURITY_CODE="${code}")`;
-        let fieldRev = 'TOTAL_OPERATE_INCOME';
-        let fieldProf = 'PARENT_NETPROFIT';
-
-        if (sid.startsWith('116.')) {
-            reportName = 'RPT_HK_FN_MAIN';
-            filterStr = `(SECUCODE="${code}.HK")`;
-            fieldRev = 'OPERATE_INCOME';
-        } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) {
-            reportName = 'RPT_US_FN_MAIN';
-            filterStr = `(SECURITY_CODE="${code}")`;
-            fieldRev = 'TOTAL_REVENUE';
+        if (!silent || globalData.length === 0) {
+            if (!silent) showToast('正在获取股价数据…', 'info');
+            await Promise.all([fetchShares(), fetchKline(beg, end)]);
+            setProgress(40);
         }
 
+        if (globalData.length === 0) throw new Error('该时间段无股价数据，请调整日期范围');
+
+        if (!silent) showToast('正在获取财报数据…', 'info');
+        let finMap = await fetchHistoricalFinancials(currentStock);
+        setProgress(70);
+
+        // 读取本地手动数据 / 找出缺失年份
+        const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0, 4))));
+        const sortedYears = Array.from(yearsSet).sort((a, b) => a - b);
+        let missingYears = [];
+
+        for (const year of sortedYears) {
+            const saved = getFromDB(currentStock.code, year);
+            if (saved) {
+                finMap[year] = { year, rev: saved.rev, prof: saved.prof, source: 'manual', name: `★${year}` };
+            } else if (!finMap[year]) {
+                missingYears.push(year);
+            }
+        }
+
+        // 弹窗补录缺失数据
+        if (missingYears.length > 0 && !silent) {
+            loader.classList.remove('show');
+            showToast(`⚠️ ${missingYears.length} 个年份缺少财报，请手动补录`, 'warn');
+            const batchData = await openBatchModal(missingYears);
+            loader.classList.add('show');
+
+            if (batchData && Object.keys(batchData).length > 0) {
+                for (const y in batchData) {
+                    const { rev, prof } = batchData[y];
+                    const yearInt = parseInt(y);
+                    await saveToDB(currentStock.code, yearInt, rev, prof, false);
+                    finMap[yearInt] = { year: yearInt, rev, prof, source: 'manual', name: `★${yearInt}` };
+                }
+                triggerSync();
+            } else {
+                showToast('未录入数据，部分年份估值将为空', 'warn');
+            }
+        }
+
+        setProgress(85);
+        calculate(finMap);
+        drawChart();
+        renderTable();
+        setProgress(100);
+
+        if (!silent) showToast(`✅ ${currentStock.name} 计算完成`, 'ok');
+        document.getElementById('stockInput').value = '';
+
+    } catch (e) {
+        console.error('[runAnalysis]', e);
+        if (!silent) showToast('❌ ' + (e.message || '运行出错'), 'error');
+        setProgress(0);
+    } finally {
+        if (!silent) {
+            btn.disabled = false;
+            btn.innerHTML = '⚡ 计算';
+            loader.classList.remove('show');
+        }
+    }
+}
+
+// ============================================================
+// 计算 PE / PS
+// ============================================================
+function calculate(finMap) {
+    if (Object.keys(finMap).length === 0) return;
+    globalData = globalData.map(item => {
+        const y   = parseInt(item.date.substring(0, 4));
+        const fin = finMap[y];
+        if (fin) {
+            const mktCap = item.price * currentTotalShares;
+            return {
+                ...item,
+                year      : fin.year,
+                sourceType: fin.source,
+                sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name,
+                mktCap,
+                rev : fin.rev,
+                prof: fin.prof,
+                pe  : fin.prof > 0 ? mktCap / fin.prof : -1,
+                ps  : fin.rev  > 0 ? mktCap / fin.rev  : 0
+            };
+        }
+        return { ...item, pe: null, ps: null };
+    });
+}
+
+// ============================================================
+// 批量补录弹窗
+// ============================================================
+function openBatchModal(years, prefillData = {}) {
+    return new Promise(resolve => {
+        const container = document.getElementById('batchInputContainer');
+        container.innerHTML = '';
+        years.forEach(y => {
+            const preRev  = prefillData[y] ? (prefillData[y].rev  / 1e8).toString() : '';
+            const preProf = prefillData[y] ? (prefillData[y].prof / 1e8).toString() : '';
+            const row = document.createElement('div');
+            row.className  = 'batch-row';
+            row.dataset.year = y;
+            row.innerHTML = `
+                <div class="row-year">${y}</div>
+                <div class="row-inputs">
+                    <input type="number" step="0.01" placeholder="营收(亿)" class="in-rev"
+                        value="${preRev}" inputmode="decimal">
+                    <input type="number" step="0.01" placeholder="净利(亿)" class="in-prof"
+                        value="${preProf}" inputmode="decimal">
+                </div>`;
+            container.appendChild(row);
+        });
+        document.getElementById('batchInputModal').style.display = 'flex';
+        batchModalResolve = resolve;
+        const firstInput = container.querySelector('input');
+        if (firstInput) setTimeout(() => firstInput.focus(), 100);
+    });
+}
+
+function closeBatchModal(isConfirm) {
+    document.getElementById('batchInputModal').style.display = 'none';
+    if (isConfirm && batchModalResolve) {
+        const result = {};
+        document.querySelectorAll('.batch-row').forEach(row => {
+            const y    = row.dataset.year;
+            const revV = parseFloat(row.querySelector('.in-rev').value);
+            const prV  = parseFloat(row.querySelector('.in-prof').value);
+            if (!isNaN(revV) && !isNaN(prV)) {
+                result[y] = { rev: revV * 1e8, prof: prV * 1e8 };
+            }
+        });
+        batchModalResolve(result);
+    } else if (batchModalResolve) {
+        batchModalResolve(null);
+    }
+    batchModalResolve = null;
+}
+
+async function editYearData(year) {
+    const saved  = getFromDB(currentStock.code, year);
+    const prefill = saved ? { [year]: saved } : {};
+    const newData = await openBatchModal([year], prefill);
+    if (newData && newData[year]) {
+        const { rev, prof } = newData[year];
+        await saveToDB(currentStock.code, year, rev, prof);
+        await runAnalysis(true);
+    }
+}
+
+// ============================================================
+// 数据获取
+// ============================================================
+async function fetchShares() {
+    try {
+        const url  = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
+        const json = await apiFetch(url, 'cb');
+        const d    = json?.data;
+        if (d) {
+            currentTotalShares = d.f84 || (d.f20 && d.f2 ? d.f20 / d.f2 : 0) || 1e8;
+        }
+    } catch (e) {
+        console.warn('[fetchShares] 失败，使用默认股本:', e.message);
+        currentTotalShares = 1e8;
+    }
+}
+
+async function fetchKline(beg, end) {
+    const url  = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
+    const json = await apiFetch(url, 'cb');
+
+    if (!json?.data?.klines || json.data.klines.length === 0) {
+        throw new Error('无股价数据，请检查股票代码或调整日期范围');
+    }
+    globalData = json.data.klines.map(k => {
+        const parts = k.split(',');
+        return { date: parts[0], price: parseFloat(parts[1]) };
+    });
+}
+
+async function fetchHistoricalFinancials(stockObj) {
+    const map  = {};
+    const sid  = stockObj.secId;
+    const code = stockObj.code;
+
+    // 根据市场类型选择财报接口
+    let reportName = 'RPT_LICO_FN_CPD';
+    let filterStr  = `(SECURITY_CODE="${code}")`;
+    let fieldRev   = 'TOTAL_OPERATE_INCOME';
+    let fieldProf  = 'PARENT_NETPROFIT';
+
+    if (sid.startsWith('116.')) {
+        // 港股
+        reportName = 'RPT_HK_FN_MAIN';
+        filterStr  = `(SECUCODE="${code}.HK")`;
+        fieldRev   = 'OPERATE_INCOME';
+        fieldProf  = 'PARENT_NETPROFIT';
+    } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) {
+        // 美股
+        reportName = 'RPT_US_FN_MAIN';
+        filterStr  = `(SECURITY_CODE="${code}")`;
+        fieldRev   = 'TOTAL_REVENUE';
+        fieldProf  = 'PARENT_NETPROFIT';
+    }
+
+    try {
+        const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1`;
+        const json = await apiFetch(url, 'cb');
+
+        if (json?.result?.data && Array.isArray(json.result.data)) {
+            json.result.data.forEach(item => {
+                const dateStr = item.REPORT_DATE || item.REPORTDATE || '';
+                // 只取年报（12-31）
+                if (!dateStr.includes('-12-31') && !dateStr.endsWith('1231')) return;
+                const y = parseInt(dateStr.substring(0, 4));
+                if (!y || isNaN(y)) return;
+
+                // 尝试多个字段名兼容不同接口
+                const r = item[fieldRev]
+                    || item['TOTAL_OPERATE_INCOME']
+                    || item['OPERATE_INCOME']
+                    || item['TOTAL_REVENUE'];
+                const p = item[fieldProf]
+                    || item['PARENT_NETPROFIT']
+                    || item['NET_PROFIT'];
+
+                if (r != null && p != null) {
+                    map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
+                }
+            });
+        }
+    } catch (e) {
+        console.warn('[fetchHistoricalFinancials] 财报接口失败:', e.message);
+        // 财报获取失败不中断流程，后续由手动录入补全
+    }
+    return map;
+}
+
+// ============================================================
+// 本地 DB & GitHub 同步
+// ============================================================
+function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
+function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
+function getLocalDB() { try { return JSON.parse(localStorage.getItem(DB_KEY) || '{}'); } catch(e) { return {}; } }
+function getFromDB(code, year) { const db = getLocalDB(); return (db[code] && db[code][year]) || null; }
+
+async function saveToDB(code, year, rev, prof, immediateSync = true) {
+    const db = getLocalDB();
+    if (!db[code]) db[code] = {};
+    db[code][year] = { rev, prof, ts: Date.now() };
+    localStorage.setItem(DB_KEY, JSON.stringify(db));
+    if (immediateSync) triggerSync();
+}
+
+function triggerSync() {
+    if (!ghConfig.token || !ghConfig.user || !ghConfig.repo) {
+        showToast('✅ 已保存到本地', 'ok');
+        return;
+    }
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(async () => {
+        updateStatus('syncing', '上传中');
         try {
-            const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1`;
-            const json = await apiFetch(url, 'cb');
-            if(json?.result?.data) {
-                json.result.data.forEach(item => {
-                    const d = item.REPORT_DATE || item.REPORTDATE;
-                    if(d && d.includes("-12-31")) {
-                        const y = parseInt(d.substring(0,4));
-                        const r = item[fieldRev] || item['OPERATE_INCOME'] || item['TOTAL_OPERATE_INCOME'];
-                        const p = item[fieldProf];
-                        if(r && p) map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
-                    }
-                });
-            }
-        } catch(e) { console.warn("财报API失败:", e.message); }
-        return map;
-    }
+            const apiUrl = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
+            const getRes = await fetch(apiUrl, {
+                headers: { 'Authorization': `token ${ghConfig.token}`, 'Accept': 'application/vnd.github.v3+json' }
+            });
+            let sha = null;
+            if (getRes.ok) sha = (await getRes.json()).sha;
 
-    // ============================================================
-    // UI 辅助
-    // ============================================================
-    function updateStatus(status, text) {
-        document.getElementById('syncDot').className = 'sync-dot ' + status;
-        document.getElementById('statusTxt').innerText = text;
-    }
-    function showToast(msg, type='ok') {
-        const el = document.getElementById('toastMsg');
-        el.innerHTML = msg; el.className = `status-msg ${type}`; el.style.display = 'block';
-        setTimeout(() => el.style.display='none', 3000);
-    }
-    window.showSettings = () => {
-        document.getElementById('settingModal').style.display = 'flex';
-        document.getElementById('cfgToken').value = ghConfig.token;
-        document.getElementById('cfgUser').value = ghConfig.user;
-        document.getElementById('cfgRepo').value = ghConfig.repo;
-    };
-    window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
-    window.saveConfig = () => {
-        ghConfig.token = document.getElementById('cfgToken').value.trim();
-        ghConfig.user = document.getElementById('cfgUser').value.trim();
-        ghConfig.repo = document.getElementById('cfgRepo').value.trim();
-        localStorage.setItem('stock_token', ghConfig.token);
-        localStorage.setItem('stock_user', ghConfig.user);
-        localStorage.setItem('stock_repo', ghConfig.repo);
-        closeSettings(); autoSyncFromCloud();
-    };
-
-    // ============================================================
-    // 图表 & 表格
-    // ============================================================
-    function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
-
-    const verticalLinePlugin = {
-        id: 'verticalLine',
-        afterDraw: (chart) => {
-            if (chart.tooltip?._active?.length) {
-                const ctx = chart.ctx;
-                const activePoint = chart.tooltip._active[0];
-                const x = activePoint.element.x;
-                const bottom = chart.chartArea.bottom;
-                ctx.save();
-                ctx.beginPath();
-                ctx.setLineDash([4, 4]);
-                ctx.lineWidth = 1;
-                ctx.strokeStyle = '#666';
-                ctx.moveTo(x, chart.chartArea.top);
-                ctx.lineTo(x, bottom);
-                ctx.stroke();
-                const dateStr = chart.data.labels[activePoint.index];
-                ctx.font = '11px Arial';
-                ctx.fillStyle = '#666';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                ctx.fillText(dateStr, x, bottom + 6);
-                ctx.restore();
-            }
-        }
-    };
-
-    function drawChart() {
-        if(!globalData.length) return;
-        const ctx = document.getElementById('valuationChart').getContext('2d');
-        if(chartInstance) chartInstance.destroy();
-        const validData = globalData;
-        const peData = validData.map(d => (d.pe && d.pe > 0) ? d.pe : null);
-        const psData = validData.map(d => d.ps !== null ? d.ps : null);
-
-        chartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: validData.map(d => d.date),
-                datasets: [
-                    { label: 'PE (右轴)', data: peData, borderColor: '#c0392b', backgroundColor: 'rgba(192,57,43,0.05)', borderWidth: 1.5, yAxisID: 'y_pe', pointRadius: 0, pointHoverRadius: 4, spanGaps: true, segment: { borderDash: c => validData[c.p0DataIndex]?.sourceType === 'manual' ? [4,4] : undefined } },
-                    { label: 'PS (左轴)', data: psData, borderColor: '#2980b9', backgroundColor: 'rgba(41,128,185,0.05)', borderWidth: 1.5, yAxisID: 'y_ps', pointRadius: 0, pointHoverRadius: 4, spanGaps: true, segment: { borderDash: c => validData[c.p0DataIndex]?.sourceType === 'manual' ? [4,4] : undefined } }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    tooltip: { backgroundColor: 'rgba(255,255,255,0.95)', titleColor: '#333', bodyColor: '#333', borderColor: '#ddd', borderWidth: 1, callbacks: { title: () => null } },
-                    zoom: { limits: { x: { min: 'original', max: 'original' } }, pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } }
+            const putRes = await fetch(apiUrl, {
+                method : 'PUT',
+                headers: {
+                    'Authorization': `token ${ghConfig.token}`,
+                    'Content-Type' : 'application/json',
+                    'Accept'       : 'application/vnd.github.v3+json'
                 },
-                scales: {
-                    x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { font: { size: 10 } } },
-                    y_pe: { type: 'linear', position: 'right', title: { display:true, text:'PE 倍数', color:'#c0392b', font:{size:10} }, grace: '5%', grid: { drawOnChartArea:false } },
-                    y_ps: { type: 'linear', position: 'left', title: { display:true, text:'PS 倍数', color:'#2980b9', font:{size:10} }, grace: '5%' }
+                body: JSON.stringify({
+                    message: `update ${currentStock.code || 'data'}`,
+                    content: utf8_to_b64(JSON.stringify(getLocalDB())),
+                    sha
+                })
+            });
+            if (putRes.ok) {
+                updateStatus('online', '已同步');
+                showToast('✅ 数据已同步到 GitHub', 'ok');
+            } else {
+                const err = await putRes.json();
+                throw new Error(err.message || putRes.statusText);
+            }
+        } catch (e) {
+            console.error('[triggerSync]', e);
+            updateStatus('error', '同步失败');
+            showToast('⚠️ GitHub 同步失败：' + e.message, 'warn');
+        }
+    }, 1500);
+}
+
+async function autoSyncFromCloud() {
+    if (!ghConfig.token || !ghConfig.user || !ghConfig.repo) return;
+    updateStatus('syncing', '同步中');
+    try {
+        const apiUrl = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}?t=${Date.now()}`;
+        const res = await fetch(apiUrl, {
+            headers: { 'Authorization': `token ${ghConfig.token}`, 'Accept': 'application/vnd.github.v3+json' }
+        });
+        if (res.ok) {
+            const data     = await res.json();
+            const cloudDB  = JSON.parse(b64_to_utf8(data.content.replace(/\n/g, '')));
+            const merged   = { ...getLocalDB(), ...cloudDB };
+            localStorage.setItem(DB_KEY, JSON.stringify(merged));
+            updateStatus('online', '已同步');
+        } else if (res.status === 404) {
+            updateStatus('online', '新仓库');
+        } else {
+            const err = await res.json();
+            throw new Error(err.message);
+        }
+    } catch (e) {
+        console.warn('[autoSyncFromCloud]', e.message);
+        updateStatus('error', '同步失败');
+    }
+}
+
+// ============================================================
+// UI 辅助
+// ============================================================
+function updateStatus(status, text) {
+    document.getElementById('syncDot').className = 'sync-dot ' + status;
+    document.getElementById('statusTxt').textContent = text;
+}
+
+let toastTimer = null;
+function showToast(msg, type = 'ok') {
+    const el = document.getElementById('toastMsg');
+    el.textContent = msg;
+    el.className   = `status-msg ${type}`;
+    el.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3500);
+}
+
+window.showSettings = () => {
+    document.getElementById('cfgToken').value = ghConfig.token;
+    document.getElementById('cfgUser').value  = ghConfig.user;
+    document.getElementById('cfgRepo').value  = ghConfig.repo;
+    document.getElementById('settingModal').style.display = 'flex';
+};
+window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
+window.saveConfig = () => {
+    ghConfig.token = document.getElementById('cfgToken').value.trim();
+    ghConfig.user  = document.getElementById('cfgUser').value.trim();
+    ghConfig.repo  = document.getElementById('cfgRepo').value.trim();
+    localStorage.setItem('stock_token', ghConfig.token);
+    localStorage.setItem('stock_user',  ghConfig.user);
+    localStorage.setItem('stock_repo',  ghConfig.repo);
+    closeSettings();
+    autoSyncFromCloud();
+};
+
+// ============================================================
+// 图表
+// ============================================================
+function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
+
+const verticalLinePlugin = {
+    id: 'verticalLine',
+    afterDraw(chart) {
+        if (!chart.tooltip?._active?.length) return;
+        const ctx    = chart.ctx;
+        const active = chart.tooltip._active[0];
+        const x      = active.element.x;
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth   = 1;
+        ctx.strokeStyle = 'rgba(100,100,100,0.5)';
+        ctx.moveTo(x, chart.chartArea.top);
+        ctx.lineTo(x, chart.chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+    }
+};
+
+function drawChart() {
+    if (!globalData.length) return;
+    const ctx = document.getElementById('valuationChart').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+
+    const peData = globalData.map(d => (d.pe && d.pe > 0) ? +d.pe.toFixed(2) : null);
+    const psData = globalData.map(d => (d.ps != null && d.ps > 0) ? +d.ps.toFixed(2) : null);
+
+    chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels  : globalData.map(d => d.date),
+            datasets: [
+                {
+                    label          : 'PE（右轴）',
+                    data           : peData,
+                    borderColor    : '#c0392b',
+                    backgroundColor: 'rgba(192,57,43,0.04)',
+                    borderWidth    : 1.5,
+                    yAxisID        : 'y_pe',
+                    pointRadius    : 0,
+                    pointHoverRadius: 4,
+                    spanGaps       : true,
+                    segment: { borderDash: c => globalData[c.p0DataIndex]?.sourceType === 'manual' ? [5, 4] : undefined }
+                },
+                {
+                    label          : 'PS（左轴）',
+                    data           : psData,
+                    borderColor    : '#2980b9',
+                    backgroundColor: 'rgba(41,128,185,0.04)',
+                    borderWidth    : 1.5,
+                    yAxisID        : 'y_ps',
+                    pointRadius    : 0,
+                    pointHoverRadius: 4,
+                    spanGaps       : true,
+                    segment: { borderDash: c => globalData[c.p0DataIndex]?.sourceType === 'manual' ? [5, 4] : undefined }
+                }
+            ]
+        },
+        options: {
+            responsive       : true,
+            maintainAspectRatio: false,
+            interaction      : { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { boxWidth: 12, font: { size: 12 } } },
+                tooltip: {
+                    backgroundColor: 'rgba(255,255,255,0.96)',
+                    titleColor: '#333', bodyColor: '#333',
+                    borderColor: '#ddd', borderWidth: 1,
+                    padding: 10,
+                    callbacks: {
+                        title: items => items[0]?.label || '',
+                        label: item => {
+                            const d = globalData[item.dataIndex];
+                            if (!d) return '';
+                            if (item.datasetIndex === 0) return ` PE: ${item.formattedValue} 倍（${d.sourceName || ''}）`;
+                            return ` PS: ${item.formattedValue} 倍`;
+                        }
+                    }
+                },
+                zoom: {
+                    limits: { x: { min: 'original', max: 'original' } },
+                    pan   : { enabled: true, mode: 'x' },
+                    zoom  : { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
                 }
             },
-            plugins: [verticalLinePlugin]
-        });
-    }
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: 'month', tooltipFormat: 'yyyy-MM-dd' },
+                    grid: { display: false },
+                    ticks: { font: { size: 10 }, maxRotation: 0 }
+                },
+                y_pe: {
+                    type    : 'linear',
+                    position: 'right',
+                    title   : { display: true, text: 'PE 倍数', color: '#c0392b', font: { size: 10 } },
+                    grace   : '5%',
+                    grid    : { drawOnChartArea: false }
+                },
+                y_ps: {
+                    type    : 'linear',
+                    position: 'left',
+                    title   : { display: true, text: 'PS 倍数', color: '#2980b9', font: { size: 10 } },
+                    grace   : '5%'
+                }
+            }
+        },
+        plugins: [verticalLinePlugin]
+    });
+}
 
-    function renderTable() {
-        const tbody = document.querySelector('#dataTable tbody');
-        tbody.innerHTML = '';
-        [...globalData].reverse().slice(0, 500).forEach(d => {
-            if(d.pe === undefined || d.pe === null) return;
-            const peStr = d.pe > 0 ? d.pe.toFixed(2) : '<span class="loss">亏损</span>';
-            const tagClass = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
-            const editAttr = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})"` : '';
-            const editIcon = d.sourceType === 'manual' ? ' ✎' : '';
-            tbody.innerHTML += `<tr>
-                <td>${d.date}</td>
-                <td>${d.price.toFixed(2)}</td>
-                <td><span class="tag ${tagClass}" ${editAttr}>${d.sourceName}${editIcon}</span></td>
-                <td>${(d.mktCap/1e8).toFixed(2)}</td>
-                <td>${(d.rev/1e8).toFixed(2)}</td>
-                <td class="${d.prof>0?'':'loss'}">${(d.prof/1e8).toFixed(2)}</td>
-                <td class="val-pe">${peStr}</td>
-                <td class="val-ps">${d.ps.toFixed(2)}</td>
-            </tr>`;
-        });
+// ============================================================
+// 数据表格
+// ============================================================
+function renderTable() {
+    const tbody = document.querySelector('#dataTable tbody');
+    tbody.innerHTML = '';
+
+    const rows = [...globalData].reverse().filter(d => d.pe !== undefined && d.pe !== null);
+
+    if (rows.length === 0) {
+        document.getElementById('emptyState').style.display = 'block';
+        document.getElementById('dataTable').style.display  = 'none';
+        return;
     }
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('dataTable').style.display  = 'table';
+
+    rows.slice(0, 500).forEach(d => {
+        const peStr     = d.pe > 0
+            ? `<span class="val-pe">${d.pe.toFixed(2)}</span>`
+            : `<span class="loss">亏损</span>`;
+        const psStr     = `<span class="val-ps">${(d.ps || 0).toFixed(2)}</span>`;
+        const tagClass  = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
+        const editAttr  = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})" title="点击编辑"` : '';
+        const editIcon  = d.sourceType === 'manual' ? ' ✎' : '';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${d.date}</td>
+            <td>${d.price.toFixed(2)}</td>
+            <td><span class="tag ${tagClass}" ${editAttr}>${d.sourceName}${editIcon}</span></td>
+            <td>${(d.mktCap / 1e8).toFixed(1)}</td>
+            <td>${(d.rev  / 1e8).toFixed(1)}</td>
+            <td class="${d.prof > 0 ? '' : 'loss'}">${(d.prof / 1e8).toFixed(1)}</td>
+            <td>${peStr}</td>
+            <td>${psStr}</td>`;
+        tbody.appendChild(tr);
+    });
+}
 </script>
 </body>
 </html>
