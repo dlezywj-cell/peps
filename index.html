@@ -354,14 +354,26 @@ if (ghConfig.token && ghConfig.user && ghConfig.repo) {
     updateStatus('ready', '本地模式');
 }
 
+// 智能解析 JSON，自动剥离可能存在的代理 JSONP 外壳
 function safeParseJSON(text) {
+    if (typeof text === 'object' && text !== null) return text;
     if (!text || typeof text !== 'string') return null;
-    const trimmed = text.trim();
+    let trimmed = text.trim();
+
+    // 尝试剥离类似 jQuery12345(...) 的回调包装
+    const match = trimmed.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
+    if (match) trimmed = match[1].trim();
+
     if (trimmed[0] !== '{' && trimmed[0] !== '[') return null;
+
     try {
         const obj = JSON.parse(trimmed);
+        // 如果是通过 allorigins 代理返回的数据格式 { contents: "..." }
         if (obj && typeof obj.contents === 'string') {
-            const inner = obj.contents.trim();
+            let inner = obj.contents.trim();
+            const innerMatch = inner.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
+            if (innerMatch) inner = innerMatch[1].trim();
+            
             if (inner[0] === '{' || inner[0] === '[') {
                 try { return JSON.parse(inner); } catch (e) { return null; }
             }
@@ -374,66 +386,69 @@ function safeParseJSON(text) {
 }
 
 // ============================================================
-// ✅ 核心修复：优先使用原生的 JSONP，避开所有失效的跨域代理服务器
+// ✅ 网络请求多重降级策略 (解决各类广告拦截器、跨域与超时问题)
 // ============================================================
 async function apiFetch(url, jsonpParam) {
-    // 策略 1：如果接口支持 JSONP，必须优先使用！速度最快，无 CORS 限制
-    if (jsonpParam) {
-        try {
-            const data = await fetchJSONP(url, jsonpParam);
-            if (data) return data;
-        } catch (e) {
-            console.warn('[JSONP 失败，准备降级尝试代理]', e.message);
-        }
-    }
-
     const timeout = (ms) => {
-        if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
-            return AbortSignal.timeout(ms);
-        }
         const ctrl = new AbortController();
         setTimeout(() => ctrl.abort(), ms);
         return ctrl.signal;
     };
 
-    // 策略 2：直接请求（适用于同源或目标接口临时放开了 CORS 的情况）
+    // 策略 1：简单模式直连（不带自定义 headers 以防触发 OPTIONS 预检请求报错）
     try {
-        const res = await fetch(url, {
-            signal : timeout(4000),
-            headers: { 'Accept': 'application/json' }
-        });
+        const res = await fetch(url, { signal: timeout(3000) });
         if (res.ok) {
-            const json = safeParseJSON(await res.text());
-            if (json) return json;
+            const data = safeParseJSON(await res.text());
+            if (data) return data;
         }
-    } catch (e) { /* 继续 */ }
+    } catch (e) { /* ignore */ }
 
-    // 策略 3：备用代理兜底（平时极大概率走不到这里，被墙时备用）
+    // 策略 2：原生 JSONP (最兼容，但易被 Brave Shield 等广告插件拦截)
+    if (jsonpParam) {
+        try {
+            const data = await fetchJSONP(url, jsonpParam);
+            if (data) return data;
+        } catch (e) { 
+            console.warn('[JSONP 失败]', e.message); 
+        }
+    }
+
+    // 策略 3：备用 CodeTabs 代理
     try {
-        const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+        const proxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
         const res = await fetch(proxyUrl, { signal: timeout(6000) });
         if (res.ok) {
-            const json = safeParseJSON(await res.text());
-            if (json) return json;
+            const data = safeParseJSON(await res.text());
+            if (data) return data;
         }
-    } catch (e) { /* 继续 */ }
+    } catch (e) { /* ignore */ }
 
-    throw new Error('网络请求失败：连接超时或被拦截，请检查网络后重试');
+    // 策略 4：强力备用 AllOrigins 代理
+    try {
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        const res = await fetch(proxyUrl, { signal: timeout(6000) });
+        if (res.ok) {
+            const data = safeParseJSON(await res.text());
+            if (data) return data;
+        }
+    } catch (e) { /* ignore */ }
+
+    throw new Error('网络连接超时或被拦截，请尝试关闭浏览器的广告拦截/隐私保护插件后重试');
 }
 
 // ============================================================
-// JSONP 实现：已优化回调函数名防止被严格接口过滤
+// JSONP 实现
 // ============================================================
-function fetchJSONP(url, callbackParam = 'cb') {
+function fetchJSONP(url, callbackParam) {
     return new Promise((resolve, reject) => {
-        // 生成标准 jQuery 风格的回调函数名，东方财富等大多数 API 都认这个格式
         const cbName = 'jQuery' + Math.floor(Math.random() * 1e15) + '_' + Date.now();
         const script = document.createElement('script');
         
         const timer = setTimeout(() => {
             cleanup();
             reject(new Error('请求超时'));
-        }, 8000); // 8 秒超时足矣，避免死等
+        }, 4000); // 控制时间，不拖延后续代理链的启动
 
         window[cbName] = (data) => { 
             cleanup(); 
@@ -450,7 +465,7 @@ function fetchJSONP(url, callbackParam = 'cb') {
         script.src = url + sep + callbackParam + '=' + cbName;
         script.onerror = () => { 
             cleanup(); 
-            reject(new Error('JSONP 加载失败')); 
+            reject(new Error('被拦截')); 
         };
         document.head.appendChild(script);
     });
@@ -733,7 +748,8 @@ async function fetchHistoricalFinancials(stockObj) {
 
     try {
         const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1`;
-        const json = await apiFetch(url, 'cb');
+        // ✅ 核心修复: DataCenter 接口要求使用 "callback" 参数，不能传 "cb" 否则会无响应死等
+        const json = await apiFetch(url, 'callback');
 
         if (json?.result?.data && Array.isArray(json.result.data)) {
             json.result.data.forEach(item => {
