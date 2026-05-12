@@ -324,7 +324,7 @@
 // 全局状态
 // ============================================================
 let currentStock   = { code: '', name: '', secId: '' };
-let globalData     = [];
+let globalData     =[];
 let currentTotalShares = 0;
 let chartInstance  = null;
 let batchModalResolve = null;
@@ -355,16 +355,26 @@ if (ghConfig.token && ghConfig.user && ghConfig.repo) {
 }
 
 // ============================================================
-// ✅ 修复版：safeParseJSON — 失败返回 null，不 throw
+// 数据解析增强
 // ============================================================
 function safeParseJSON(text) {
+    if (typeof text === 'object' && text !== null) return text;
     if (!text || typeof text !== 'string') return null;
-    const trimmed = text.trim();
+    let trimmed = text.trim();
+
+    // 尝试剥离类似 jQuery12345(...) 的回调包装
+    const match = trimmed.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
+    if (match) trimmed = match[1].trim();
+
     if (trimmed[0] !== '{' && trimmed[0] !== '[') return null;
+
     try {
         const obj = JSON.parse(trimmed);
+        // 兼容 AllOrigins 的包装格式
         if (obj && typeof obj.contents === 'string') {
-            const inner = obj.contents.trim();
+            let inner = obj.contents.trim();
+            const innerMatch = inner.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
+            if (innerMatch) inner = innerMatch[1].trim();
             if (inner[0] === '{' || inner[0] === '[') {
                 try { return JSON.parse(inner); } catch (e) { return null; }
             }
@@ -377,19 +387,44 @@ function safeParseJSON(text) {
 }
 
 // ============================================================
-// ✅ 修复版：apiFetch — JSONP 优先，代理仅作备份
+// JSONP 实现 (自带时间戳防缓存)
+// ============================================================
+function fetchJSONP(url, callbackParam, timeoutMs = 6000) {
+    return new Promise((resolve, reject) => {
+        const cbName = 'jQuery' + Math.floor(Math.random() * 1e15) + '_' + Date.now();
+        const script = document.createElement('script');
+        
+        const timer = setTimeout(() => {
+            cleanup();
+            reject(new Error('JSONP请求超时'));
+        }, timeoutMs);
+
+        window[cbName] = (data) => { 
+            cleanup(); 
+            resolve(data); 
+        };
+
+        function cleanup() {
+            clearTimeout(timer);
+            try { delete window[cbName]; } catch (e) {}
+            if (script.parentNode) script.parentNode.removeChild(script);
+        }
+
+        const sep = url.includes('?') ? '&' : '?';
+        // 加上随机后缀防止广告拦截器锁定缓存
+        script.src = url + sep + callbackParam + '=' + cbName + '&_=' + Date.now();
+        script.onerror = () => { 
+            cleanup(); 
+            reject(new Error('被浏览器或插件拦截')); 
+        };
+        document.head.appendChild(script);
+    });
+}
+
+// ============================================================
+// ✅ 并发代理网络请求核心逻辑
 // ============================================================
 async function apiFetch(url, jsonpParam) {
-    // 1️⃣ JSONP 优先（最可靠）
-    if (jsonpParam) {
-        try {
-            return await fetchJSONP(url, jsonpParam);
-        } catch (e) {
-            console.warn('[JSONP 失败，尝试代理]', e.message);
-        }
-    }
-
-    // -------- 以下为代理备用（几乎不会用到）-----------
     const timeout = (ms) => {
         if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
             return AbortSignal.timeout(ms);
@@ -399,54 +434,61 @@ async function apiFetch(url, jsonpParam) {
         return ctrl.signal;
     };
 
-    const strategies = [
-        { name: 'direct', fn: () => fetch(url, { signal: timeout(6000) }) },
-        { name: 'corsproxy', fn: () => fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, { signal: timeout(8000) }) },
-        { name: 'allorigins_raw', fn: () => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, { signal: timeout(9000) }) },
-        { name: 'allorigins_get', fn: () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, { signal: timeout(9000) }) },
-        { name: 'thingproxy', fn: () => fetch(`https://thingproxy.freeboard.io/fetch/${url}`, { signal: timeout(8000) }) }
-    ];
-
-    for (const { name, fn } of strategies) {
+    // 策略 1：原生 JSONP 优先 (无跨域问题，但域名容易被广告插件误杀)
+    if (jsonpParam) {
         try {
-            const res = await fn();
-            if (res.ok) {
-                const text = await res.text();
-                const json = safeParseJSON(text);
-                if (json) return json;
-            }
+            const data = await fetchJSONP(url, jsonpParam, 6000);
+            if (data) return data;
         } catch (e) {
-            console.warn(`[代理 ${name} 失败]`, e.message);
+            console.warn('[原生JSONP通道受阻，启动代理通道竞速]', e.message);
         }
     }
 
-    throw new Error('网络请求失败：无法获取数据，请检查网络或稍后重试');
-}
-
-// ============================================================
-// JSONP 实现
-// ============================================================
-function fetchJSONP(url, callbackParam = 'cb') {
-    return new Promise((resolve, reject) => {
-        const cbName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-        const script = document.createElement('script');
-        const timer = setTimeout(() => {
-            cleanup();
-            reject(new Error('JSONP 超时'));
-        }, 12000);
-
-        window[cbName] = (data) => { cleanup(); resolve(data); };
-
-        function cleanup() {
-            clearTimeout(timer);
-            delete window[cbName];
-            if (script.parentNode) script.parentNode.removeChild(script);
+    // 策略 2：原生直连尝试 (如果临时放开了跨域)
+    try {
+        const res = await fetch(url, { signal: timeout(3000) });
+        if (res.ok) {
+            const data = safeParseJSON(await res.text());
+            if (data) return data;
         }
+    } catch (e) { }
 
-        const sep = url.includes('?') ? '&' : '?';
-        script.src = url + sep + callbackParam + '=' + cbName;
-        script.onerror = () => { cleanup(); reject(new Error('JSONP 脚本加载失败')); };
-        document.head.appendChild(script);
+    // 策略 3：多代理并发竞速 (谁最先返回正确结果，就用谁)
+    return new Promise((resolve, reject) => {
+        const proxies = [
+            `https://corsproxy.io/?url=`,
+            `https://api.allorigins.win/raw?url=`,
+            `https://api.codetabs.com/v1/proxy?quest=`,
+            `https://thingproxy.freeboard.io/fetch/`
+        ];
+        
+        let failedCount = 0;
+        let resolved = false;
+
+        for (const proxy of proxies) {
+            (async () => {
+                try {
+                    const pUrl = proxy + encodeURIComponent(url);
+                    const res = await fetch(pUrl, { signal: timeout(8000) });
+                    if (res.ok && !resolved) {
+                        const text = await res.text();
+                        const data = safeParseJSON(text);
+                        if (data) {
+                            resolved = true;
+                            resolve(data);
+                        }
+                    }
+                } catch (e) {
+                    // 并发中静默忽略单一错误
+                } finally {
+                    failedCount++;
+                    // 如果所有代理全部失败
+                    if (failedCount === proxies.length && !resolved) {
+                        reject(new Error('被拦截！原因是股价接口域名带有 push 关键字，触发了您的【去广告插件(如 uBlock)】。\n👉 请暂时关闭去广告插件后刷新页面！'));
+                    }
+                }
+            })();
+        }
     });
 }
 
@@ -533,10 +575,9 @@ async function runAnalysis(silent = false) {
         let finMap = await fetchHistoricalFinancials(currentStock);
         setProgress(70);
 
-        // 读取本地手动数据 / 找出缺失年份
         const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0, 4))));
         const sortedYears = Array.from(yearsSet).sort((a, b) => a - b);
-        let missingYears = [];
+        let missingYears =[];
 
         for (const year of sortedYears) {
             const saved = getFromDB(currentStock.code, year);
@@ -547,7 +588,6 @@ async function runAnalysis(silent = false) {
             }
         }
 
-        // 弹窗补录缺失数据
         if (missingYears.length > 0 && !silent) {
             loader.classList.remove('show');
             showToast(`⚠️ ${missingYears.length} 个年份缺少财报，请手动补录`, 'warn');
@@ -697,7 +737,7 @@ async function fetchKline(beg, end) {
     const json = await apiFetch(url, 'cb');
 
     if (!json?.data?.klines || json.data.klines.length === 0) {
-        throw new Error('无股价数据，请检查股票代码或调整日期范围');
+        throw new Error('该股票代码无有效数据，请检查或更换股票');
     }
     globalData = json.data.klines.map(k => {
         const parts = k.split(',');
@@ -729,7 +769,6 @@ async function fetchHistoricalFinancials(stockObj) {
 
     try {
         const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1`;
-        // ✅ 关键修复：财报接口使用 callback 参数
         const json = await apiFetch(url, 'callback');
 
         if (json?.result?.data && Array.isArray(json.result.data)) {
@@ -739,13 +778,8 @@ async function fetchHistoricalFinancials(stockObj) {
                 const y = parseInt(dateStr.substring(0, 4));
                 if (!y || isNaN(y)) return;
 
-                const r = item[fieldRev]
-                    || item['TOTAL_OPERATE_INCOME']
-                    || item['OPERATE_INCOME']
-                    || item['TOTAL_REVENUE'];
-                const p = item[fieldProf]
-                    || item['PARENT_NETPROFIT']
-                    || item['NET_PROFIT'];
+                const r = item[fieldRev] || item['TOTAL_OPERATE_INCOME'] || item['OPERATE_INCOME'] || item['TOTAL_REVENUE'];
+                const p = item[fieldProf] || item['PARENT_NETPROFIT'] || item['NET_PROFIT'];
 
                 if (r != null && p != null) {
                     map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
@@ -916,7 +950,7 @@ function drawChart() {
         type: 'line',
         data: {
             labels  : globalData.map(d => d.date),
-            datasets: [
+            datasets:[
                 {
                     label          : 'PE（右轴）',
                     data           : peData,
@@ -1038,4 +1072,3 @@ function renderTable() {
 </script>
 </body>
 </html>
-```
