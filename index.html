@@ -213,10 +213,12 @@
     <header>
         <div class="top-bar">
             <h2>📈 估值透视</h2>
-            <div class="sync-info" onclick="showSettings()" title="GitHub 同步配置">
+            <div class="sync-info">
                 <div id="syncDot" class="sync-dot"></div>
                 <span id="statusTxt">未连接</span>
-                <i class="fas fa-cog" style="opacity:0.5; margin-left:4px;"></i>
+                <!-- 保留调试入口以防万一 -->
+                <i class="fas fa-bug" onclick="showDebug()" style="opacity:0.6; margin-left:12px; cursor:pointer;" title="查看调试日志"></i>
+                <i class="fas fa-cog" onclick="showSettings()" style="opacity:0.6; margin-left:8px; cursor:pointer;" title="配置同步"></i>
             </div>
         </div>
         <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
@@ -229,7 +231,7 @@
             </div>
             <div class="divider-v"></div>
             <div class="group-dates">
-                <div class="input-group"><input type="date" id="startDate" value="2020-01-01"></div>
+                <div class="input-group"><input type="date" id="startDate" value="2016-01-01"></div>
                 <div class="input-group"><input type="date" id="endDate"></div>
             </div>
             <div class="divider-v"></div>
@@ -319,7 +321,66 @@
     </div>
 </div>
 
+<!-- Debug 调试日志弹窗 -->
+<div class="modal-overlay" id="debugModal" style="z-index: 10000;">
+    <div class="modal-box" style="width: 95%; max-width: 600px; height: 80vh;">
+        <div class="modal-header" style="color:var(--danger)">
+            <span><i class="fas fa-bug"></i> 调试日志 (Debug)</span>
+            <i class="fas fa-times" onclick="document.getElementById('debugModal').style.display='none'" style="cursor:pointer;color:#999;"></i>
+        </div>
+        <div class="modal-body" style="flex:1; overflow:hidden; padding-right:0;">
+            <textarea id="debugLogContent" style="width:100%; height:100%; font-family:monospace; font-size:11px; padding:10px; background:#1e1e1e; color:#00ff00; border:none; resize:none; border-radius:4px; line-height:1.4;" readonly></textarea>
+        </div>
+        <div class="modal-footer" style="margin-top:10px;">
+            <button class="btn-block btn-cancel" onclick="document.getElementById('debugModal').style.display='none'">关闭</button>
+            <button class="btn-block btn-primary" onclick="copyDebugLogs()">📋 复制代码反馈包</button>
+        </div>
+    </div>
+</div>
+
 <script>
+// ============================================================
+// 【深度监控器】Logger
+// ============================================================
+const Logger = {
+    logs:[],
+    log(msg) {
+        const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+        const line = `[${time}] ${msg}`;
+        this.logs.push(line);
+        console.log(line);
+        const el = document.getElementById('debugLogContent');
+        if (el) {
+            el.value = this.logs.join('\n');
+            el.scrollTop = el.scrollHeight;
+        }
+    },
+    error(msg, e) {
+        const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+        const errStr = e ? (e.stack || e.message || e) : '';
+        const line = `[${time}] ❌ ERROR: ${msg} ${errStr}`;
+        this.logs.push(line);
+        console.error(line, e);
+        const el = document.getElementById('debugLogContent');
+        if (el) {
+            el.value = this.logs.join('\n');
+            el.scrollTop = el.scrollHeight;
+        }
+    },
+    clear() {
+        this.logs =[];
+        const el = document.getElementById('debugLogContent');
+        if (el) el.value = '';
+    }
+};
+
+window.showDebug = () => {
+    document.getElementById('debugModal').style.display = 'flex';
+};
+window.copyDebugLogs = () => {
+    navigator.clipboard.writeText(Logger.logs.join('\n')).then(() => showToast('已复制调试日志，请发给开发者', 'ok'));
+};
+
 // ============================================================
 // 全局状态
 // ============================================================
@@ -354,142 +415,120 @@ if (ghConfig.token && ghConfig.user && ghConfig.repo) {
     updateStatus('ready', '本地模式');
 }
 
+function getTencentSymbol(secId, code) {
+    if (secId.startsWith('1.')) return 'sh' + code;
+    if (secId.startsWith('0.')) return 'sz' + code;
+    if (secId.startsWith('116.')) return 'hk' + code;
+    if (secId.startsWith('105.') || secId.startsWith('106.') || secId.startsWith('107.')) return 'us' + code.toUpperCase();
+    return 'sh' + code; 
+}
+
 // ============================================================
-// 数据解析增强
+// 增强型底层请求系统
 // ============================================================
 function safeParseJSON(text) {
     if (typeof text === 'object' && text !== null) return text;
     if (!text || typeof text !== 'string') return null;
     let trimmed = text.trim();
-
-    // 尝试剥离类似 jQuery12345(...) 的回调包装
     const match = trimmed.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
     if (match) trimmed = match[1].trim();
-
     if (trimmed[0] !== '{' && trimmed[0] !== '[') return null;
-
-    try {
-        const obj = JSON.parse(trimmed);
-        // 兼容 AllOrigins 的包装格式
-        if (obj && typeof obj.contents === 'string') {
-            let inner = obj.contents.trim();
-            const innerMatch = inner.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
-            if (innerMatch) inner = innerMatch[1].trim();
-            if (inner[0] === '{' || inner[0] === '[') {
-                try { return JSON.parse(inner); } catch (e) { return null; }
-            }
-            return null;
-        }
-        return obj;
-    } catch (e) {
-        return null;
-    }
+    try { return JSON.parse(trimmed); } catch (e) { return null; }
 }
 
-// ============================================================
-// JSONP 实现 (自带时间戳防缓存)
-// ============================================================
-function fetchJSONP(url, callbackParam, timeoutMs = 6000) {
+function fetchJSONP(url, callbackParam, timeoutMs = 4000) {
     return new Promise((resolve, reject) => {
         const cbName = 'jQuery' + Math.floor(Math.random() * 1e15) + '_' + Date.now();
         const script = document.createElement('script');
-        
-        const timer = setTimeout(() => {
-            cleanup();
-            reject(new Error('JSONP请求超时'));
+        const timer = setTimeout(() => { 
+            cleanup(); 
+            reject(new Error('Timeout')); 
         }, timeoutMs);
-
         window[cbName] = (data) => { 
             cleanup(); 
             resolve(data); 
         };
-
         function cleanup() {
             clearTimeout(timer);
             try { delete window[cbName]; } catch (e) {}
             if (script.parentNode) script.parentNode.removeChild(script);
         }
-
         const sep = url.includes('?') ? '&' : '?';
-        // 加上随机后缀防止广告拦截器锁定缓存
         script.src = url + sep + callbackParam + '=' + cbName + '&_=' + Date.now();
         script.onerror = () => { 
             cleanup(); 
-            reject(new Error('被浏览器或插件拦截')); 
+            reject(new Error('Blocked by Browser/Adblock')); 
         };
         document.head.appendChild(script);
     });
 }
 
-// ============================================================
-// ✅ 并发代理网络请求核心逻辑
-// ============================================================
-async function apiFetch(url, jsonpParam) {
-    const timeout = (ms) => {
-        if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
-            return AbortSignal.timeout(ms);
-        }
-        const ctrl = new AbortController();
-        setTimeout(() => ctrl.abort(), ms);
-        return ctrl.signal;
-    };
-
-    // 策略 1：原生 JSONP 优先 (无跨域问题，但域名容易被广告插件误杀)
+async function apiFetch(url, jsonpParam, context = 'API') {
+    Logger.log(`[${context}] Req: ${url.split('?')[0]}...`);
+    
+    // 策略1: JSONP
     if (jsonpParam) {
         try {
-            const data = await fetchJSONP(url, jsonpParam, 6000);
+            Logger.log(`[${context}] Try JSONP...`);
+            const data = await fetchJSONP(url, jsonpParam, 4000);
+            if (data) {
+                Logger.log(`[${context}] JSONP OK.`);
+                return data;
+            }
+        } catch(e) {
+            Logger.log(`[${context}] JSONP Fail: ${e.message}`);
+        }
+    }
+    
+    // 策略2: 直连
+    try {
+        Logger.log(`[${context}] Try Fetch...`);
+        const ctrl = new AbortController();
+        const timerId = setTimeout(() => ctrl.abort(), 6000);
+        const res = await fetch(url, { signal: ctrl.signal });
+        clearTimeout(timerId);
+        if (res.ok) {
+            const text = await res.text();
+            Logger.log(`[${context}] Fetch OK. Length: ${text.length}`);
+            const data = safeParseJSON(text);
             if (data) return data;
-        } catch (e) {
-            console.warn('[原生JSONP通道受阻，启动代理通道竞速]', e.message);
+            Logger.log(`[${context}] Fetch Parse Error.`);
+        } else {
+            Logger.log(`[${context}] Fetch Fail: HTTP ${res.status}`);
+        }
+    } catch(e) {
+        Logger.log(`[${context}] Fetch Fail: ${e.message}`);
+    }
+
+    // 策略3: 跨域代理兜底 (增加超时至 12s 以对抗海外延迟，且增加节点)
+    const proxies = [
+        `https://api.allorigins.win/raw?url=`,
+        `https://corsproxy.io/?url=`,
+        `https://api.codetabs.com/v1/proxy?quest=`
+    ];
+    for (const proxy of proxies) {
+        try {
+            const proxyUrl = proxy + encodeURIComponent(url);
+            Logger.log(`[${context}] Try Proxy: ${proxy.split('/')[2]}...`);
+            const ctrl = new AbortController();
+            const timerId = setTimeout(() => ctrl.abort(), 12000); // 加长超时到12秒！
+            const res = await fetch(proxyUrl, { signal: ctrl.signal });
+            clearTimeout(timerId);
+            if (res.ok) {
+                const text = await res.text();
+                const data = safeParseJSON(text);
+                if (data) {
+                    Logger.log(`[${context}] Proxy OK.`);
+                    return data;
+                }
+            }
+        } catch(e) {
+            Logger.log(`[${context}] Proxy Fail: ${e.message}`);
         }
     }
 
-    // 策略 2：原生直连尝试 (如果临时放开了跨域)
-    try {
-        const res = await fetch(url, { signal: timeout(3000) });
-        if (res.ok) {
-            const data = safeParseJSON(await res.text());
-            if (data) return data;
-        }
-    } catch (e) { }
-
-    // 策略 3：多代理并发竞速 (谁最先返回正确结果，就用谁)
-    return new Promise((resolve, reject) => {
-        const proxies = [
-            `https://corsproxy.io/?url=`,
-            `https://api.allorigins.win/raw?url=`,
-            `https://api.codetabs.com/v1/proxy?quest=`,
-            `https://thingproxy.freeboard.io/fetch/`
-        ];
-        
-        let failedCount = 0;
-        let resolved = false;
-
-        for (const proxy of proxies) {
-            (async () => {
-                try {
-                    const pUrl = proxy + encodeURIComponent(url);
-                    const res = await fetch(pUrl, { signal: timeout(8000) });
-                    if (res.ok && !resolved) {
-                        const text = await res.text();
-                        const data = safeParseJSON(text);
-                        if (data) {
-                            resolved = true;
-                            resolve(data);
-                        }
-                    }
-                } catch (e) {
-                    // 并发中静默忽略单一错误
-                } finally {
-                    failedCount++;
-                    // 如果所有代理全部失败
-                    if (failedCount === proxies.length && !resolved) {
-                        reject(new Error('被拦截！原因是股价接口域名带有 push 关键字，触发了您的【去广告插件(如 uBlock)】。\n👉 请暂时关闭去广告插件后刷新页面！'));
-                    }
-                }
-            })();
-        }
-    });
+    Logger.log(`[${context}] ALL ROUTES DEAD.`);
+    return null;
 }
 
 // ============================================================
@@ -505,9 +544,10 @@ function setProgress(pct) {
 }
 
 // ============================================================
-// 搜索
+// 搜索 API
 // ============================================================
 async function runSearch() {
+    Logger.clear();
     const val = document.getElementById('stockInput').value.trim();
     if (!val) { showToast('请输入股票代码或名称', 'warn'); return; }
 
@@ -516,9 +556,11 @@ async function runSearch() {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
     try {
+        Logger.log(`[Search] Keyword: ${val}`);
         const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14,31,41&token=D43BF722C8E33BD5D50F639205545E43`;
-        const json = await apiFetch(url, 'cb');
+        const json = await apiFetch(url, 'cb', 'SearchAPI');
 
+        if (!json) throw new Error('搜索接口连接失败');
         const list = json?.QuotationCodeTable?.Data;
         if (list && list.length > 0) {
             const item = list[0];
@@ -532,12 +574,15 @@ async function runSearch() {
                 else                                   secId = `0.${item.Code}`;
             }
             currentStock = { code: item.Code, name: item.Name, secId };
+            Logger.log(`[Search] Found: ${currentStock.name} (SecID: ${currentStock.secId})`);
             document.getElementById('btn-run').disabled = false;
             showToast(`✅ 已选定：${item.Name}（${item.Code}）`, 'ok');
         } else {
+            Logger.log(`[Search] No match found.`);
             showToast('未找到匹配的股票，请检查输入', 'error');
         }
     } catch (e) {
+        Logger.error('[Search] Crash', e);
         showToast('搜索失败：' + e.message, 'error');
     } finally {
         btn.disabled = false;
@@ -553,6 +598,7 @@ async function runAnalysis(silent = false) {
     const loader = document.getElementById('chartLoading');
 
     if (!silent) {
+        Logger.log(`--- Start Analysis for ${currentStock.name} ---`);
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 计算中...';
         loader.classList.add('show');
@@ -562,6 +608,7 @@ async function runAnalysis(silent = false) {
     try {
         const beg = document.getElementById('startDate').value.replace(/-/g, '');
         const end = document.getElementById('endDate').value.replace(/-/g, '');
+        Logger.log(`[Main] Request Range: ${beg} to ${end}`);
 
         if (!silent || globalData.length === 0) {
             if (!silent) showToast('正在获取股价数据…', 'info');
@@ -569,10 +616,19 @@ async function runAnalysis(silent = false) {
             setProgress(40);
         }
 
-        if (globalData.length === 0) throw new Error('该时间段无股价数据，请调整日期范围');
+        if (globalData.length === 0) {
+            throw new Error('获取到的历史股价记录为空，已自动阻断');
+        }
 
         if (!silent) showToast('正在获取财报数据…', 'info');
         let finMap = await fetchHistoricalFinancials(currentStock);
+        
+        if (!currentTotalShares && currentStock._latestSharesFromFin) {
+            Logger.log(`[Main] Overriding Shares using FinData: ${currentStock._latestSharesFromFin}`);
+            currentTotalShares = currentStock._latestSharesFromFin;
+        }
+        if (!currentTotalShares) currentTotalShares = 1e8;
+
         setProgress(70);
 
         const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0, 4))));
@@ -617,8 +673,11 @@ async function runAnalysis(silent = false) {
         document.getElementById('stockInput').value = '';
 
     } catch (e) {
-        console.error('[runAnalysis]', e);
-        if (!silent) showToast('❌ ' + (e.message || '运行出错'), 'error');
+        Logger.error('[Main] Analysis Crash', e);
+        if (!silent) {
+            showToast('❌ ' + (e.message || '运行出错'), 'error');
+            setTimeout(() => showDebug(), 1200);
+        }
         setProgress(0);
     } finally {
         if (!silent) {
@@ -719,36 +778,160 @@ async function editYearData(year) {
 // 数据获取
 // ============================================================
 async function fetchShares() {
-    try {
-        const url  = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
-        const json = await apiFetch(url, 'cb');
-        const d    = json?.data;
-        if (d) {
-            currentTotalShares = d.f84 || (d.f20 && d.f2 ? d.f20 / d.f2 : 0) || 1e8;
-        }
-    } catch (e) {
-        console.warn('[fetchShares] 失败，使用默认股本:', e.message);
-        currentTotalShares = 1e8;
+    currentTotalShares = 0;
+    const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
+    const json = await apiFetch(url, 'cb', 'SharesAPI'); 
+    if (json?.data) {
+        const d = json.data;
+        currentTotalShares = d.f84 || (d.f20 && d.f2 ? d.f20 / d.f2 : 0);
+        Logger.log(`[Shares] Successfully got shares: ${currentTotalShares}`);
+    } else {
+        Logger.log(`[Shares] Could not resolve shares from API.`);
     }
 }
 
 async function fetchKline(beg, end) {
-    const url  = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1&fields2=f51,f53&klt=101&fqt=1&beg=${beg}&end=${end}`;
-    const json = await apiFetch(url, 'cb');
+    let success = false;
 
-    if (!json?.data?.klines || json.data.klines.length === 0) {
-        throw new Error('该股票代码无有效数据，请检查或更换股票');
+    // 通道 1：东方财富多域名穿透重试 (防广告拦截：依次尝试3个域名)
+    const emDomains = [
+        'push2his.eastmoney.com',
+        'push2.eastmoney.com',
+        'quote.eastmoney.com'
+    ];
+
+    for (const domain of emDomains) {
+        if (success) break;
+        Logger.log(`[Kline] Try EastMoney Domain: ${domain}`);
+        const url = `https://${domain}/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&beg=${beg}&end=${end}&lmt=100000`;
+        
+        const json = await apiFetch(url, 'cb', `Kline-${domain}`);
+        if (json?.data?.klines && json.data.klines.length > 0) {
+            globalData = json.data.klines.map(k => {
+                const parts = k.split(',');
+                return { date: parts[0], price: parseFloat(parts[2]) };
+            });
+            Logger.log(`[Kline] EM Domain [${domain}] Success! Acquired ${globalData.length} records.`);
+            success = true;
+        } else {
+            Logger.log(`[Kline] EM Domain [${domain}] returned empty or invalid.`);
+        }
     }
-    globalData = json.data.klines.map(k => {
-        const parts = k.split(',');
-        return { date: parts[0], price: parseFloat(parts[1]) };
-    });
+
+    // 通道 2：智能独立无拦截通道 (新浪美股 / 腾讯A股港股)
+    if (!success) {
+        // 判断是否为美股 (东方财富美股secId以105/106/107开头)
+        const isUS = currentStock.secId.startsWith('105.') || currentStock.secId.startsWith('106.') || currentStock.secId.startsWith('107.');
+        
+        if (isUS) {
+            // ⭐核心修复点：美股专属通道走新浪财经！
+            const sinaSymbol = currentStock.code.toLowerCase(); // usON -> on
+            Logger.log(`[Kline] Route 2 (Sina US) Start for: ${sinaSymbol}`);
+            try {
+                const sJson = await new Promise((resolve) => {
+                    const varName = 'sina_kline_' + Date.now() + Math.floor(Math.random() * 1000);
+                    const script = document.createElement('script');
+                    const timer = setTimeout(() => { cleanup(); resolve(null); }, 8000);
+                    
+                    function cleanup() {
+                        clearTimeout(timer);
+                        if (script.parentNode) script.parentNode.removeChild(script);
+                    }
+                    
+                    // 新浪 JSONP 会直接将数据传入到这个同名函数里
+                    window[varName] = (data) => {
+                        resolve(data);
+                        cleanup();
+                        try { delete window[varName]; } catch(e){}
+                    };
+                    
+                    script.onerror = () => { cleanup(); resolve(null); };
+                    script.src = `https://stock.finance.sina.com.cn/usstock/api/jsonp.php/${varName}/US_MinKService.getDailyK?symbol=${sinaSymbol}&_=${Date.now()}`;
+                    document.head.appendChild(script);
+                });
+
+                if (sJson && Array.isArray(sJson)) {
+                    globalData = sJson.map(k => ({
+                        date: k.d, // "2023-01-01"
+                        price: parseFloat(k.c) // "12.34"
+                    })).filter(d => {
+                        const dStr = d.date.replace(/-/g, '');
+                        return dStr >= beg && dStr <= end;
+                    });
+                    Logger.log(`[Kline] Route 2 (Sina US) Success: ${globalData.length} records.`);
+                    if (globalData.length > 0) success = true;
+                } else {
+                    Logger.log(`[Kline] Sina US returned empty/invalid.`);
+                }
+            } catch(e) {
+                Logger.error(`[Kline] Sina US Exception`, e);
+            }
+        } else {
+            // A股/港股通道走腾讯财经
+            const tSymbol = getTencentSymbol(currentStock.secId, currentStock.code);
+            let tParams = [`${tSymbol},day,,,5000,qfq`, `${tSymbol},day,,,5000`];
+            
+            for (const tParam of tParams) {
+                if (success) break;
+                Logger.log(`[Kline] Route 2 (Tencent) Start for param: ${tParam}`);
+                try {
+                    const tJson = await new Promise((resolve) => {
+                        const varName = 't_kline_' + Date.now() + Math.floor(Math.random()*1000);
+                        const script = document.createElement('script');
+                        const timer = setTimeout(() => { cleanup(); resolve(null); }, 8000);
+                        
+                        function cleanup() {
+                            clearTimeout(timer);
+                            if (script.parentNode) script.parentNode.removeChild(script);
+                        }
+                        
+                        script.onload = () => {
+                            resolve(window[varName]);
+                            cleanup();
+                            try { delete window[varName]; } catch(e){}
+                        };
+                        script.onerror = () => { cleanup(); resolve(null); };
+                        
+                        script.src = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=${varName}&param=${tParam}&r=${Math.random()}`;
+                        document.head.appendChild(script);
+                    });
+
+                    if (tJson && tJson.data && tJson.data[tSymbol]) {
+                        const stockData = tJson.data[tSymbol];
+                        const klines = stockData.qfqday || stockData.day;
+                        if (klines && klines.length > 0) {
+                            globalData = klines.map(k => ({
+                                date: k[0],
+                                price: parseFloat(k[2])
+                            })).filter(d => {
+                                const dStr = d.date.replace(/-/g, '');
+                                return dStr >= beg && dStr <= end;
+                            });
+                            Logger.log(`[Kline] Route 2 (Tencent) Success: ${globalData.length} records.`);
+                            if (globalData.length > 0) success = true;
+                        } else {
+                            Logger.log(`[Kline] Route 2 (Tencent) returned empty arrays.`);
+                        }
+                    } else {
+                        Logger.log(`[Kline] Route 2 (Tencent) format unexpected.`);
+                    }
+                } catch(e) {
+                    Logger.error(`[Kline] Tencent Exception`, e);
+                }
+            }
+        }
+    }
+
+    if (!success) {
+        throw new Error('所有通道均被阻断。');
+    }
 }
 
 async function fetchHistoricalFinancials(stockObj) {
     const map  = {};
     const sid  = stockObj.secId;
     const code = stockObj.code;
+    currentStock._latestSharesFromFin = 0;
 
     let reportName = 'RPT_LICO_FN_CPD';
     let filterStr  = `(SECURITY_CODE="${code}")`;
@@ -769,9 +952,10 @@ async function fetchHistoricalFinancials(stockObj) {
 
     try {
         const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1`;
-        const json = await apiFetch(url, 'callback');
+        const json = await apiFetch(url, 'callback', 'FinAPI');
 
         if (json?.result?.data && Array.isArray(json.result.data)) {
+            Logger.log(`[Fin] Processed ${json.result.data.length} financial reports.`);
             json.result.data.forEach(item => {
                 const dateStr = item.REPORT_DATE || item.REPORTDATE || '';
                 if (!dateStr.includes('-12-31') && !dateStr.endsWith('1231')) return;
@@ -781,13 +965,26 @@ async function fetchHistoricalFinancials(stockObj) {
                 const r = item[fieldRev] || item['TOTAL_OPERATE_INCOME'] || item['OPERATE_INCOME'] || item['TOTAL_REVENUE'];
                 const p = item[fieldProf] || item['PARENT_NETPROFIT'] || item['NET_PROFIT'];
 
+                const epsStr = item['BASIC_EPS'] || item['EPS'];
+                const pVal = parseFloat(p);
+                const epsVal = parseFloat(epsStr);
+                if (!isNaN(pVal) && !isNaN(epsVal) && epsVal !== 0) {
+                    const shares = Math.abs(pVal / epsVal);
+                    if (!currentStock._latestSharesFromFin || y > (currentStock._latestYear || 0)) {
+                        currentStock._latestSharesFromFin = shares;
+                        currentStock._latestYear = y;
+                    }
+                }
+
                 if (r != null && p != null) {
                     map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
                 }
             });
+        } else {
+            Logger.log(`[Fin] No valid financial data Array in response.`);
         }
     } catch (e) {
-        console.warn('[fetchHistoricalFinancials] 财报接口失败:', e.message);
+        Logger.error('[Fin] API Exception', e);
     }
     return map;
 }
