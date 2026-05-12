@@ -430,10 +430,27 @@ function safeParseJSON(text) {
     if (typeof text === 'object' && text !== null) return text;
     if (!text || typeof text !== 'string') return null;
     let trimmed = text.trim();
+    
+    // 脱除可能的 JSONP 回调壳
     const match = trimmed.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
     if (match) trimmed = match[1].trim();
+    
     if (trimmed[0] !== '{' && trimmed[0] !== '[') return null;
-    try { return JSON.parse(trimmed); } catch (e) { return null; }
+    
+    try { 
+        const obj = JSON.parse(trimmed); 
+        // 应对部分代理返回 {"contents": "..."} 的包装格式
+        if (obj && typeof obj.contents === 'string') {
+            let inner = obj.contents.trim();
+            const innerMatch = inner.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
+            if (innerMatch) inner = innerMatch[1].trim();
+            if (inner[0] === '{' || inner[0] === '[') {
+                try { return JSON.parse(inner); } catch(e) { return null; }
+            }
+            return null;
+        }
+        return obj;
+    } catch (e) { return null; }
 }
 
 function fetchJSONP(url, callbackParam, timeoutMs = 4000) {
@@ -511,7 +528,7 @@ async function apiFetch(url, jsonpParam, context = 'API') {
             const proxyUrl = proxy + encodeURIComponent(url);
             Logger.log(`[${context}] Try Proxy: ${proxy.split('/')[2]}...`);
             const ctrl = new AbortController();
-            const timerId = setTimeout(() => ctrl.abort(), 12000); // 加长超时到12秒！
+            const timerId = setTimeout(() => ctrl.abort(), 12000); // 12秒充足时间
             const res = await fetch(proxyUrl, { signal: ctrl.signal });
             clearTimeout(timerId);
             if (res.ok) {
@@ -824,8 +841,8 @@ async function fetchKline(beg, end) {
         const isUS = currentStock.secId.startsWith('105.') || currentStock.secId.startsWith('106.') || currentStock.secId.startsWith('107.');
         
         if (isUS) {
-            // ⭐核心修复点：美股专属通道走新浪财经！
-            const sinaSymbol = currentStock.code.toLowerCase(); // usON -> on
+            // ⭐ 美股专属通道走新浪财经！
+            const sinaSymbol = currentStock.code.toLowerCase();
             Logger.log(`[Kline] Route 2 (Sina US) Start for: ${sinaSymbol}`);
             try {
                 const sJson = await new Promise((resolve) => {
@@ -838,7 +855,6 @@ async function fetchKline(beg, end) {
                         if (script.parentNode) script.parentNode.removeChild(script);
                     }
                     
-                    // 新浪 JSONP 会直接将数据传入到这个同名函数里
                     window[varName] = (data) => {
                         resolve(data);
                         cleanup();
@@ -951,7 +967,8 @@ async function fetchHistoricalFinancials(stockObj) {
     }
 
     try {
-        const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1`;
+        // ⭐核心修复点2：必须显式传入 source=WEB & client=WEB，否则财报接口强制拒绝 JSONP 格式，导致A股提取失效
+        const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
         const json = await apiFetch(url, 'callback', 'FinAPI');
 
         if (json?.result?.data && Array.isArray(json.result.data)) {
