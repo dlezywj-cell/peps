@@ -121,7 +121,6 @@
         .tag-manual { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; cursor: pointer; }
         .loss { color: #27ae60; font-style: italic; }
 
-        /* Toast 消息 */
         .status-msg {
             display: none; padding: 10px 20px; border-radius: 6px; font-size: 13px;
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
@@ -134,7 +133,6 @@
         .status-msg.warn { color: #d48806; border-color: #ffe58f; background: #fffbe6; }
         .status-msg.info { color: #096dd9; border-color: #91d5ff; background: #e6f7ff; }
 
-        /* 弹窗 */
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999;
             display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px);
@@ -178,7 +176,6 @@
         }
         .form-row input:focus { border-color: var(--primary); outline: none; }
 
-        /* 加载指示 */
         .loading-overlay {
             display: none; position: absolute; inset: 0; background: rgba(255,255,255,0.7);
             justify-content: center; align-items: center; z-index: 50; border-radius: 4px;
@@ -190,13 +187,11 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* 空状态 */
         .empty-state {
             text-align: center; padding: 60px 20px; color: #aaa; display: none;
         }
         .empty-state i { font-size: 48px; margin-bottom: 12px; display: block; opacity: 0.3; }
 
-        /* 进度条 */
         .progress-bar {
             height: 2px; background: #eee; overflow: hidden; display: none;
         }
@@ -349,10 +344,7 @@ const Logger = {
         this.logs.push(line);
         console.log(line);
         const el = document.getElementById('debugLogContent');
-        if (el) {
-            el.value = this.logs.join('\n');
-            el.scrollTop = el.scrollHeight;
-        }
+        if (el) { el.value = this.logs.join('\n'); el.scrollTop = el.scrollHeight; }
     },
     error(msg, e) {
         const time = new Date().toLocaleTimeString('en-US', { hour12: false });
@@ -361,30 +353,25 @@ const Logger = {
         this.logs.push(line);
         console.error(line, e);
         const el = document.getElementById('debugLogContent');
-        if (el) {
-            el.value = this.logs.join('\n');
-            el.scrollTop = el.scrollHeight;
-        }
+        if (el) { el.value = this.logs.join('\n'); el.scrollTop = el.scrollHeight; }
     },
     clear() {
-        this.logs =[];
+        this.logs = [];
         const el = document.getElementById('debugLogContent');
         if (el) el.value = '';
     }
 };
 
-window.showDebug = () => {
-    document.getElementById('debugModal').style.display = 'flex';
-};
+window.showDebug = () => { document.getElementById('debugModal').style.display = 'flex'; };
 window.copyDebugLogs = () => {
-    navigator.clipboard.writeText(Logger.logs.join('\n')).then(() => showToast('已复制调试日志，请发给开发者', 'ok'));
+    navigator.clipboard.writeText(Logger.logs.join('\n')).then(() => showToast('已复制调试日志', 'ok'));
 };
 
 // ============================================================
 // 全局状态
 // ============================================================
 let currentStock   = { code: '', name: '', secId: '' };
-let globalData     =[];
+let globalData     = [];
 let currentTotalShares = 0;
 let chartInstance  = null;
 let batchModalResolve = null;
@@ -419,7 +406,7 @@ function getTencentSymbol(secId, code) {
     if (secId.startsWith('0.')) return 'sz' + code;
     if (secId.startsWith('116.')) return 'hk' + code;
     if (secId.startsWith('105.') || secId.startsWith('106.') || secId.startsWith('107.')) return 'us' + code.toUpperCase();
-    return 'sh' + code; 
+    return 'sh' + code;
 }
 
 // ============================================================
@@ -429,14 +416,11 @@ function safeParseJSON(text) {
     if (typeof text === 'object' && text !== null) return text;
     if (!text || typeof text !== 'string') return null;
     let trimmed = text.trim();
-    
     const match = trimmed.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
     if (match) trimmed = match[1].trim();
-    
     if (trimmed[0] !== '{' && trimmed[0] !== '[') return null;
-    
-    try { 
-        const obj = JSON.parse(trimmed); 
+    try {
+        const obj = JSON.parse(trimmed);
         if (obj && typeof obj.contents === 'string') {
             let inner = obj.contents.trim();
             const innerMatch = inner.match(/^[^{[]*\((.*)\)[^}\]]*$/s);
@@ -454,14 +438,8 @@ function fetchJSONP(url, callbackParam, timeoutMs = 4000) {
     return new Promise((resolve, reject) => {
         const cbName = 'jQuery' + Math.floor(Math.random() * 1e15) + '_' + Date.now();
         const script = document.createElement('script');
-        const timer = setTimeout(() => { 
-            cleanup(); 
-            reject(new Error('Timeout')); 
-        }, timeoutMs);
-        window[cbName] = (data) => { 
-            cleanup(); 
-            resolve(data); 
-        };
+        const timer = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, timeoutMs);
+        window[cbName] = (data) => { cleanup(); resolve(data); };
         function cleanup() {
             clearTimeout(timer);
             try { delete window[cbName]; } catch (e) {}
@@ -469,30 +447,22 @@ function fetchJSONP(url, callbackParam, timeoutMs = 4000) {
         }
         const sep = url.includes('?') ? '&' : '?';
         script.src = url + sep + callbackParam + '=' + cbName + '&_=' + Date.now();
-        script.onerror = () => { 
-            cleanup(); 
-            reject(new Error('Blocked by Browser/Adblock')); 
-        };
+        script.onerror = () => { cleanup(); reject(new Error('Blocked by Browser/Adblock')); };
         document.head.appendChild(script);
     });
 }
 
 async function apiFetch(url, jsonpParam, context = 'API') {
     Logger.log(`[${context}] Req: ${url.split('?')[0]}...`);
-    
+
     if (jsonpParam) {
         try {
             Logger.log(`[${context}] Try JSONP...`);
             const data = await fetchJSONP(url, jsonpParam, 4000);
-            if (data) {
-                Logger.log(`[${context}] JSONP OK.`);
-                return data;
-            }
-        } catch(e) {
-            Logger.log(`[${context}] JSONP Fail: ${e.message}`);
-        }
+            if (data) { Logger.log(`[${context}] JSONP OK.`); return data; }
+        } catch(e) { Logger.log(`[${context}] JSONP Fail: ${e.message}`); }
     }
-    
+
     try {
         Logger.log(`[${context}] Try Fetch...`);
         const ctrl = new AbortController();
@@ -508,9 +478,7 @@ async function apiFetch(url, jsonpParam, context = 'API') {
         } else {
             Logger.log(`[${context}] Fetch Fail: HTTP ${res.status}`);
         }
-    } catch(e) {
-        Logger.log(`[${context}] Fetch Fail: ${e.message}`);
-    }
+    } catch(e) { Logger.log(`[${context}] Fetch Fail: ${e.message}`); }
 
     const proxies = [
         `https://api.allorigins.win/raw?url=`,
@@ -522,20 +490,15 @@ async function apiFetch(url, jsonpParam, context = 'API') {
             const proxyUrl = proxy + encodeURIComponent(url);
             Logger.log(`[${context}] Try Proxy: ${proxy.split('/')[2]}...`);
             const ctrl = new AbortController();
-            const timerId = setTimeout(() => ctrl.abort(), 12000); 
+            const timerId = setTimeout(() => ctrl.abort(), 12000);
             const res = await fetch(proxyUrl, { signal: ctrl.signal });
             clearTimeout(timerId);
             if (res.ok) {
                 const text = await res.text();
                 const data = safeParseJSON(text);
-                if (data) {
-                    Logger.log(`[${context}] Proxy OK.`);
-                    return data;
-                }
+                if (data) { Logger.log(`[${context}] Proxy OK.`); return data; }
             }
-        } catch(e) {
-            Logger.log(`[${context}] Proxy Fail: ${e.message}`);
-        }
+        } catch(e) { Logger.log(`[${context}] Proxy Fail: ${e.message}`); }
     }
 
     Logger.log(`[${context}] ALL ROUTES DEAD.`);
@@ -633,7 +596,7 @@ async function runAnalysis(silent = false) {
 
         if (!silent) showToast('正在获取财报数据…', 'info');
         let finMap = await fetchHistoricalFinancials(currentStock);
-        
+
         if (!currentTotalShares && currentStock._latestSharesFromFin) {
             Logger.log(`[Main] Overriding Shares using FinData: ${currentStock._latestSharesFromFin}`);
             currentTotalShares = currentStock._latestSharesFromFin;
@@ -644,7 +607,7 @@ async function runAnalysis(silent = false) {
 
         const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0, 4))));
         const sortedYears = Array.from(yearsSet).sort((a, b) => a - b);
-        let missingYears =[];
+        let missingYears = [];
 
         for (const year of sortedYears) {
             const saved = getFromDB(currentStock.code, year);
@@ -786,12 +749,12 @@ async function editYearData(year) {
 }
 
 // ============================================================
-// 数据获取
+// 数据获取 - 股本
 // ============================================================
 async function fetchShares() {
     currentTotalShares = 0;
     const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
-    const json = await apiFetch(url, 'cb', 'SharesAPI'); 
+    const json = await apiFetch(url, 'cb', 'SharesAPI');
     if (json?.data) {
         const d = json.data;
         currentTotalShares = d.f84 || (d.f20 && d.f2 ? d.f20 / d.f2 : 0);
@@ -801,137 +764,258 @@ async function fetchShares() {
     }
 }
 
+// ============================================================
+// ★★★ 重构版 K线获取 - 增加新浪A股、Yahoo Finance兜底 ★★★
+// ============================================================
 async function fetchKline(beg, end) {
     let success = false;
-    const emDomains = [
-        'push2his.eastmoney.com',
-        'push2.eastmoney.com',
-        'quote.eastmoney.com'
-    ];
+    const sid  = currentStock.secId;
+    const code = currentStock.code;
 
+    const isAShare = sid.startsWith('1.') || sid.startsWith('0.');
+    const isHK     = sid.startsWith('116.');
+    const isUS     = sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.');
+
+    // ── Route 1: EastMoney（三个域名轮询）──
+    const emDomains = ['push2his.eastmoney.com', 'push2.eastmoney.com', 'quote.eastmoney.com'];
     for (const domain of emDomains) {
         if (success) break;
-        Logger.log(`[Kline] Try EastMoney Domain: ${domain}`);
-        const url = `https://${domain}/api/qt/stock/kline/get?secid=${currentStock.secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&beg=${beg}&end=${end}&lmt=100000`;
-        
-        const json = await apiFetch(url, 'cb', `Kline-${domain}`);
+        Logger.log(`[Kline] Route 1 (EastMoney) Domain: ${domain}`);
+        const url = `https://${domain}/api/qt/stock/kline/get?secid=${sid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&beg=${beg}&end=${end}&lmt=100000`;
+        const json = await apiFetch(url, 'cb', `Kline-EM`);
         if (json?.data?.klines && json.data.klines.length > 0) {
             globalData = json.data.klines.map(k => {
                 const parts = k.split(',');
                 return { date: parts[0], price: parseFloat(parts[2]) };
             });
-            Logger.log(`[Kline] EM Domain [${domain}] Success! Acquired ${globalData.length} records.`);
+            Logger.log(`[Kline] Route 1 Success! ${globalData.length} records from ${domain}.`);
             success = true;
-        } else {
-            Logger.log(`[Kline] EM Domain [${domain}] returned empty or invalid.`);
         }
     }
 
+    // ── Route 2: 新浪财经 A 股 K 线（A股专用，最稳定备选）──
+    if (!success && isAShare) {
+        const sinaSymbol = sid.startsWith('1.') ? 'sh' + code : 'sz' + code;
+        Logger.log(`[Kline] Route 2 (Sina A-Share) Start for: ${sinaSymbol}`);
+        try {
+            // 新浪 datalen 最多约 3200 条，覆盖约 12 年日线
+            const sinaUrl = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sinaSymbol}&type=day&datalen=3200&fq=qfq`;
+            const sinaData = await apiFetch(sinaUrl, null, 'SinaKlineA');
+            if (Array.isArray(sinaData) && sinaData.length > 0) {
+                globalData = sinaData.map(k => ({
+                    date : k.day,
+                    price: parseFloat(k.close)
+                })).filter(d => {
+                    const dStr = d.date.replace(/-/g, '');
+                    return dStr >= beg && dStr <= end;
+                });
+                Logger.log(`[Kline] Route 2 (Sina A-Share) Success: ${globalData.length} records.`);
+                if (globalData.length > 0) success = true;
+            } else {
+                Logger.log(`[Kline] Route 2 (Sina A-Share) returned empty/invalid.`);
+            }
+        } catch(e) { Logger.error(`[Kline] Sina A-Share Exception`, e); }
+    }
+
+    // ── Route 2b: 新浪 JSONP 备用（A 股，JSONP 方式）──
+    if (!success && isAShare) {
+        const sinaSymbol = sid.startsWith('1.') ? 'sh' + code : 'sz' + code;
+        Logger.log(`[Kline] Route 2b (Sina JSONP) Start for: ${sinaSymbol}`);
+        try {
+            const sinaData = await new Promise((resolve) => {
+                const varName = 'sina_kline_' + Date.now() + Math.floor(Math.random() * 1000);
+                const script = document.createElement('script');
+                const timer = setTimeout(() => { cleanup(); resolve(null); }, 10000);
+                function cleanup() {
+                    clearTimeout(timer);
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                }
+                window[varName] = (data) => { resolve(data); cleanup(); try { delete window[varName]; } catch(e){} };
+                script.onerror = () => { cleanup(); resolve(null); };
+                // 新浪 A 股历史 K 线 JSONP 接口
+                script.src = `https://finance.sina.com.cn/realcharts/api/json.php/${varName}/sinacharts.module.klineHistory.kLineHistoryData?symbol=${sinaSymbol}&scale=240&datalen=3200&_=${Date.now()}`;
+                document.head.appendChild(script);
+            });
+
+            // 解析响应（结构因接口可能是 {result:{data:[...]}} 或直接数组）
+            let rows = null;
+            if (Array.isArray(sinaData)) rows = sinaData;
+            else if (sinaData?.result?.data) rows = sinaData.result.data;
+            else if (sinaData?.data) rows = sinaData.data;
+
+            if (rows && rows.length > 0) {
+                // 字段可能是 {d:'2021-01-04', c:'125.00'} 或 {day,close}
+                globalData = rows.map(k => ({
+                    date : k.d || k.day || k.date,
+                    price: parseFloat(k.c || k.close)
+                })).filter(d => d.date && !isNaN(d.price) && (() => {
+                    const dStr = (d.date || '').replace(/-/g, '');
+                    return dStr >= beg && dStr <= end;
+                })());
+                Logger.log(`[Kline] Route 2b (Sina JSONP) Success: ${globalData.length} records.`);
+                if (globalData.length > 0) success = true;
+            } else {
+                Logger.log(`[Kline] Route 2b (Sina JSONP) empty.`);
+            }
+        } catch(e) { Logger.error(`[Kline] Route 2b Sina JSONP Exception`, e); }
+    }
+
+    // ── Route 3: 腾讯财经（修复版，增强解析容错）──
     if (!success) {
-        const isUS = currentStock.secId.startsWith('105.') || currentStock.secId.startsWith('106.') || currentStock.secId.startsWith('107.');
-        
-        if (isUS) {
-            const sinaSymbol = currentStock.code.toLowerCase();
-            Logger.log(`[Kline] Route 2 (Sina US) Start for: ${sinaSymbol}`);
+        const tSymbol = getTencentSymbol(sid, code);
+        const tParams = [`${tSymbol},day,,,5000,qfq`, `${tSymbol},day,,,5000`];
+
+        for (const tParam of tParams) {
+            if (success) break;
+            Logger.log(`[Kline] Route 3 (Tencent) param: ${tParam}`);
             try {
-                const sJson = await new Promise((resolve) => {
-                    const varName = 'sina_kline_' + Date.now() + Math.floor(Math.random() * 1000);
+                const tJson = await new Promise((resolve) => {
+                    const varName = 't_kline_' + Date.now() + Math.floor(Math.random() * 1000);
                     const script = document.createElement('script');
-                    const timer = setTimeout(() => { cleanup(); resolve(null); }, 8000);
-                    
+                    const timer = setTimeout(() => { cleanup(); resolve(null); }, 10000);
                     function cleanup() {
                         clearTimeout(timer);
                         if (script.parentNode) script.parentNode.removeChild(script);
                     }
-                    
-                    window[varName] = (data) => {
-                        resolve(data);
-                        cleanup();
-                        try { delete window[varName]; } catch(e){}
+                    // 使用 onload 读取 window[varName]，同时设置超时保障
+                    script.onload = () => {
+                        setTimeout(() => {
+                            const result = window[varName] || null;
+                            resolve(result);
+                            cleanup();
+                            try { delete window[varName]; } catch(e) {}
+                        }, 50); // 给脚本执行留 50ms
                     };
-                    
                     script.onerror = () => { cleanup(); resolve(null); };
-                    script.src = `https://stock.finance.sina.com.cn/usstock/api/jsonp.php/${varName}/US_MinKService.getDailyK?symbol=${sinaSymbol}&_=${Date.now()}`;
+                    script.src = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=${varName}&param=${tParam}&r=${Math.random()}`;
                     document.head.appendChild(script);
                 });
 
-                if (sJson && Array.isArray(sJson)) {
-                    globalData = sJson.map(k => ({
-                        date: k.d,
-                        price: parseFloat(k.c)
-                    })).filter(d => {
-                        const dStr = d.date.replace(/-/g, '');
-                        return dStr >= beg && dStr <= end;
-                    });
-                    Logger.log(`[Kline] Route 2 (Sina US) Success: ${globalData.length} records.`);
-                    if (globalData.length > 0) success = true;
-                } else {
-                    Logger.log(`[Kline] Sina US returned empty/invalid.`);
-                }
-            } catch(e) {
-                Logger.error(`[Kline] Sina US Exception`, e);
-            }
-        } else {
-            const tSymbol = getTencentSymbol(currentStock.secId, currentStock.code);
-            let tParams = [`${tSymbol},day,,,5000,qfq`, `${tSymbol},day,,,5000`];
-            
-            for (const tParam of tParams) {
-                if (success) break;
-                Logger.log(`[Kline] Route 2 (Tencent) Start for param: ${tParam}`);
-                try {
-                    const tJson = await new Promise((resolve) => {
-                        const varName = 't_kline_' + Date.now() + Math.floor(Math.random()*1000);
-                        const script = document.createElement('script');
-                        const timer = setTimeout(() => { cleanup(); resolve(null); }, 8000);
-                        
-                        function cleanup() {
-                            clearTimeout(timer);
-                            if (script.parentNode) script.parentNode.removeChild(script);
-                        }
-                        
-                        script.onload = () => {
-                            resolve(window[varName]);
-                            cleanup();
-                            try { delete window[varName]; } catch(e){}
-                        };
-                        script.onerror = () => { cleanup(); resolve(null); };
-                        
-                        script.src = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=${varName}&param=${tParam}&r=${Math.random()}`;
-                        document.head.appendChild(script);
-                    });
+                if (tJson) {
+                    Logger.log(`[Kline] Route 3 Tencent Raw keys: ${JSON.stringify(Object.keys(tJson || {}))}`);
+                    const tData = tJson.data || {};
+                    // ★修复：腾讯有时返回小写、有时带市场前缀，做模糊匹配
+                    const matchKey = Object.keys(tData).find(k =>
+                        k.toLowerCase() === tSymbol.toLowerCase() ||
+                        k.toLowerCase().includes(code.toLowerCase())
+                    );
+                    const stockData = matchKey ? tData[matchKey] : null;
+                    Logger.log(`[Kline] Route 3 matchKey: ${matchKey}, code: ${tJson.code}`);
 
-                    if (tJson && tJson.data && tJson.data[tSymbol]) {
-                        const stockData = tJson.data[tSymbol];
-                        const klines = stockData.qfqday || stockData.day;
+                    if (stockData) {
+                        // ★修复：尝试所有可能的 K 线字段名
+                        const klines = stockData.qfqday || stockData.day ||
+                                       stockData.qfqweek || stockData.week ||
+                                       stockData.qfqmonth || stockData.month;
                         if (klines && klines.length > 0) {
                             globalData = klines.map(k => ({
-                                date: k[0],
+                                date : k[0],
                                 price: parseFloat(k[2])
                             })).filter(d => {
-                                const dStr = d.date.replace(/-/g, '');
+                                const dStr = (d.date || '').replace(/-/g, '');
                                 return dStr >= beg && dStr <= end;
                             });
-                            Logger.log(`[Kline] Route 2 (Tencent) Success: ${globalData.length} records.`);
+                            Logger.log(`[Kline] Route 3 (Tencent) Success: ${globalData.length} records.`);
                             if (globalData.length > 0) success = true;
                         } else {
-                            Logger.log(`[Kline] Route 2 (Tencent) returned empty arrays.`);
+                            Logger.log(`[Kline] Route 3 (Tencent) stockData fields: ${JSON.stringify(Object.keys(stockData))}`);
                         }
                     } else {
-                        Logger.log(`[Kline] Route 2 (Tencent) format unexpected.`);
+                        Logger.log(`[Kline] Route 3 (Tencent) no matching key. Available: ${JSON.stringify(Object.keys(tData))}`);
                     }
-                } catch(e) {
-                    Logger.error(`[Kline] Tencent Exception`, e);
+                } else {
+                    Logger.log(`[Kline] Route 3 (Tencent) script returned null.`);
                 }
-            }
+            } catch(e) { Logger.error(`[Kline] Route 3 Tencent Exception`, e); }
         }
     }
 
+    // ── Route 4: 美股 - 新浪美股历史 K 线 ──
+    if (!success && isUS) {
+        const sinaSymbol = code.toLowerCase();
+        Logger.log(`[Kline] Route 4 (Sina US) Start for: ${sinaSymbol}`);
+        try {
+            const sJson = await new Promise((resolve) => {
+                const varName = 'sina_us_' + Date.now() + Math.floor(Math.random() * 1000);
+                const script = document.createElement('script');
+                const timer = setTimeout(() => { cleanup(); resolve(null); }, 10000);
+                function cleanup() {
+                    clearTimeout(timer);
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                }
+                window[varName] = (data) => { resolve(data); cleanup(); try { delete window[varName]; } catch(e){} };
+                script.onerror = () => { cleanup(); resolve(null); };
+                script.src = `https://stock.finance.sina.com.cn/usstock/api/jsonp.php/${varName}/US_MinKService.getDailyK?symbol=${sinaSymbol}&_=${Date.now()}`;
+                document.head.appendChild(script);
+            });
+
+            if (sJson && Array.isArray(sJson)) {
+                globalData = sJson.map(k => ({
+                    date : k.d,
+                    price: parseFloat(k.c)
+                })).filter(d => {
+                    const dStr = d.date.replace(/-/g, '');
+                    return dStr >= beg && dStr <= end;
+                });
+                Logger.log(`[Kline] Route 4 (Sina US) Success: ${globalData.length} records.`);
+                if (globalData.length > 0) success = true;
+            } else {
+                Logger.log(`[Kline] Route 4 (Sina US) returned empty/invalid.`);
+            }
+        } catch(e) { Logger.error(`[Kline] Route 4 Sina US Exception`, e); }
+    }
+
+    // ── Route 5: Yahoo Finance（通用兜底，经代理）──
     if (!success) {
-        throw new Error('所有通道均被阻断。');
+        Logger.log(`[Kline] Route 5 (Yahoo Finance) Start...`);
+        try {
+            // 将 secId 转为 Yahoo 股票代码
+            let yahooSymbol = '';
+            if (isAShare) {
+                yahooSymbol = sid.startsWith('1.') ? code + '.SS' : code + '.SZ';
+            } else if (isHK) {
+                yahooSymbol = code.padStart(4, '0') + '.HK'; // 港股补零
+            } else if (isUS) {
+                yahooSymbol = code.toUpperCase();
+            }
+
+            if (yahooSymbol) {
+                const begTs = Math.floor(new Date(beg.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).getTime() / 1000);
+                const endTs = Math.floor(new Date(end.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).getTime() / 1000) + 86400;
+                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&period1=${begTs}&period2=${endTs}&events=history`;
+                const yJson = await apiFetch(yahooUrl, null, 'YahooFinance');
+
+                if (yJson?.chart?.result?.[0]) {
+                    const result = yJson.chart.result[0];
+                    const timestamps = result.timestamp || [];
+                    const closes     = result.indicators?.quote?.[0]?.close || [];
+                    if (timestamps.length > 0 && closes.length > 0) {
+                        globalData = timestamps.map((ts, i) => ({
+                            date : new Date(ts * 1000).toISOString().split('T')[0],
+                            price: closes[i] ? parseFloat(closes[i].toFixed(4)) : null
+                        })).filter(d => d.price !== null && !isNaN(d.price));
+                        Logger.log(`[Kline] Route 5 (Yahoo) Success: ${globalData.length} records.`);
+                        if (globalData.length > 0) success = true;
+                    } else {
+                        Logger.log(`[Kline] Route 5 (Yahoo) timestamps/closes empty.`);
+                    }
+                } else {
+                    Logger.log(`[Kline] Route 5 (Yahoo) invalid structure.`);
+                }
+            } else {
+                Logger.log(`[Kline] Route 5 (Yahoo) skip: cannot determine symbol.`);
+            }
+        } catch(e) { Logger.error(`[Kline] Route 5 Yahoo Exception`, e); }
+    }
+
+    if (!success) {
+        throw new Error('所有K线数据通道均被阻断，请检查网络或稍后重试。');
     }
 }
 
-// ⭐【核心修复区】双引擎财报抓取机制
+// ============================================================
+// 双引擎财报抓取
+// ============================================================
 async function fetchHistoricalFinancials(stockObj) {
     const map  = {};
     const sid  = stockObj.secId;
@@ -942,8 +1026,6 @@ async function fetchHistoricalFinancials(stockObj) {
     let filterStr  = `(SECURITY_CODE="${code}")`;
     let fieldRev   = 'TOTAL_OPERATE_INCOME';
     let fieldProf  = 'PARENT_NETPROFIT';
-
-    // 构建A股带后缀的代号，用于备选引擎
     let aShareSecuCode = code;
     if (sid.startsWith('1.')) aShareSecuCode += '.SH';
     else if (sid.startsWith('0.')) aShareSecuCode += '.SZ';
@@ -965,7 +1047,6 @@ async function fetchHistoricalFinancials(stockObj) {
         Logger.log(`[FinAPI] Primary URL: ${url}`);
         let json = await apiFetch(url, 'callback', 'FinAPI');
 
-        // A股财报专属备选引擎：如果使用 SECURITY_CODE 查不到，自动使用 SECUCODE 再次查询利润表
         if ((!json?.result?.data || json.result.data.length === 0) && (sid.startsWith('1.') || sid.startsWith('0.'))) {
             Logger.log(`[FinAPI] Primary returned empty. Trying fallback RPT_DMSK_FN_INCOME...`);
             reportName = 'RPT_DMSK_FN_INCOME';
@@ -1080,9 +1161,9 @@ async function autoSyncFromCloud() {
             headers: { 'Authorization': `token ${ghConfig.token}`, 'Accept': 'application/vnd.github.v3+json' }
         });
         if (res.ok) {
-            const data     = await res.json();
-            const cloudDB  = JSON.parse(b64_to_utf8(data.content.replace(/\n/g, '')));
-            const merged   = { ...getLocalDB(), ...cloudDB };
+            const data    = await res.json();
+            const cloudDB = JSON.parse(b64_to_utf8(data.content.replace(/\n/g, '')));
+            const merged  = { ...getLocalDB(), ...cloudDB };
             localStorage.setItem(DB_KEY, JSON.stringify(merged));
             updateStatus('online', '已同步');
         } else if (res.status === 404) {
@@ -1267,13 +1348,13 @@ function renderTable() {
     document.getElementById('dataTable').style.display  = 'table';
 
     rows.slice(0, 500).forEach(d => {
-        const peStr     = d.pe > 0
+        const peStr    = d.pe > 0
             ? `<span class="val-pe">${d.pe.toFixed(2)}</span>`
             : `<span class="loss">亏损</span>`;
-        const psStr     = `<span class="val-ps">${(d.ps || 0).toFixed(2)}</span>`;
-        const tagClass  = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
-        const editAttr  = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})" title="点击编辑"` : '';
-        const editIcon  = d.sourceType === 'manual' ? ' ✎' : '';
+        const psStr    = `<span class="val-ps">${(d.ps || 0).toFixed(2)}</span>`;
+        const tagClass = d.sourceType === 'real' ? 'tag-real' : 'tag-manual';
+        const editAttr = d.sourceType === 'manual' ? `onclick="editYearData(${d.year})" title="点击编辑"` : '';
+        const editIcon = d.sourceType === 'manual' ? ' ✎' : '';
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
