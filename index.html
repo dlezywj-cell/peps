@@ -219,8 +219,7 @@
         <div class="tools-bar">
             <div class="group-search">
                 <div class="input-group">
-                    <!-- ★改动1: placeholder 新增日/韩/台 -->
-                    <input type="text" id="stockInput" value="" placeholder="A股/港股/美股/日股/韩股/台股" autocomplete="off">
+                    <input type="text" id="stockInput" value="" placeholder="代码/名称/港股/美股" autocomplete="off">
                 </div>
                 <button class="btn-primary" id="btnSearch">🔍 搜索</button>
             </div>
@@ -402,15 +401,11 @@ if (ghConfig.token && ghConfig.user && ghConfig.repo) {
     updateStatus('ready', '本地模式');
 }
 
-// ★改动2: getTencentSymbol 新增日本/韩国/台湾映射
 function getTencentSymbol(secId, code) {
     if (secId.startsWith('1.')) return 'sh' + code;
     if (secId.startsWith('0.')) return 'sz' + code;
     if (secId.startsWith('116.')) return 'hk' + code;
     if (secId.startsWith('105.') || secId.startsWith('106.') || secId.startsWith('107.')) return 'us' + code.toUpperCase();
-    if (secId.startsWith('128.') || secId.startsWith('129.')) return 'jp' + code;   // 日本
-    if (secId.startsWith('133.') || secId.startsWith('134.')) return 'kr' + code;   // 韩国
-    if (secId.startsWith('124.')) return 'tw' + code;                               // 台湾
     return 'sh' + code;
 }
 
@@ -470,10 +465,10 @@ async function apiFetch(url, jsonpParam, context = 'API') {
 
     try {
         Logger.log(`[${context}] Try Fetch...`);
-        const res = await Promise.race([
-            fetch(url),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout')), 6000))
-        ]);
+        const ctrl = new AbortController();
+        const timerId = setTimeout(() => ctrl.abort(), 6000);
+        const res = await fetch(url, { signal: ctrl.signal });
+        clearTimeout(timerId);
         if (res.ok) {
             const text = await res.text();
             Logger.log(`[${context}] Fetch OK. Length: ${text.length}`);
@@ -494,10 +489,10 @@ async function apiFetch(url, jsonpParam, context = 'API') {
         try {
             const proxyUrl = proxy + encodeURIComponent(url);
             Logger.log(`[${context}] Try Proxy: ${proxy.split('/')[2]}...`);
-            const res = await Promise.race([
-                fetch(proxyUrl),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout')), 12000))
-            ]);
+            const ctrl = new AbortController();
+            const timerId = setTimeout(() => ctrl.abort(), 12000);
+            const res = await fetch(proxyUrl, { signal: ctrl.signal });
+            clearTimeout(timerId);
             if (res.ok) {
                 const text = await res.text();
                 const data = safeParseJSON(text);
@@ -770,7 +765,7 @@ async function fetchShares() {
 }
 
 // ============================================================
-// ★★★ 重构版 K线获取 - 支持A/港/美/日/韩/台 ★★★
+// ★★★ 重构版 K线获取 - 增加新浪A股、Yahoo Finance兜底 ★★★
 // ============================================================
 async function fetchKline(beg, end) {
     let success = false;
@@ -780,10 +775,6 @@ async function fetchKline(beg, end) {
     const isAShare = sid.startsWith('1.') || sid.startsWith('0.');
     const isHK     = sid.startsWith('116.');
     const isUS     = sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.');
-    // ★改动3: 新增日本/韩国/台湾市场标志
-    const isJP     = sid.startsWith('128.') || sid.startsWith('129.');
-    const isKR     = sid.startsWith('133.') || sid.startsWith('134.');
-    const isTW     = sid.startsWith('124.');
 
     // ── Route 1: EastMoney（三个域名轮询）──
     const emDomains = ['push2his.eastmoney.com', 'push2.eastmoney.com', 'quote.eastmoney.com'];
@@ -807,6 +798,7 @@ async function fetchKline(beg, end) {
         const sinaSymbol = sid.startsWith('1.') ? 'sh' + code : 'sz' + code;
         Logger.log(`[Kline] Route 2 (Sina A-Share) Start for: ${sinaSymbol}`);
         try {
+            // 新浪 datalen 最多约 3200 条，覆盖约 12 年日线
             const sinaUrl = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sinaSymbol}&type=day&datalen=3200&fq=qfq`;
             const sinaData = await apiFetch(sinaUrl, null, 'SinaKlineA');
             if (Array.isArray(sinaData) && sinaData.length > 0) {
@@ -840,16 +832,19 @@ async function fetchKline(beg, end) {
                 }
                 window[varName] = (data) => { resolve(data); cleanup(); try { delete window[varName]; } catch(e){} };
                 script.onerror = () => { cleanup(); resolve(null); };
+                // 新浪 A 股历史 K 线 JSONP 接口
                 script.src = `https://finance.sina.com.cn/realcharts/api/json.php/${varName}/sinacharts.module.klineHistory.kLineHistoryData?symbol=${sinaSymbol}&scale=240&datalen=3200&_=${Date.now()}`;
                 document.head.appendChild(script);
             });
 
+            // 解析响应（结构因接口可能是 {result:{data:[...]}} 或直接数组）
             let rows = null;
             if (Array.isArray(sinaData)) rows = sinaData;
             else if (sinaData?.result?.data) rows = sinaData.result.data;
             else if (sinaData?.data) rows = sinaData.data;
 
             if (rows && rows.length > 0) {
+                // 字段可能是 {d:'2021-01-04', c:'125.00'} 或 {day,close}
                 globalData = rows.map(k => ({
                     date : k.d || k.day || k.date,
                     price: parseFloat(k.c || k.close)
@@ -882,13 +877,14 @@ async function fetchKline(beg, end) {
                         clearTimeout(timer);
                         if (script.parentNode) script.parentNode.removeChild(script);
                     }
+                    // 使用 onload 读取 window[varName]，同时设置超时保障
                     script.onload = () => {
                         setTimeout(() => {
                             const result = window[varName] || null;
                             resolve(result);
                             cleanup();
                             try { delete window[varName]; } catch(e) {}
-                        }, 50);
+                        }, 50); // 给脚本执行留 50ms
                     };
                     script.onerror = () => { cleanup(); resolve(null); };
                     script.src = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=${varName}&param=${tParam}&r=${Math.random()}`;
@@ -898,6 +894,7 @@ async function fetchKline(beg, end) {
                 if (tJson) {
                     Logger.log(`[Kline] Route 3 Tencent Raw keys: ${JSON.stringify(Object.keys(tJson || {}))}`);
                     const tData = tJson.data || {};
+                    // ★修复：腾讯有时返回小写、有时带市场前缀，做模糊匹配
                     const matchKey = Object.keys(tData).find(k =>
                         k.toLowerCase() === tSymbol.toLowerCase() ||
                         k.toLowerCase().includes(code.toLowerCase())
@@ -906,6 +903,7 @@ async function fetchKline(beg, end) {
                     Logger.log(`[Kline] Route 3 matchKey: ${matchKey}, code: ${tJson.code}`);
 
                     if (stockData) {
+                        // ★修复：尝试所有可能的 K 线字段名
                         const klines = stockData.qfqday || stockData.day ||
                                        stockData.qfqweek || stockData.week ||
                                        stockData.qfqmonth || stockData.month;
@@ -971,6 +969,7 @@ async function fetchKline(beg, end) {
     if (!success) {
         Logger.log(`[Kline] Route 5 (Yahoo Finance) Start...`);
         try {
+            // 将 secId 转为 Yahoo 股票代码
             let yahooSymbol = '';
             if (isAShare) {
                 yahooSymbol = sid.startsWith('1.') ? code + '.SS' : code + '.SZ';
@@ -978,13 +977,6 @@ async function fetchKline(beg, end) {
                 yahooSymbol = code.padStart(4, '0') + '.HK'; // 港股补零
             } else if (isUS) {
                 yahooSymbol = code.toUpperCase();
-            // ★改动4: Yahoo Finance 新增日本/韩国/台湾股票代码转换
-            } else if (isJP) {
-                yahooSymbol = code + '.T';                               // 东证（TSE）
-            } else if (isKR) {
-                yahooSymbol = sid.startsWith('133.') ? code + '.KS' : code + '.KQ'; // KOSPI / KOSDAQ
-            } else if (isTW) {
-                yahooSymbol = code + '.TW';                              // 台湾证交所
             }
 
             if (yahooSymbol) {
@@ -1022,7 +1014,7 @@ async function fetchKline(beg, end) {
 }
 
 // ============================================================
-// 双引擎财报抓取 - ★改动5: 新增日本/韩国/台湾财报配置
+// 双引擎财报抓取
 // ============================================================
 async function fetchHistoricalFinancials(stockObj) {
     const map  = {};
@@ -1039,40 +1031,14 @@ async function fetchHistoricalFinancials(stockObj) {
     else if (sid.startsWith('0.')) aShareSecuCode += '.SZ';
 
     if (sid.startsWith('116.')) {
-        // 港股
         reportName = 'RPT_HK_FN_MAIN';
         filterStr  = `(SECUCODE="${code}.HK")`;
         fieldRev   = 'OPERATE_INCOME';
         fieldProf  = 'PARENT_NETPROFIT';
     } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) {
-        // 美股
         reportName = 'RPT_US_FN_MAIN';
         filterStr  = `(SECURITY_CODE="${code}")`;
         fieldRev   = 'TOTAL_REVENUE';
-        fieldProf  = 'PARENT_NETPROFIT';
-    } else if (sid.startsWith('128.') || sid.startsWith('129.')) {
-        // ★ 日本股（东京证券交易所）
-        reportName = 'RPT_JP_FN_MAIN';
-        filterStr  = `(SECUCODE="${code}.T")`;
-        fieldRev   = 'OPERATE_INCOME';
-        fieldProf  = 'PARENT_NETPROFIT';
-    } else if (sid.startsWith('133.')) {
-        // ★ 韩国股（KOSPI）
-        reportName = 'RPT_KR_FN_MAIN';
-        filterStr  = `(SECUCODE="${code}.KS")`;
-        fieldRev   = 'OPERATE_INCOME';
-        fieldProf  = 'PARENT_NETPROFIT';
-    } else if (sid.startsWith('134.')) {
-        // ★ 韩国股（KOSDAQ）
-        reportName = 'RPT_KR_FN_MAIN';
-        filterStr  = `(SECUCODE="${code}.KQ")`;
-        fieldRev   = 'OPERATE_INCOME';
-        fieldProf  = 'PARENT_NETPROFIT';
-    } else if (sid.startsWith('124.')) {
-        // ★ 台湾股（台湾证交所）
-        reportName = 'RPT_TW_FN_MAIN';
-        filterStr  = `(SECUCODE="${code}.TW")`;
-        fieldRev   = 'OPERATE_INCOME';
         fieldProf  = 'PARENT_NETPROFIT';
     }
 
