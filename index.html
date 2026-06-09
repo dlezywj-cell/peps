@@ -66,6 +66,17 @@
         .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
         button:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
 
+        /* 快捷区间样式 */
+        .btn-sm {
+            height: 26px; padding: 0 10px; font-size: 11px; border-radius: 4px; font-weight: 500;
+        }
+        .btn-sm.active {
+            background: var(--primary) !important; color: #fff !important; border-color: var(--primary) !important;
+        }
+        .range-selector {
+            display: none; padding: 10px 20px 0; gap: 8px; align-items: center; background: #fff;
+        }
+
         @media (min-width: 769px) {
             .tools-bar { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
             .group-search { display: flex; gap: 8px; align-items: center; }
@@ -90,6 +101,7 @@
             .group-actions { display: flex; gap: 8px; width: 100%; }
             .group-actions button { flex: 1; height: 38px; font-size: 14px; }
             .chart-container { height: 300px !important; padding: 5px 10px; }
+            .range-selector { padding: 10px 15px 0; flex-wrap: wrap; }
         }
 
         .chart-container { position: relative; height: 460px; padding: 15px 20px; width: 100%; }
@@ -237,6 +249,17 @@
     </header>
 
     <div id="toastMsg" class="status-msg"></div>
+
+    <!-- 新增：区间选择栏 -->
+    <div class="range-selector" id="rangeSelectorContainer">
+        <span style="font-weight: 600; color: #555; font-size: 12px; display: flex; align-items: center; gap: 4px;">
+            <i class="fas fa-calendar-alt"></i> 显示区间:
+        </span>
+        <button class="btn-outline btn-sm active" id="btn-range-all" onclick="setChartRange('all', event)">全部</button>
+        <button class="btn-outline btn-sm" onclick="setChartRange('1y', event)">近1年</button>
+        <button class="btn-outline btn-sm" onclick="setChartRange('3y', event)">近3年</button>
+        <button class="btn-outline btn-sm" onclick="setChartRange('5y', event)">近5年</button>
+    </div>
 
     <div class="chart-container" style="position:relative;">
         <canvas id="valuationChart"></canvas>
@@ -765,7 +788,7 @@ async function fetchShares() {
 }
 
 // ============================================================
-// ★★★ 重构版 K线获取 - 增加新浪A股、Yahoo Finance兜底 ★★★
+// 重构版 K线获取
 // ============================================================
 async function fetchKline(beg, end) {
     let success = false;
@@ -776,7 +799,6 @@ async function fetchKline(beg, end) {
     const isHK     = sid.startsWith('116.');
     const isUS     = sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.');
 
-    // ── Route 1: EastMoney（三个域名轮询）──
     const emDomains = ['push2his.eastmoney.com', 'push2.eastmoney.com', 'quote.eastmoney.com'];
     for (const domain of emDomains) {
         if (success) break;
@@ -793,12 +815,10 @@ async function fetchKline(beg, end) {
         }
     }
 
-    // ── Route 2: 新浪财经 A 股 K 线（A股专用，最稳定备选）──
     if (!success && isAShare) {
         const sinaSymbol = sid.startsWith('1.') ? 'sh' + code : 'sz' + code;
         Logger.log(`[Kline] Route 2 (Sina A-Share) Start for: ${sinaSymbol}`);
         try {
-            // 新浪 datalen 最多约 3200 条，覆盖约 12 年日线
             const sinaUrl = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sinaSymbol}&type=day&datalen=3200&fq=qfq`;
             const sinaData = await apiFetch(sinaUrl, null, 'SinaKlineA');
             if (Array.isArray(sinaData) && sinaData.length > 0) {
@@ -811,13 +831,10 @@ async function fetchKline(beg, end) {
                 });
                 Logger.log(`[Kline] Route 2 (Sina A-Share) Success: ${globalData.length} records.`);
                 if (globalData.length > 0) success = true;
-            } else {
-                Logger.log(`[Kline] Route 2 (Sina A-Share) returned empty/invalid.`);
             }
         } catch(e) { Logger.error(`[Kline] Sina A-Share Exception`, e); }
     }
 
-    // ── Route 2b: 新浪 JSONP 备用（A 股，JSONP 方式）──
     if (!success && isAShare) {
         const sinaSymbol = sid.startsWith('1.') ? 'sh' + code : 'sz' + code;
         Logger.log(`[Kline] Route 2b (Sina JSONP) Start for: ${sinaSymbol}`);
@@ -832,19 +849,16 @@ async function fetchKline(beg, end) {
                 }
                 window[varName] = (data) => { resolve(data); cleanup(); try { delete window[varName]; } catch(e){} };
                 script.onerror = () => { cleanup(); resolve(null); };
-                // 新浪 A 股历史 K 线 JSONP 接口
                 script.src = `https://finance.sina.com.cn/realcharts/api/json.php/${varName}/sinacharts.module.klineHistory.kLineHistoryData?symbol=${sinaSymbol}&scale=240&datalen=3200&_=${Date.now()}`;
                 document.head.appendChild(script);
             });
 
-            // 解析响应（结构因接口可能是 {result:{data:[...]}} 或直接数组）
             let rows = null;
             if (Array.isArray(sinaData)) rows = sinaData;
             else if (sinaData?.result?.data) rows = sinaData.result.data;
             else if (sinaData?.data) rows = sinaData.data;
 
             if (rows && rows.length > 0) {
-                // 字段可能是 {d:'2021-01-04', c:'125.00'} 或 {day,close}
                 globalData = rows.map(k => ({
                     date : k.d || k.day || k.date,
                     price: parseFloat(k.c || k.close)
@@ -854,13 +868,10 @@ async function fetchKline(beg, end) {
                 })());
                 Logger.log(`[Kline] Route 2b (Sina JSONP) Success: ${globalData.length} records.`);
                 if (globalData.length > 0) success = true;
-            } else {
-                Logger.log(`[Kline] Route 2b (Sina JSONP) empty.`);
             }
         } catch(e) { Logger.error(`[Kline] Route 2b Sina JSONP Exception`, e); }
     }
 
-    // ── Route 3: 腾讯财经（修复版，增强解析容错）──
     if (!success) {
         const tSymbol = getTencentSymbol(sid, code);
         const tParams = [`${tSymbol},day,,,5000,qfq`, `${tSymbol},day,,,5000`];
@@ -877,14 +888,13 @@ async function fetchKline(beg, end) {
                         clearTimeout(timer);
                         if (script.parentNode) script.parentNode.removeChild(script);
                     }
-                    // 使用 onload 读取 window[varName]，同时设置超时保障
                     script.onload = () => {
                         setTimeout(() => {
                             const result = window[varName] || null;
                             resolve(result);
                             cleanup();
                             try { delete window[varName]; } catch(e) {}
-                        }, 50); // 给脚本执行留 50ms
+                        }, 50);
                     };
                     script.onerror = () => { cleanup(); resolve(null); };
                     script.src = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=${varName}&param=${tParam}&r=${Math.random()}`;
@@ -892,18 +902,14 @@ async function fetchKline(beg, end) {
                 });
 
                 if (tJson) {
-                    Logger.log(`[Kline] Route 3 Tencent Raw keys: ${JSON.stringify(Object.keys(tJson || {}))}`);
                     const tData = tJson.data || {};
-                    // ★修复：腾讯有时返回小写、有时带市场前缀，做模糊匹配
                     const matchKey = Object.keys(tData).find(k =>
                         k.toLowerCase() === tSymbol.toLowerCase() ||
                         k.toLowerCase().includes(code.toLowerCase())
                     );
                     const stockData = matchKey ? tData[matchKey] : null;
-                    Logger.log(`[Kline] Route 3 matchKey: ${matchKey}, code: ${tJson.code}`);
 
                     if (stockData) {
-                        // ★修复：尝试所有可能的 K 线字段名
                         const klines = stockData.qfqday || stockData.day ||
                                        stockData.qfqweek || stockData.week ||
                                        stockData.qfqmonth || stockData.month;
@@ -917,20 +923,13 @@ async function fetchKline(beg, end) {
                             });
                             Logger.log(`[Kline] Route 3 (Tencent) Success: ${globalData.length} records.`);
                             if (globalData.length > 0) success = true;
-                        } else {
-                            Logger.log(`[Kline] Route 3 (Tencent) stockData fields: ${JSON.stringify(Object.keys(stockData))}`);
                         }
-                    } else {
-                        Logger.log(`[Kline] Route 3 (Tencent) no matching key. Available: ${JSON.stringify(Object.keys(tData))}`);
                     }
-                } else {
-                    Logger.log(`[Kline] Route 3 (Tencent) script returned null.`);
                 }
             } catch(e) { Logger.error(`[Kline] Route 3 Tencent Exception`, e); }
         }
     }
 
-    // ── Route 4: 美股 - 新浪美股历史 K 线 ──
     if (!success && isUS) {
         const sinaSymbol = code.toLowerCase();
         Logger.log(`[Kline] Route 4 (Sina US) Start for: ${sinaSymbol}`);
@@ -959,22 +958,18 @@ async function fetchKline(beg, end) {
                 });
                 Logger.log(`[Kline] Route 4 (Sina US) Success: ${globalData.length} records.`);
                 if (globalData.length > 0) success = true;
-            } else {
-                Logger.log(`[Kline] Route 4 (Sina US) returned empty/invalid.`);
             }
         } catch(e) { Logger.error(`[Kline] Route 4 Sina US Exception`, e); }
     }
 
-    // ── Route 5: Yahoo Finance（通用兜底，经代理）──
     if (!success) {
         Logger.log(`[Kline] Route 5 (Yahoo Finance) Start...`);
         try {
-            // 将 secId 转为 Yahoo 股票代码
             let yahooSymbol = '';
             if (isAShare) {
                 yahooSymbol = sid.startsWith('1.') ? code + '.SS' : code + '.SZ';
             } else if (isHK) {
-                yahooSymbol = code.padStart(4, '0') + '.HK'; // 港股补零
+                yahooSymbol = code.padStart(4, '0') + '.HK';
             } else if (isUS) {
                 yahooSymbol = code.toUpperCase();
             }
@@ -996,14 +991,8 @@ async function fetchKline(beg, end) {
                         })).filter(d => d.price !== null && !isNaN(d.price));
                         Logger.log(`[Kline] Route 5 (Yahoo) Success: ${globalData.length} records.`);
                         if (globalData.length > 0) success = true;
-                    } else {
-                        Logger.log(`[Kline] Route 5 (Yahoo) timestamps/closes empty.`);
                     }
-                } else {
-                    Logger.log(`[Kline] Route 5 (Yahoo) invalid structure.`);
                 }
-            } else {
-                Logger.log(`[Kline] Route 5 (Yahoo) skip: cannot determine symbol.`);
             }
         } catch(e) { Logger.error(`[Kline] Route 5 Yahoo Exception`, e); }
     }
@@ -1083,8 +1072,6 @@ async function fetchHistoricalFinancials(stockObj) {
                 }
             });
             Logger.log(`[Fin] Extracted ${Object.keys(map).length} yearly reports successfully.`);
-        } else {
-            Logger.log(`[Fin] No valid financial data Array. Snippet: ${JSON.stringify(json || {}).substring(0, 150)}`);
         }
     } catch (e) {
         Logger.error('[Fin] API Exception', e);
@@ -1215,6 +1202,49 @@ window.saveConfig = () => {
 };
 
 // ============================================================
+// 新增：前端无损调节图表显示区间
+// ============================================================
+window.setChartRange = function(type, evt) {
+    if (!chartInstance || !globalData.length) return;
+
+    // 切换按钮高亮
+    document.querySelectorAll('.range-selector button').forEach(btn => btn.classList.remove('active'));
+    const clickedBtn = evt?.currentTarget || document.getElementById('btn-range-all');
+    if (clickedBtn) clickedBtn.classList.add('active');
+
+    const latestDateStr = globalData[globalData.length - 1].date;
+    const latestDate = new Date(latestDateStr);
+    let minDate = null;
+
+    if (type === '1y') {
+        minDate = new Date(latestDate);
+        minDate.setFullYear(minDate.getFullYear() - 1);
+    } else if (type === '3y') {
+        minDate = new Date(latestDate);
+        minDate.setFullYear(minDate.getFullYear() - 3);
+    } else if (type === '5y') {
+        minDate = new Date(latestDate);
+        minDate.setFullYear(minDate.getFullYear() - 5);
+    } else {
+        // 'all' 全部数据：清除图表标尺限制，恢复缩放
+        chartInstance.resetZoom();
+        chartInstance.options.scales.x.min = undefined;
+        chartInstance.options.scales.x.max = undefined;
+        chartInstance.update();
+        return;
+    }
+
+    const minDateStr = minDate.toISOString().split('T')[0];
+
+    // 重置 zoom 插件引起的内部缓存状态
+    chartInstance.resetZoom();
+    // 动态调整标尺范围
+    chartInstance.options.scales.x.min = minDateStr;
+    chartInstance.options.scales.x.max = latestDateStr;
+    chartInstance.update();
+};
+
+// ============================================================
 // 图表
 // ============================================================
 function resetZoom() { if (chartInstance) chartInstance.resetZoom(); }
@@ -1242,6 +1272,11 @@ function drawChart() {
     if (!globalData.length) return;
     const ctx = document.getElementById('valuationChart').getContext('2d');
     if (chartInstance) chartInstance.destroy();
+
+    // 绘制新图表时，重置快捷区间按钮状态为“全部”
+    document.querySelectorAll('.range-selector button').forEach(btn => btn.classList.remove('active'));
+    const btnAll = document.getElementById('btn-range-all');
+    if (btnAll) btnAll.classList.add('active');
 
     const peData = globalData.map(d => (d.pe && d.pe > 0) ? +d.pe.toFixed(2) : null);
     const psData = globalData.map(d => (d.ps != null && d.ps > 0) ? +d.ps.toFixed(2) : null);
@@ -1342,13 +1377,15 @@ function renderTable() {
     if (rows.length === 0) {
         document.getElementById('emptyState').style.display = 'block';
         document.getElementById('dataTable').style.display  = 'none';
+        document.getElementById('rangeSelectorContainer').style.display = 'none'; // 隐藏区间选择
         return;
     }
     document.getElementById('emptyState').style.display = 'none';
     document.getElementById('dataTable').style.display  = 'table';
+    document.getElementById('rangeSelectorContainer').style.display = 'flex'; // 显示区间选择
 
     rows.slice(0, 500).forEach(d => {
-        const peStr    = d.pe > 0
+        const peStr = d.pe > 0
             ? `<span class="val-pe">${d.pe.toFixed(2)}</span>`
             : `<span class="loss">亏损</span>`;
         const psStr    = `<span class="val-ps">${(d.ps || 0).toFixed(2)}</span>`;
