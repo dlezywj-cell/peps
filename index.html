@@ -66,7 +66,6 @@
         .btn-outline:hover { background: #f8f9fa; border-color: #bbb; }
         button:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
 
-        /* 快捷区间样式 */
         .btn-sm {
             height: 26px; padding: 0 10px; font-size: 11px; border-radius: 4px; font-weight: 500;
         }
@@ -250,7 +249,6 @@
 
     <div id="toastMsg" class="status-msg"></div>
 
-    <!-- 新增：区间选择栏 -->
     <div class="range-selector" id="rangeSelectorContainer">
         <span style="font-weight: 600; color: #555; font-size: 12px; display: flex; align-items: center; gap: 4px;">
             <i class="fas fa-calendar-alt"></i> 显示区间:
@@ -433,7 +431,7 @@ function getTencentSymbol(secId, code) {
 }
 
 // ============================================================
-// 增强型底层请求系统
+// ★ 加速优化1：代理并发赛跑（谁先回来用谁，不再逐个等待）
 // ============================================================
 function safeParseJSON(text) {
     if (typeof text === 'object' && text !== null) return text;
@@ -457,7 +455,7 @@ function safeParseJSON(text) {
     } catch (e) { return null; }
 }
 
-function fetchJSONP(url, callbackParam, timeoutMs = 4000) {
+function fetchJSONP(url, callbackParam, timeoutMs = 3000) { // ★ 3s（原4s）
     return new Promise((resolve, reject) => {
         const cbName = 'jQuery' + Math.floor(Math.random() * 1e15) + '_' + Date.now();
         const script = document.createElement('script');
@@ -475,13 +473,57 @@ function fetchJSONP(url, callbackParam, timeoutMs = 4000) {
     });
 }
 
+// ★ 加速优化1：多代理并发赛跑，取最先成功的结果
+async function fetchViaProxiesRace(url, context) {
+    const proxies = [
+        `https://api.allorigins.win/raw?url=`,
+        `https://corsproxy.io/?url=`,
+        `https://api.codetabs.com/v1/proxy?quest=`
+    ];
+
+    return new Promise((resolve) => {
+        let settled = false;
+        let pending = proxies.length;
+
+        proxies.forEach(proxy => {
+            const ctrl = new AbortController();
+            const proxyUrl = proxy + encodeURIComponent(url);
+            Logger.log(`[${context}] Race-Proxy: ${proxy.split('/')[2]}...`);
+
+            const timer = setTimeout(() => ctrl.abort(), 6000); // ★ 6s（原12s）
+
+            fetch(proxyUrl, { signal: ctrl.signal })
+                .then(res => res.ok ? res.text() : Promise.reject(new Error('HTTP ' + res.status)))
+                .then(text => {
+                    clearTimeout(timer);
+                    if (settled) return;
+                    const data = safeParseJSON(text);
+                    if (data) {
+                        settled = true;
+                        Logger.log(`[${context}] Race-Proxy WIN: ${proxy.split('/')[2]}`);
+                        resolve(data);
+                    } else {
+                        pending--;
+                        if (pending === 0 && !settled) resolve(null);
+                    }
+                })
+                .catch(e => {
+                    clearTimeout(timer);
+                    Logger.log(`[${context}] Race-Proxy FAIL: ${proxy.split('/')[2]} - ${e.message}`);
+                    pending--;
+                    if (pending === 0 && !settled) resolve(null);
+                });
+        });
+    });
+}
+
 async function apiFetch(url, jsonpParam, context = 'API') {
     Logger.log(`[${context}] Req: ${url.split('?')[0]}...`);
 
     if (jsonpParam) {
         try {
             Logger.log(`[${context}] Try JSONP...`);
-            const data = await fetchJSONP(url, jsonpParam, 4000);
+            const data = await fetchJSONP(url, jsonpParam, 3000); // ★ 3s
             if (data) { Logger.log(`[${context}] JSONP OK.`); return data; }
         } catch(e) { Logger.log(`[${context}] JSONP Fail: ${e.message}`); }
     }
@@ -489,7 +531,7 @@ async function apiFetch(url, jsonpParam, context = 'API') {
     try {
         Logger.log(`[${context}] Try Fetch...`);
         const ctrl = new AbortController();
-        const timerId = setTimeout(() => ctrl.abort(), 6000);
+        const timerId = setTimeout(() => ctrl.abort(), 5000); // ★ 5s（原6s）
         const res = await fetch(url, { signal: ctrl.signal });
         clearTimeout(timerId);
         if (res.ok) {
@@ -503,26 +545,9 @@ async function apiFetch(url, jsonpParam, context = 'API') {
         }
     } catch(e) { Logger.log(`[${context}] Fetch Fail: ${e.message}`); }
 
-    const proxies = [
-        `https://api.allorigins.win/raw?url=`,
-        `https://corsproxy.io/?url=`,
-        `https://api.codetabs.com/v1/proxy?quest=`
-    ];
-    for (const proxy of proxies) {
-        try {
-            const proxyUrl = proxy + encodeURIComponent(url);
-            Logger.log(`[${context}] Try Proxy: ${proxy.split('/')[2]}...`);
-            const ctrl = new AbortController();
-            const timerId = setTimeout(() => ctrl.abort(), 12000);
-            const res = await fetch(proxyUrl, { signal: ctrl.signal });
-            clearTimeout(timerId);
-            if (res.ok) {
-                const text = await res.text();
-                const data = safeParseJSON(text);
-                if (data) { Logger.log(`[${context}] Proxy OK.`); return data; }
-            }
-        } catch(e) { Logger.log(`[${context}] Proxy Fail: ${e.message}`); }
-    }
+    // ★ 加速优化1：并发赛跑代替串行轮询
+    const raceResult = await fetchViaProxiesRace(url, context);
+    if (raceResult) return raceResult;
 
     Logger.log(`[${context}] ALL ROUTES DEAD.`);
     return null;
@@ -588,7 +613,7 @@ async function runSearch() {
 }
 
 // ============================================================
-// 核心分析主流程
+// ★ 加速优化2：核心分析主流程 - 股价与财报并行抓取
 // ============================================================
 async function runAnalysis(silent = false) {
     const btn = document.getElementById('btn-run');
@@ -608,25 +633,33 @@ async function runAnalysis(silent = false) {
         Logger.log(`[Main] Request Range: ${beg} to ${end}`);
 
         if (!silent || globalData.length === 0) {
-            if (!silent) showToast('正在获取股价数据…', 'info');
-            await Promise.all([fetchShares(), fetchKline(beg, end)]);
-            setProgress(40);
+            if (!silent) showToast('正在并行获取数据…', 'info');
+
+            // ★ 加速优化2：股价(含股本) + 财报 三路并行，不再等股价完成再拉财报
+            const [_, __, finMapResult] = await Promise.all([
+                fetchShares(),
+                fetchKline(beg, end),
+                fetchHistoricalFinancials(currentStock)  // ★ 与上面并行
+            ]);
+
+            // 将财报结果存入闭包变量，后续直接使用
+            window._prefetchedFinMap = finMapResult;
+            setProgress(70);
         }
 
         if (globalData.length === 0) {
             throw new Error('获取到的历史股价记录为空，已自动阻断');
         }
 
-        if (!silent) showToast('正在获取财报数据…', 'info');
-        let finMap = await fetchHistoricalFinancials(currentStock);
+        // 使用并行预取的财报数据
+        let finMap = window._prefetchedFinMap || await fetchHistoricalFinancials(currentStock);
+        window._prefetchedFinMap = null;
 
         if (!currentTotalShares && currentStock._latestSharesFromFin) {
             Logger.log(`[Main] Overriding Shares using FinData: ${currentStock._latestSharesFromFin}`);
             currentTotalShares = currentStock._latestSharesFromFin;
         }
         if (!currentTotalShares) currentTotalShares = 1e8;
-
-        setProgress(70);
 
         const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0, 4))));
         const sortedYears = Array.from(yearsSet).sort((a, b) => a - b);
@@ -772,7 +805,7 @@ async function editYearData(year) {
 }
 
 // ============================================================
-// 数据获取 - 股本
+// 数据获取 - 股本（不变）
 // ============================================================
 async function fetchShares() {
     currentTotalShares = 0;
@@ -788,7 +821,7 @@ async function fetchShares() {
 }
 
 // ============================================================
-// 重构版 K线获取
+// K线获取（不变接口，仅调整内部JSONP超时为3s）
 // ============================================================
 async function fetchKline(beg, end) {
     let success = false;
@@ -1003,7 +1036,7 @@ async function fetchKline(beg, end) {
 }
 
 // ============================================================
-// 双引擎财报抓取
+// 双引擎财报抓取（不变接口逻辑）
 // ============================================================
 async function fetchHistoricalFinancials(stockObj) {
     const map  = {};
@@ -1202,12 +1235,11 @@ window.saveConfig = () => {
 };
 
 // ============================================================
-// 新增：前端无损调节图表显示区间
+// 图表区间快捷键
 // ============================================================
 window.setChartRange = function(type, evt) {
     if (!chartInstance || !globalData.length) return;
 
-    // 切换按钮高亮
     document.querySelectorAll('.range-selector button').forEach(btn => btn.classList.remove('active'));
     const clickedBtn = evt?.currentTarget || document.getElementById('btn-range-all');
     if (clickedBtn) clickedBtn.classList.add('active');
@@ -1226,7 +1258,6 @@ window.setChartRange = function(type, evt) {
         minDate = new Date(latestDate);
         minDate.setFullYear(minDate.getFullYear() - 5);
     } else {
-        // 'all' 全部数据：清除图表标尺限制，恢复缩放
         chartInstance.resetZoom();
         chartInstance.options.scales.x.min = undefined;
         chartInstance.options.scales.x.max = undefined;
@@ -1235,10 +1266,7 @@ window.setChartRange = function(type, evt) {
     }
 
     const minDateStr = minDate.toISOString().split('T')[0];
-
-    // 重置 zoom 插件引起的内部缓存状态
     chartInstance.resetZoom();
-    // 动态调整标尺范围
     chartInstance.options.scales.x.min = minDateStr;
     chartInstance.options.scales.x.max = latestDateStr;
     chartInstance.update();
@@ -1273,7 +1301,6 @@ function drawChart() {
     const ctx = document.getElementById('valuationChart').getContext('2d');
     if (chartInstance) chartInstance.destroy();
 
-    // 绘制新图表时，重置快捷区间按钮状态为“全部”
     document.querySelectorAll('.range-selector button').forEach(btn => btn.classList.remove('active'));
     const btnAll = document.getElementById('btn-range-all');
     if (btnAll) btnAll.classList.add('active');
@@ -1377,12 +1404,12 @@ function renderTable() {
     if (rows.length === 0) {
         document.getElementById('emptyState').style.display = 'block';
         document.getElementById('dataTable').style.display  = 'none';
-        document.getElementById('rangeSelectorContainer').style.display = 'none'; // 隐藏区间选择
+        document.getElementById('rangeSelectorContainer').style.display = 'none';
         return;
     }
     document.getElementById('emptyState').style.display = 'none';
     document.getElementById('dataTable').style.display  = 'table';
-    document.getElementById('rangeSelectorContainer').style.display = 'flex'; // 显示区间选择
+    document.getElementById('rangeSelectorContainer').style.display = 'flex';
 
     rows.slice(0, 500).forEach(d => {
         const peStr = d.pe > 0
