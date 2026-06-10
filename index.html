@@ -520,32 +520,42 @@ async function fetchViaProxiesRace(url, context) {
 async function apiFetch(url, jsonpParam, context = 'API') {
     Logger.log(`[${context}] Req: ${url.split('?')[0]}...`);
 
+    // ★ 加速：JSONP 与直接 fetch 同时并发，谁先成功用谁
+    const directAttempts = [];
+
     if (jsonpParam) {
-        try {
-            Logger.log(`[${context}] Try JSONP...`);
-            const data = await fetchJSONP(url, jsonpParam, 3000); // ★ 3s
-            if (data) { Logger.log(`[${context}] JSONP OK.`); return data; }
-        } catch(e) { Logger.log(`[${context}] JSONP Fail: ${e.message}`); }
+        directAttempts.push(
+            fetchJSONP(url, jsonpParam, 3000)
+                .then(data => { if (data) { Logger.log(`[${context}] JSONP WIN.`); return data; } return null; })
+                .catch(e  => { Logger.log(`[${context}] JSONP Fail: ${e.message}`); return null; })
+        );
     }
 
-    try {
-        Logger.log(`[${context}] Try Fetch...`);
-        const ctrl = new AbortController();
-        const timerId = setTimeout(() => ctrl.abort(), 5000); // ★ 5s（原6s）
-        const res = await fetch(url, { signal: ctrl.signal });
-        clearTimeout(timerId);
-        if (res.ok) {
-            const text = await res.text();
-            Logger.log(`[${context}] Fetch OK. Length: ${text.length}`);
-            const data = safeParseJSON(text);
-            if (data) return data;
-            Logger.log(`[${context}] Fetch Parse Error. Raw: ${text.substring(0,60)}`);
-        } else {
-            Logger.log(`[${context}] Fetch Fail: HTTP ${res.status}`);
-        }
-    } catch(e) { Logger.log(`[${context}] Fetch Fail: ${e.message}`); }
+    directAttempts.push(
+        (async () => {
+            try {
+                const ctrl = new AbortController();
+                const timerId = setTimeout(() => ctrl.abort(), 4000); // ★ 4s
+                const res = await fetch(url, { signal: ctrl.signal });
+                clearTimeout(timerId);
+                if (res.ok) {
+                    const text = await res.text();
+                    const data = safeParseJSON(text);
+                    if (data) { Logger.log(`[${context}] Fetch WIN. Len:${text.length}`); return data; }
+                }
+            } catch(e) { Logger.log(`[${context}] Fetch Fail: ${e.message}`); }
+            return null;
+        })()
+    );
 
-    // ★ 加速优化1：并发赛跑代替串行轮询
+    // 取最快成功的结果
+    const directResult = await Promise.any(directAttempts.map(p =>
+        p.then(v => v !== null ? v : Promise.reject('null'))
+    )).catch(() => null);
+
+    if (directResult) return directResult;
+
+    // 直连全灭 → 并发代理赛跑
     const raceResult = await fetchViaProxiesRace(url, context);
     if (raceResult) return raceResult;
 
@@ -832,20 +842,40 @@ async function fetchKline(beg, end) {
     const isHK     = sid.startsWith('116.');
     const isUS     = sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.');
 
+    // ★ 加速：三个 EastMoney 域名并发赛跑，不再串行等待
     const emDomains = ['push2his.eastmoney.com', 'push2.eastmoney.com', 'quote.eastmoney.com'];
-    for (const domain of emDomains) {
-        if (success) break;
-        Logger.log(`[Kline] Route 1 (EastMoney) Domain: ${domain}`);
-        const url = `https://${domain}/api/qt/stock/kline/get?secid=${sid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&beg=${beg}&end=${end}&lmt=100000`;
-        const json = await apiFetch(url, 'cb', `Kline-EM`);
-        if (json?.data?.klines && json.data.klines.length > 0) {
-            globalData = json.data.klines.map(k => {
-                const parts = k.split(',');
-                return { date: parts[0], price: parseFloat(parts[2]) };
-            });
-            Logger.log(`[Kline] Route 1 Success! ${globalData.length} records from ${domain}.`);
-            success = true;
-        }
+    Logger.log(`[Kline] Route 1 (EastMoney) - racing ${emDomains.length} domains concurrently...`);
+
+    const emKlineResult = await new Promise(resolve => {
+        let settled = false;
+        let pending = emDomains.length;
+        emDomains.forEach(async domain => {
+            try {
+                const url = `https://${domain}/api/qt/stock/kline/get?secid=${sid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&beg=${beg}&end=${end}&lmt=100000`;
+                const json = await apiFetch(url, 'cb', `Kline-EM-${domain.split('.')[0]}`);
+                if (!settled && json?.data?.klines?.length > 0) {
+                    settled = true;
+                    Logger.log(`[Kline] Route 1 WIN: ${domain}`);
+                    resolve(json.data.klines);
+                } else {
+                    pending--;
+                    if (pending === 0 && !settled) resolve(null);
+                }
+            } catch(e) {
+                Logger.log(`[Kline] Route 1 domain ${domain} exception: ${e.message}`);
+                pending--;
+                if (pending === 0 && !settled) resolve(null);
+            }
+        });
+    });
+
+    if (emKlineResult) {
+        globalData = emKlineResult.map(k => {
+            const parts = k.split(',');
+            return { date: parts[0], price: parseFloat(parts[2]) };
+        });
+        Logger.log(`[Kline] Route 1 Success! ${globalData.length} records.`);
+        success = true;
     }
 
     if (!success && isAShare) {
@@ -875,7 +905,7 @@ async function fetchKline(beg, end) {
             const sinaData = await new Promise((resolve) => {
                 const varName = 'sina_kline_' + Date.now() + Math.floor(Math.random() * 1000);
                 const script = document.createElement('script');
-                const timer = setTimeout(() => { cleanup(); resolve(null); }, 10000);
+                const timer = setTimeout(() => { cleanup(); resolve(null); }, 5000); // ★ 5s（原10s）
                 function cleanup() {
                     clearTimeout(timer);
                     if (script.parentNode) script.parentNode.removeChild(script);
@@ -909,57 +939,67 @@ async function fetchKline(beg, end) {
         const tSymbol = getTencentSymbol(sid, code);
         const tParams = [`${tSymbol},day,,,5000,qfq`, `${tSymbol},day,,,5000`];
 
-        for (const tParam of tParams) {
-            if (success) break;
-            Logger.log(`[Kline] Route 3 (Tencent) param: ${tParam}`);
-            try {
-                const tJson = await new Promise((resolve) => {
-                    const varName = 't_kline_' + Date.now() + Math.floor(Math.random() * 1000);
-                    const script = document.createElement('script');
-                    const timer = setTimeout(() => { cleanup(); resolve(null); }, 10000);
-                    function cleanup() {
-                        clearTimeout(timer);
-                        if (script.parentNode) script.parentNode.removeChild(script);
-                    }
-                    script.onload = () => {
-                        setTimeout(() => {
-                            const result = window[varName] || null;
-                            resolve(result);
-                            cleanup();
-                            try { delete window[varName]; } catch(e) {}
-                        }, 50);
-                    };
-                    script.onerror = () => { cleanup(); resolve(null); };
-                    script.src = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=${varName}&param=${tParam}&r=${Math.random()}`;
-                    document.head.appendChild(script);
-                });
-
-                if (tJson) {
-                    const tData = tJson.data || {};
-                    const matchKey = Object.keys(tData).find(k =>
-                        k.toLowerCase() === tSymbol.toLowerCase() ||
-                        k.toLowerCase().includes(code.toLowerCase())
-                    );
-                    const stockData = matchKey ? tData[matchKey] : null;
-
-                    if (stockData) {
-                        const klines = stockData.qfqday || stockData.day ||
-                                       stockData.qfqweek || stockData.week ||
-                                       stockData.qfqmonth || stockData.month;
-                        if (klines && klines.length > 0) {
-                            globalData = klines.map(k => ({
-                                date : k[0],
-                                price: parseFloat(k[2])
-                            })).filter(d => {
-                                const dStr = (d.date || '').replace(/-/g, '');
-                                return dStr >= beg && dStr <= end;
-                            });
-                            Logger.log(`[Kline] Route 3 (Tencent) Success: ${globalData.length} records.`);
-                            if (globalData.length > 0) success = true;
-                        }
-                    }
+        // ★ 加速：两个 Tencent param 变体并发赛跑
+        Logger.log(`[Kline] Route 3 (Tencent) racing ${tParams.length} params concurrently...`);
+        const tResult = await new Promise(resolve => {
+            let settled = false;
+            let pending = tParams.length;
+            tParams.forEach(tParam => {
+                const varName = 't_kline_' + Date.now() + Math.floor(Math.random() * 1000);
+                const script = document.createElement('script');
+                const timer = setTimeout(() => { cleanup(); onFail(); }, 5000); // ★ 5s（原10s）
+                function cleanup() {
+                    clearTimeout(timer);
+                    if (script.parentNode) script.parentNode.removeChild(script);
                 }
-            } catch(e) { Logger.error(`[Kline] Route 3 Tencent Exception`, e); }
+                function onFail() {
+                    pending--;
+                    if (pending === 0 && !settled) resolve(null);
+                }
+                script.onload = () => {
+                    setTimeout(() => {
+                        if (settled) { cleanup(); return; }
+                        const result = window[varName] || null;
+                        try { delete window[varName]; } catch(e) {}
+                        cleanup();
+                        if (result) {
+                            const tData = result.data || {};
+                            const matchKey = Object.keys(tData).find(k =>
+                                k.toLowerCase() === tSymbol.toLowerCase() ||
+                                k.toLowerCase().includes(tSymbol.replace(/^(sh|sz|hk|us)/i,'').toLowerCase())
+                            );
+                            const stockData = matchKey ? tData[matchKey] : null;
+                            if (stockData) {
+                                const klines = stockData.qfqday || stockData.day ||
+                                               stockData.qfqweek || stockData.week ||
+                                               stockData.qfqmonth || stockData.month;
+                                if (klines && klines.length > 0 && !settled) {
+                                    settled = true;
+                                    Logger.log(`[Kline] Route 3 Tencent WIN param: ${tParam}`);
+                                    resolve(klines);
+                                    return;
+                                }
+                            }
+                        }
+                        onFail();
+                    }, 50);
+                };
+                script.onerror = () => { cleanup(); onFail(); };
+                script.src = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=${varName}&param=${tParam}&r=${Math.random()}`;
+                document.head.appendChild(script);
+            });
+        });
+
+        if (tResult) {
+            globalData = tResult.map(k => ({
+                date : k[0],
+                price: parseFloat(k[2])
+            })).filter(d => {
+                const dStr = (d.date || '').replace(/-/g, '');
+                return dStr >= beg && dStr <= end;
+            });
+            Logger.log(`[Kline] Route 3 (Tencent) Success: ${globalData.length} records.`);
+            if (globalData.length > 0) success = true;
         }
     }
 
@@ -970,7 +1010,7 @@ async function fetchKline(beg, end) {
             const sJson = await new Promise((resolve) => {
                 const varName = 'sina_us_' + Date.now() + Math.floor(Math.random() * 1000);
                 const script = document.createElement('script');
-                const timer = setTimeout(() => { cleanup(); resolve(null); }, 10000);
+                const timer = setTimeout(() => { cleanup(); resolve(null); }, 5000); // ★ 5s（原10s）
                 function cleanup() {
                     clearTimeout(timer);
                     if (script.parentNode) script.parentNode.removeChild(script);
