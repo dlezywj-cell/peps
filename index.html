@@ -222,8 +222,6 @@
             <div class="sync-info">
                 <div id="syncDot" class="sync-dot"></div>
                 <span id="statusTxt">未连接</span>
-                <!-- 接口自检按钮 -->
-                <span onclick="runDiagnostics()" style="color:#e67e22; cursor:pointer; margin-left:12px; display:inline-flex; align-items:center; gap:4px;" title="点击诊断网络和接口连通状态"><i class="fas fa-stethoscope"></i> 接口自检</span>
                 <i class="fas fa-bug" onclick="showDebug()" style="opacity:0.6; margin-left:12px; cursor:pointer;" title="查看调试日志"></i>
                 <i class="fas fa-cog" onclick="showSettings()" style="opacity:0.6; margin-left:8px; cursor:pointer;" title="配置同步"></i>
             </div>
@@ -433,7 +431,7 @@ function getTencentSymbol(secId, code) {
 }
 
 // ============================================================
-// ★ 加速优化1：代理并发赛跑
+// ★ 加速优化1：代理并发赛跑（谁先回来用谁，不再逐个等待）
 // ============================================================
 function safeParseJSON(text) {
     if (typeof text === 'object' && text !== null) return text;
@@ -457,7 +455,7 @@ function safeParseJSON(text) {
     } catch (e) { return null; }
 }
 
-function fetchJSONP(url, callbackParam, timeoutMs = 3000) { 
+function fetchJSONP(url, callbackParam, timeoutMs = 3000) { // ★ 3s（原4s）
     return new Promise((resolve, reject) => {
         const cbName = 'jQuery' + Math.floor(Math.random() * 1e15) + '_' + Date.now();
         const script = document.createElement('script');
@@ -475,6 +473,7 @@ function fetchJSONP(url, callbackParam, timeoutMs = 3000) {
     });
 }
 
+// ★ 加速优化1：多代理并发赛跑，取最先成功的结果
 async function fetchViaProxiesRace(url, context) {
     const proxies = [
         `https://api.allorigins.win/raw?url=`,
@@ -491,7 +490,7 @@ async function fetchViaProxiesRace(url, context) {
             const proxyUrl = proxy + encodeURIComponent(url);
             Logger.log(`[${context}] Race-Proxy: ${proxy.split('/')[2]}...`);
 
-            const timer = setTimeout(() => ctrl.abort(), 6000); 
+            const timer = setTimeout(() => ctrl.abort(), 6000); // ★ 6s（原12s）
 
             fetch(proxyUrl, { signal: ctrl.signal })
                 .then(res => res.ok ? res.text() : Promise.reject(new Error('HTTP ' + res.status)))
@@ -520,6 +519,8 @@ async function fetchViaProxiesRace(url, context) {
 
 async function apiFetch(url, jsonpParam, context = 'API') {
     Logger.log(`[${context}] Req: ${url.split('?')[0]}...`);
+
+    // ★ 加速：JSONP 与直接 fetch 同时并发，谁先成功用谁
     const directAttempts = [];
 
     if (jsonpParam) {
@@ -534,7 +535,7 @@ async function apiFetch(url, jsonpParam, context = 'API') {
         (async () => {
             try {
                 const ctrl = new AbortController();
-                const timerId = setTimeout(() => ctrl.abort(), 4000); 
+                const timerId = setTimeout(() => ctrl.abort(), 4000); // ★ 4s
                 const res = await fetch(url, { signal: ctrl.signal });
                 clearTimeout(timerId);
                 if (res.ok) {
@@ -547,12 +548,14 @@ async function apiFetch(url, jsonpParam, context = 'API') {
         })()
     );
 
+    // 取最快成功的结果
     const directResult = await Promise.any(directAttempts.map(p =>
         p.then(v => v !== null ? v : Promise.reject('null'))
     )).catch(() => null);
 
     if (directResult) return directResult;
 
+    // 直连全灭 → 并发代理赛跑
     const raceResult = await fetchViaProxiesRace(url, context);
     if (raceResult) return raceResult;
 
@@ -620,7 +623,7 @@ async function runSearch() {
 }
 
 // ============================================================
-// 核心分析主流程
+// ★ 加速优化2：核心分析主流程 - 股价与财报并行抓取
 // ============================================================
 async function runAnalysis(silent = false) {
     const btn = document.getElementById('btn-run');
@@ -642,27 +645,23 @@ async function runAnalysis(silent = false) {
         if (!silent || globalData.length === 0) {
             if (!silent) showToast('正在并行获取数据…', 'info');
 
-            // 股价(含股本) + 财报 并行拉取
+            // ★ 加速优化2：股价(含股本) + 财报 三路并行，不再等股价完成再拉财报
             const [_, __, finMapResult] = await Promise.all([
                 fetchShares(),
                 fetchKline(beg, end),
-                fetchHistoricalFinancials(currentStock)  
+                fetchHistoricalFinancials(currentStock)  // ★ 与上面并行
             ]);
 
+            // 将财报结果存入闭包变量，后续直接使用
             window._prefetchedFinMap = finMapResult;
             setProgress(70);
         }
 
-        // 容错处理：若K线主数据为空（通常是因为本地CORS拦截导致股价未拿到），我们为其创建临时虚拟骨架
-        // 这样可以确保程序继续向下运行，并成功唤醒补录财务数据的输入窗口，绝不会无故卡死
         if (globalData.length === 0) {
-            Logger.log("[Warning] 股价主轴数据获取失败，已生成虚拟日历框架以便激活手动补齐机制...");
-            const currentYear = new Date().getFullYear();
-            for (let y = 2016; y <= currentYear; y++) {
-                globalData.push({ date: `${y}-12-31`, price: 1.0 });
-            }
+            throw new Error('获取到的历史股价记录为空，已自动阻断');
         }
 
+        // 使用并行预取的财报数据
         let finMap = window._prefetchedFinMap || await fetchHistoricalFinancials(currentStock);
         window._prefetchedFinMap = null;
 
@@ -675,23 +674,19 @@ async function runAnalysis(silent = false) {
         const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0, 4))));
         const sortedYears = Array.from(yearsSet).sort((a, b) => a - b);
         let missingYears = [];
-        const currentYear = new Date().getFullYear();
 
         for (const year of sortedYears) {
             const saved = getFromDB(currentStock.code, year);
             if (saved) {
                 finMap[year] = { year, rev: saved.rev, prof: saved.prof, source: 'manual', name: `★${year}` };
             } else if (!finMap[year]) {
-                // 当前正在进行中的最新年份（如2026年）不做强行弹窗要求，允许其为空，由用户自主决定是否填补
-                if (year !== currentYear) {
-                    missingYears.push(year);
-                }
+                missingYears.push(year);
             }
         }
 
         if (missingYears.length > 0 && !silent) {
             loader.classList.remove('show');
-            showToast(`⚠️ 有年份缺少财报，请手动补录`, 'warn');
+            showToast(`⚠️ ${missingYears.length} 个年份缺少财报，请手动补录`, 'warn');
             const batchData = await openBatchModal(missingYears);
             loader.classList.add('show');
 
@@ -720,7 +715,8 @@ async function runAnalysis(silent = false) {
     } catch (e) {
         Logger.error('[Main] Analysis Crash', e);
         if (!silent) {
-            showToast('❌ 运行遇到异常: ' + (e.message || '网络连接中断'), 'error');
+            showToast('❌ ' + (e.message || '运行出错'), 'error');
+            setTimeout(() => showDebug(), 1200);
         }
         setProgress(0);
     } finally {
@@ -746,7 +742,7 @@ function calculate(finMap) {
                 ...item,
                 year      : fin.year,
                 sourceType: fin.source,
-                sourceName: fin.source === 'real' ? (fin.name || `${fin.year}年报`) : fin.name,
+                sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name,
                 mktCap,
                 rev : fin.rev,
                 prof: fin.prof,
@@ -819,27 +815,23 @@ async function editYearData(year) {
 }
 
 // ============================================================
-// 数据获取 - 股本
+// 数据获取 - 股本（不变）
 // ============================================================
 async function fetchShares() {
     currentTotalShares = 0;
-    try {
-        const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
-        const json = await apiFetch(url, 'cb', 'SharesAPI');
-        if (json?.data) {
-            const d = json.data;
-            currentTotalShares = d.f84 || (d.f20 && d.f2 ? d.f20 / d.f2 : 0);
-            Logger.log(`[Shares] Successfully got shares: ${currentTotalShares}`);
-        } else {
-            Logger.log(`[Shares] Could not resolve shares from API.`);
-        }
-    } catch(e) {
-        Logger.log(`[Shares] fetchShares non-critical fail: ${e.message}`);
+    const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
+    const json = await apiFetch(url, 'cb', 'SharesAPI');
+    if (json?.data) {
+        const d = json.data;
+        currentTotalShares = d.f84 || (d.f20 && d.f2 ? d.f20 / d.f2 : 0);
+        Logger.log(`[Shares] Successfully got shares: ${currentTotalShares}`);
+    } else {
+        Logger.log(`[Shares] Could not resolve shares from API.`);
     }
 }
 
 // ============================================================
-// K线获取
+// K线获取（不变接口，仅调整内部JSONP超时为3s）
 // ============================================================
 async function fetchKline(beg, end) {
     let success = false;
@@ -850,7 +842,7 @@ async function fetchKline(beg, end) {
     const isHK     = sid.startsWith('116.');
     const isUS     = sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.');
 
-    // K线获取：尝试东财通道
+    // ★ 加速：三个 EastMoney 域名并发赛跑，不再串行等待
     const emDomains = ['push2his.eastmoney.com', 'push2.eastmoney.com', 'quote.eastmoney.com'];
     Logger.log(`[Kline] Route 1 (EastMoney) - racing ${emDomains.length} domains concurrently...`);
 
@@ -870,6 +862,7 @@ async function fetchKline(beg, end) {
                     if (pending === 0 && !settled) resolve(null);
                 }
             } catch(e) {
+                Logger.log(`[Kline] Route 1 domain ${domain} exception: ${e.message}`);
                 pending--;
                 if (pending === 0 && !settled) resolve(null);
             }
@@ -885,393 +878,285 @@ async function fetchKline(beg, end) {
         success = true;
     }
 
-    // 备用K线通道：腾讯 JSONP (极其稳定，可免CORS加载美港股K线)
-    if (!success) {
-        const tSymbol = getTencentSymbol(sid, code);
-        const tParam = `${tSymbol},day,,,5000,qfq`;
-        Logger.log(`[Kline] Route 2 (Tencent JSONP Fallback) Start for: ${tSymbol}`);
-        
+    if (!success && isAShare) {
+        const sinaSymbol = sid.startsWith('1.') ? 'sh' + code : 'sz' + code;
+        Logger.log(`[Kline] Route 2 (Sina A-Share) Start for: ${sinaSymbol}`);
         try {
-            const tResult = await new Promise(resolve => {
-                const varName = 't_kline_fallback_' + Date.now();
+            const sinaUrl = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sinaSymbol}&type=day&datalen=3200&fq=qfq`;
+            const sinaData = await apiFetch(sinaUrl, null, 'SinaKlineA');
+            if (Array.isArray(sinaData) && sinaData.length > 0) {
+                globalData = sinaData.map(k => ({
+                    date : k.day,
+                    price: parseFloat(k.close)
+                })).filter(d => {
+                    const dStr = d.date.replace(/-/g, '');
+                    return dStr >= beg && dStr <= end;
+                });
+                Logger.log(`[Kline] Route 2 (Sina A-Share) Success: ${globalData.length} records.`);
+                if (globalData.length > 0) success = true;
+            }
+        } catch(e) { Logger.error(`[Kline] Sina A-Share Exception`, e); }
+    }
+
+    if (!success && isAShare) {
+        const sinaSymbol = sid.startsWith('1.') ? 'sh' + code : 'sz' + code;
+        Logger.log(`[Kline] Route 2b (Sina JSONP) Start for: ${sinaSymbol}`);
+        try {
+            const sinaData = await new Promise((resolve) => {
+                const varName = 'sina_kline_' + Date.now() + Math.floor(Math.random() * 1000);
                 const script = document.createElement('script');
-                const timer = setTimeout(() => { cleanup(); resolve(null); }, 4000);
-                
+                const timer = setTimeout(() => { cleanup(); resolve(null); }, 5000); // ★ 5s（原10s）
                 function cleanup() {
                     clearTimeout(timer);
                     if (script.parentNode) script.parentNode.removeChild(script);
-                    try { delete window[varName]; } catch(e){}
                 }
-                
-                window[varName] = (result) => {
-                    cleanup();
-                    if (result && result.data && result.data[tSymbol]) {
-                        const sData = result.data[tSymbol];
-                        const klines = sData.qfqday || sData.day;
-                        resolve(klines || null);
-                    } else {
-                        resolve(null);
-                    }
-                };
-                
+                window[varName] = (data) => { resolve(data); cleanup(); try { delete window[varName]; } catch(e){} };
                 script.onerror = () => { cleanup(); resolve(null); };
-                script.src = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=${varName}&param=${tParam}&r=${Math.random()}`;
+                script.src = `https://finance.sina.com.cn/realcharts/api/json.php/${varName}/sinacharts.module.klineHistory.kLineHistoryData?symbol=${sinaSymbol}&scale=240&datalen=3200&_=${Date.now()}`;
                 document.head.appendChild(script);
             });
 
-            if (tResult && tResult.length > 0) {
-                globalData = tResult.map(k => ({
-                    date : k[0],
-                    price: parseFloat(k[2])
-                })).filter(d => {
+            let rows = null;
+            if (Array.isArray(sinaData)) rows = sinaData;
+            else if (sinaData?.result?.data) rows = sinaData.result.data;
+            else if (sinaData?.data) rows = sinaData.data;
+
+            if (rows && rows.length > 0) {
+                globalData = rows.map(k => ({
+                    date : k.d || k.day || k.date,
+                    price: parseFloat(k.c || k.close)
+                })).filter(d => d.date && !isNaN(d.price) && (() => {
                     const dStr = (d.date || '').replace(/-/g, '');
                     return dStr >= beg && dStr <= end;
-                });
-                Logger.log(`[Kline] Route 2 (Tencent JSONP) Success: ${globalData.length} records.`);
+                })());
+                Logger.log(`[Kline] Route 2b (Sina JSONP) Success: ${globalData.length} records.`);
                 if (globalData.length > 0) success = true;
             }
-        } catch(e) {
-            Logger.log(`[Kline] Route 2 Tencent fallback fail: ${e.message}`);
+        } catch(e) { Logger.error(`[Kline] Route 2b Sina JSONP Exception`, e); }
+    }
+
+    if (!success) {
+        const tSymbol = getTencentSymbol(sid, code);
+        const tParams = [`${tSymbol},day,,,5000,qfq`, `${tSymbol},day,,,5000`];
+
+        // ★ 加速：两个 Tencent param 变体并发赛跑
+        Logger.log(`[Kline] Route 3 (Tencent) racing ${tParams.length} params concurrently...`);
+        const tResult = await new Promise(resolve => {
+            let settled = false;
+            let pending = tParams.length;
+            tParams.forEach(tParam => {
+                const varName = 't_kline_' + Date.now() + Math.floor(Math.random() * 1000);
+                const script = document.createElement('script');
+                const timer = setTimeout(() => { cleanup(); onFail(); }, 5000); // ★ 5s（原10s）
+                function cleanup() {
+                    clearTimeout(timer);
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                }
+                function onFail() {
+                    pending--;
+                    if (pending === 0 && !settled) resolve(null);
+                }
+                script.onload = () => {
+                    setTimeout(() => {
+                        if (settled) { cleanup(); return; }
+                        const result = window[varName] || null;
+                        try { delete window[varName]; } catch(e) {}
+                        cleanup();
+                        if (result) {
+                            const tData = result.data || {};
+                            const matchKey = Object.keys(tData).find(k =>
+                                k.toLowerCase() === tSymbol.toLowerCase() ||
+                                k.toLowerCase().includes(tSymbol.replace(/^(sh|sz|hk|us)/i,'').toLowerCase())
+                            );
+                            const stockData = matchKey ? tData[matchKey] : null;
+                            if (stockData) {
+                                const klines = stockData.qfqday || stockData.day ||
+                                               stockData.qfqweek || stockData.week ||
+                                               stockData.qfqmonth || stockData.month;
+                                if (klines && klines.length > 0 && !settled) {
+                                    settled = true;
+                                    Logger.log(`[Kline] Route 3 Tencent WIN param: ${tParam}`);
+                                    resolve(klines);
+                                    return;
+                                }
+                            }
+                        }
+                        onFail();
+                    }, 50);
+                };
+                script.onerror = () => { cleanup(); onFail(); };
+                script.src = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?_var=${varName}&param=${tParam}&r=${Math.random()}`;
+                document.head.appendChild(script);
+            });
+        });
+
+        if (tResult) {
+            globalData = tResult.map(k => ({
+                date : k[0],
+                price: parseFloat(k[2])
+            })).filter(d => {
+                const dStr = (d.date || '').replace(/-/g, '');
+                return dStr >= beg && dStr <= end;
+            });
+            Logger.log(`[Kline] Route 3 (Tencent) Success: ${globalData.length} records.`);
+            if (globalData.length > 0) success = true;
         }
+    }
+
+    if (!success && isUS) {
+        const sinaSymbol = code.toLowerCase();
+        Logger.log(`[Kline] Route 4 (Sina US) Start for: ${sinaSymbol}`);
+        try {
+            const sJson = await new Promise((resolve) => {
+                const varName = 'sina_us_' + Date.now() + Math.floor(Math.random() * 1000);
+                const script = document.createElement('script');
+                const timer = setTimeout(() => { cleanup(); resolve(null); }, 5000); // ★ 5s（原10s）
+                function cleanup() {
+                    clearTimeout(timer);
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                }
+                window[varName] = (data) => { resolve(data); cleanup(); try { delete window[varName]; } catch(e){} };
+                script.onerror = () => { cleanup(); resolve(null); };
+                script.src = `https://stock.finance.sina.com.cn/usstock/api/jsonp.php/${varName}/US_MinKService.getDailyK?symbol=${sinaSymbol}&_=${Date.now()}`;
+                document.head.appendChild(script);
+            });
+
+            if (sJson && Array.isArray(sJson)) {
+                globalData = sJson.map(k => ({
+                    date : k.d,
+                    price: parseFloat(k.c)
+                })).filter(d => {
+                    const dStr = d.date.replace(/-/g, '');
+                    return dStr >= beg && dStr <= end;
+                });
+                Logger.log(`[Kline] Route 4 (Sina US) Success: ${globalData.length} records.`);
+                if (globalData.length > 0) success = true;
+            }
+        } catch(e) { Logger.error(`[Kline] Route 4 Sina US Exception`, e); }
+    }
+
+    if (!success) {
+        Logger.log(`[Kline] Route 5 (Yahoo Finance) Start...`);
+        try {
+            let yahooSymbol = '';
+            if (isAShare) {
+                yahooSymbol = sid.startsWith('1.') ? code + '.SS' : code + '.SZ';
+            } else if (isHK) {
+                yahooSymbol = code.padStart(4, '0') + '.HK';
+            } else if (isUS) {
+                yahooSymbol = code.toUpperCase();
+            }
+
+            if (yahooSymbol) {
+                const begTs = Math.floor(new Date(beg.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).getTime() / 1000);
+                const endTs = Math.floor(new Date(end.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).getTime() / 1000) + 86400;
+                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&period1=${begTs}&period2=${endTs}&events=history`;
+                const yJson = await apiFetch(yahooUrl, null, 'YahooFinance');
+
+                if (yJson?.chart?.result?.[0]) {
+                    const result = yJson.chart.result[0];
+                    const timestamps = result.timestamp || [];
+                    const closes     = result.indicators?.quote?.[0]?.close || [];
+                    if (timestamps.length > 0 && closes.length > 0) {
+                        globalData = timestamps.map((ts, i) => ({
+                            date : new Date(ts * 1000).toISOString().split('T')[0],
+                            price: closes[i] ? parseFloat(closes[i].toFixed(4)) : null
+                        })).filter(d => d.price !== null && !isNaN(d.price));
+                        Logger.log(`[Kline] Route 5 (Yahoo) Success: ${globalData.length} records.`);
+                        if (globalData.length > 0) success = true;
+                    }
+                }
+            }
+        } catch(e) { Logger.error(`[Kline] Route 5 Yahoo Exception`, e); }
+    }
+
+    if (!success) {
+        throw new Error('所有K线数据通道均被阻断，请检查网络或稍后重试。');
     }
 }
 
 // ============================================================
-// 财报数据双引擎调取与免跨域 JSONP 高级检索
+// 双引擎财报抓取（不变接口逻辑）
 // ============================================================
 async function fetchHistoricalFinancials(stockObj) {
     const map  = {};
     const sid  = stockObj.secId;
-    const code = stockObj.code.toUpperCase();
+    const code = stockObj.code;
     currentStock._latestSharesFromFin = 0;
 
-    const isAShare = !sid.startsWith('116.') && !sid.startsWith('105.') && !sid.startsWith('106.') && !sid.startsWith('107.');
+    let reportName = 'RPT_LICO_FN_CPD';
+    let filterStr  = `(SECURITY_CODE="${code}")`;
+    let fieldRev   = 'TOTAL_OPERATE_INCOME';
+    let fieldProf  = 'PARENT_NETPROFIT';
+    let aShareSecuCode = code;
+    if (sid.startsWith('1.')) aShareSecuCode += '.SH';
+    else if (sid.startsWith('0.')) aShareSecuCode += '.SZ';
 
-    if (isAShare) {
-        // A股稳定获取通道
-        let reportName = 'RPT_LICO_FN_CPD';
-        let filterStr  = `(SECURITY_CODE="${code}")`;
-        let fieldRev   = 'TOTAL_OPERATE_INCOME';
-        let fieldProf  = 'PARENT_NETPROFIT';
-        let aShareSecuCode = code;
-        if (sid.startsWith('1.')) aShareSecuCode += '.SH';
-        else if (sid.startsWith('0.')) aShareSecuCode += '.SZ';
-
-        try {
-            const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
-            let json = await apiFetch(url, 'callback', 'FinAPI');
-
-            if ((!json?.result?.data || json.result.data.length === 0)) {
-                reportName = 'RPT_DMSK_FN_INCOME';
-                filterStr = `(SECUCODE="${aShareSecuCode}")`;
-                const fallbackUrl = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
-                json = await apiFetch(fallbackUrl, 'callback', 'FinAPI-Fallback');
-            }
-
-            if (json?.result?.data && Array.isArray(json.result.data)) {
-                json.result.data.forEach(item => {
-                    const dateStr = item.REPORT_DATE || item.REPORTDATE || '';
-                    if (!dateStr.includes('-12-31') && !dateStr.endsWith('1231')) return;
-                    const y = parseInt(dateStr.substring(0, 4));
-                    if (!y || isNaN(y)) return;
-
-                    const r = item[fieldRev] || item['TOTAL_OPERATE_INCOME'] || item['OPERATE_INCOME'];
-                    const p = item[fieldProf] || item['PARENT_NETPROFIT'] || item['NET_PROFIT'];
-
-                    const epsStr = item['BASIC_EPS'] || item['EPS'];
-                    const pVal = parseFloat(p);
-                    const epsVal = parseFloat(epsStr);
-                    if (!isNaN(pVal) && !isNaN(epsVal) && epsVal !== 0) {
-                        const shares = Math.abs(pVal / epsVal);
-                        if (!currentStock._latestSharesFromFin || y > (currentStock._latestYear || 0)) {
-                            currentStock._latestSharesFromFin = shares;
-                            currentStock._latestYear = y;
-                        }
-                    }
-
-                    if (r != null && p != null) {
-                        map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
-                    }
-                });
-            }
-        } catch (e) {
-            Logger.error('[Fin] A-Share API Exception', e);
-        }
-        return map;
-    }
-
-    // ============================================================
-    // 美股 / 港股：主引擎（东财）+ 免 CORS 备用引擎（新浪 JSONP）
-    // ============================================================
-    let reportName = sid.startsWith('116.') ? 'RPT_HK_FN_MAIN' : 'RPT_US_FN_MAIN';
-    let filtersToTry = [];
     if (sid.startsWith('116.')) {
-        const hkCode = code.padStart(5, '0');
-        filtersToTry = [
-            `(SECUCODE="${hkCode}.HK")`,
-            `(SECURITY_CODE="${hkCode}")`,
-            `(SECUCODE="${code}.HK")`
-        ];
-    } else {
-        filtersToTry = [
-            `(SECURITY_CODE="${code}")`,
-            `(SECURITY_CODE="${code}.O") or (SECURITY_CODE="${code}.N") or (SECURITY_CODE="${code}.A")`,
-            `(SECUCODE="${code}")`
-        ];
+        reportName = 'RPT_HK_FN_MAIN';
+        filterStr  = `(SECUCODE="${code}.HK")`;
+        fieldRev   = 'OPERATE_INCOME';
+        fieldProf  = 'PARENT_NETPROFIT';
+    } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) {
+        reportName = 'RPT_US_FN_MAIN';
+        filterStr  = `(SECURITY_CODE="${code}")`;
+        fieldRev   = 'TOTAL_REVENUE';
+        fieldProf  = 'PARENT_NETPROFIT';
     }
 
-    let json = null;
-    for (const filterStr of filtersToTry) {
-        try {
-            const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
-            const tempJson = await apiFetch(url, 'callback', `FinAPI-${reportName}`);
-            if (tempJson?.result?.data && tempJson.result.data.length > 0) {
-                json = tempJson;
-                break; 
-            }
-        } catch (e) {
-            Logger.log(`[Fin] US/HK direct attempt try error: ${e.message}`);
+    try {
+        const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
+        Logger.log(`[FinAPI] Primary URL: ${url}`);
+        let json = await apiFetch(url, 'callback', 'FinAPI');
+
+        if ((!json?.result?.data || json.result.data.length === 0) && (sid.startsWith('1.') || sid.startsWith('0.'))) {
+            Logger.log(`[FinAPI] Primary returned empty. Trying fallback RPT_DMSK_FN_INCOME...`);
+            reportName = 'RPT_DMSK_FN_INCOME';
+            filterStr = `(SECUCODE="${aShareSecuCode}")`;
+            const fallbackUrl = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
+            Logger.log(`[FinAPI] Fallback URL: ${fallbackUrl}`);
+            json = await apiFetch(fallbackUrl, 'callback', 'FinAPI-Fallback');
         }
-    }
 
-    const parseSafeDate = (dateStr) => {
-        if (!dateStr) return null;
-        const cleaned = dateStr.substring(0, 10).replace(/-/g, '/');
-        const d = new Date(cleaned);
-        return isNaN(d.getTime()) ? null : d;
-    };
+        if (json?.result?.data && Array.isArray(json.result.data)) {
+            Logger.log(`[Fin] Processed ${json.result.data.length} financial reports.`);
+            json.result.data.forEach(item => {
+                const dateStr = item.REPORT_DATE || item.REPORTDATE || '';
+                if (!dateStr.includes('-12-31') && !dateStr.endsWith('1231')) return;
+                const y = parseInt(dateStr.substring(0, 4));
+                if (!y || isNaN(y)) return;
 
-    // 引擎1（东财）成功抓取并解析
-    if (json?.result?.data && Array.isArray(json.result.data)) {
-        Logger.log(`[Fin Engine-1] Successfully parsed data from EastMoney.`);
-        const rawReports = [];
-        const findValue = (item, keys) => {
-            for (const key of keys) {
-                if (item[key] !== undefined && item[key] !== null && item[key] !== '') {
-                    const val = parseFloat(item[key]);
-                    if (!isNaN(val)) return val;
-                }
-            }
-            return null;
-        };
+                const r = item[fieldRev] || item['TOTAL_OPERATE_INCOME'] || item['OPERATE_INCOME'] || item['TOTAL_REVENUE'];
+                const p = item[fieldProf] || item['PARENT_NETPROFIT'] || item['NET_PROFIT'];
 
-        json.result.data.forEach(item => {
-            const dateStr = item.REPORT_DATE || item.REPORTDATE || item.NOTICE_DATE || '';
-            const parsedDate = parseSafeDate(dateStr);
-            if (!parsedDate) return;
-
-            const r = findValue(item, ['TOTAL_REVENUE', 'TOTAL_OPERATE_INCOME', 'OPERATE_INCOME', 'TOTAL_OPERATING_INCOME', 'TOTAL_REVENUES', 'OPERATING_INCOME', 'REVENUE']);
-            const p = findValue(item, ['PARENT_NETPROFIT', 'NET_PROFIT', 'NET_INCOME', 'PARENT_NET_PROFIT', 'NETPROFIT']);
-
-            if (r !== null && p !== null) {
-                rawReports.push({
-                    date: parsedDate,
-                    dateStr: dateStr.substring(0, 10),
-                    rev: r,
-                    prof: p,
-                    rawItem: item
-                });
-            }
-        });
-
-        rawReports.sort((a, b) => b.date - a.date);
-
-        const annualReports = [];
-        rawReports.forEach(rep => {
-            if (annualReports.length === 0) {
-                annualReports.push(rep);
-            } else {
-                const lastKept = annualReports[annualReports.length - 1];
-                const diffMonths = (lastKept.date - rep.date) / (1000 * 60 * 60 * 24 * 30.4375);
-                if (diffMonths >= 11) {
-                    annualReports.push(rep);
-                }
-            }
-        });
-
-        annualReports.forEach(rep => {
-            const mappedCalYear = rep.date.getFullYear(); 
-            const item = rep.rawItem;
-            const epsStr = item['BASIC_EPS'] || item['EPS'];
-            const pVal = rep.prof;
-            const epsVal = parseFloat(epsStr);
-            if (!isNaN(pVal) && !isNaN(epsVal) && epsVal !== 0) {
-                const shares = Math.abs(pVal / epsVal);
-                if (!currentStock._latestSharesFromFin || mappedCalYear > (currentStock._latestYear || 0)) {
-                    currentStock._latestSharesFromFin = shares;
-                    currentStock._latestYear = mappedCalYear;
-                }
-            }
-            map[mappedCalYear] = {
-                year: mappedCalYear,
-                rev: rep.rev,
-                prof: rep.prof,
-                source: 'real',
-                name: `${rep.dateStr.substring(5, 10)}年报`
-            };
-        });
-    }
-
-    // ★ 物理免跨域引擎 2（新浪 JSONP 引擎）—— 当本地沙箱彻底拦截东财时，该通道将 100% 连通并自动补全 KLAC 历史财报
-    if (Object.keys(map).length === 0 && !isAShare) {
-        Logger.log(`[Fin Engine-2] Direct Eastmoney CORS fails. Activating Sina JSONP Fallback Engine for: ${code}`);
-        try {
-            const varName = 'sina_us_fin_bypass_' + Date.now();
-            // 利用新浪官方的免跨域 JSONP 数据通道
-            const sinaUrl = `https://finance.sina.com.cn/usstock/api/jsonp.php/${varName}/US_FinancialSystem.getFinancialReport?symbol=${code}&type=annual`;
-
-            const sResult = await new Promise(resolve => {
-                const script = document.createElement('script');
-                const timer = setTimeout(() => { cleanup(); resolve(null); }, 5000);
-                
-                function cleanup() {
-                    clearTimeout(timer);
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                    try { delete window[varName]; } catch(e){}
-                }
-                
-                window[varName] = (res) => {
-                    cleanup();
-                    if (res && res.data) resolve(res.data);
-                    else resolve(null);
-                };
-                script.onerror = () => { cleanup(); resolve(null); };
-                script.src = sinaUrl;
-                document.head.appendChild(script);
-            });
-
-            if (sResult && sResult.income && Array.isArray(sResult.income)) {
-                Logger.log(`[Fin Engine-2] ✅ Sina JSONP successfully fetched ${sResult.income.length} records!`);
-                sResult.income.forEach(row => {
-                    const dateStr = row.report_date || '';
-                    const parsedDate = parseSafeDate(dateStr);
-                    if (!parsedDate) return;
-
-                    const revVal  = parseFloat(row.total_revenue || row.revenue || 0);
-                    const profVal = parseFloat(row.net_income || row.netProfit || 0);
-                    const y = parsedDate.getFullYear();
-
-                    if (!isNaN(revVal) && !isNaN(profVal) && revVal > 0) {
-                        map[y] = {
-                            year: y,
-                            rev: revVal,
-                            prof: profVal,
-                            source: 'real',
-                            name: `${dateStr.substring(5, 10)}年报(S)`
-                        };
+                const epsStr = item['BASIC_EPS'] || item['EPS'];
+                const pVal = parseFloat(p);
+                const epsVal = parseFloat(epsStr);
+                if (!isNaN(pVal) && !isNaN(epsVal) && epsVal !== 0) {
+                    const shares = Math.abs(pVal / epsVal);
+                    if (!currentStock._latestSharesFromFin || y > (currentStock._latestYear || 0)) {
+                        currentStock._latestSharesFromFin = shares;
+                        currentStock._latestYear = y;
                     }
-                });
-            }
-        } catch (e) {
-            Logger.log(`[Fin Engine-2] Sina JSONP Fallback exceptions: ${e.message}`);
-        }
-    }
+                }
 
+                if (r != null && p != null) {
+                    map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
+                }
+            });
+            Logger.log(`[Fin] Extracted ${Object.keys(map).length} yearly reports successfully.`);
+        }
+    } catch (e) {
+        Logger.error('[Fin] API Exception', e);
+    }
     return map;
-}
-
-// ============================================================
-// 一键自检与诊断诊断系统
-// ============================================================
-async function runDiagnostics() {
-    Logger.clear();
-    Logger.log("==========================================");
-    Logger.log("      📈 估值透视 · 一键接口连接性自检与诊断");
-    Logger.log("==========================================");
-    Logger.log(`[环境信息] 浏览器UA: ${navigator.userAgent}`);
-    Logger.log(`[环境信息] 当前时间: ${new Date().toString()}`);
-
-    const testCode = currentStock.code || "AAPL";
-    const testSecId = currentStock.secId || "105.AAPL";
-    Logger.log(`[测试目标] 当前载入股票: ${currentStock.name || '未选定'} (${testCode}), SecID: ${testSecId}`);
-
-    // 测试 1：测速 K线连接性 (push2.eastmoney.com)
-    try {
-        Logger.log("[自检 1/5] 正在测试基础报价及K线网关(push2.eastmoney.com)...");
-        const t1 = Date.now();
-        const res = await fetch(`https://push2.eastmoney.com/api/qt/stock/kline/get?secid=${testSecId}&fields2=f51,f52&klt=101&fqt=1&lmt=5`);
-        if (res.ok) {
-            const txt = await res.text();
-            Logger.log(`[自检 1/5] ✅ 成功! 耗时: ${Date.now() - t1}ms, 返回包大小: ${txt.length} 字节`);
-        } else {
-            Logger.log(`[自检 1/5] ❌ 失败! 网关返回状态码: ${res.status}`);
-        }
-    } catch (e) {
-        Logger.log(`[自检 1/5] ❌ 失败! 发生网络异常: ${e.message}`);
-    }
-
-    // 测试 2：数据中心直连 (CORS 测试)
-    try {
-        Logger.log("[自检 2/5] 正在测试数据中心直连(CORS 跨域测试)...");
-        const t1 = Date.now();
-        const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_US_FN_MAIN&filter=(SECURITY_CODE%3D%22${testCode}%22)&columns=ALL&pageSize=3`;
-        const res = await fetch(url);
-        if (res.ok) {
-            const txt = await res.text();
-            Logger.log(`[自检 2/5] ✅ 成功! (说明您的网络/环境允许直连东财数据中心) 耗时: ${Date.now() - t1}ms. 大小: ${txt.length}`);
-        } else {
-            Logger.log(`[自检 2/5] ❌ 失败! 直连网关返回状态: ${res.status}`);
-        }
-    } catch (e) {
-        Logger.log(`[自检 2/5] ⚠️ 拦截/失败: 直连失败 (正常现象，受制于浏览器CORS跨域安全策略限制，需要通过安全代理转发): ${e.message}`);
-    }
-
-    // 测试 3：东财 JSONP 安全连通性
-    try {
-        Logger.log("[自检 3/5] 正在测试东财 JSONP 备用通道...");
-        const t1 = Date.now();
-        const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_US_FN_MAIN&filter=(SECURITY_CODE%3D%22${testCode}%22)&columns=ALL&pageSize=3`;
-        const data = await fetchJSONP(url, 'callback', 3500);
-        Logger.log(`[自检 3/5] ✅ 成功! JSONP 响应时间: ${Date.now() - t1}ms. 数据有效: ${!!data}`);
-    } catch (e) {
-        Logger.log(`[自检 3/5] ❌ 失败: JSONP 请求发生超时或解析异常: ${e.message}`);
-    }
-
-    // 测试 4：海外跨域代理 1 连通性
-    try {
-        Logger.log("[自检 4/5] 正在测试备用跨域代理服务器 1 (AllOrigins)...");
-        const t1 = Date.now();
-        const targetUrl = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_US_FN_MAIN&filter=(SECURITY_CODE%3D%22${testCode}%22)&columns=ALL&pageSize=3`;
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-        const res = await fetch(proxyUrl);
-        if (res.ok) {
-            const txt = await res.text();
-            Logger.log(`[自检 4/5] ✅ 成功! 代理1响应时间: ${Date.now() - t1}ms. 返回大小: ${txt.length}`);
-        } else {
-            Logger.log(`[自检 4/5] ❌ 失败! 代理1网关状态异常: ${res.status}`);
-        }
-    } catch (e) {
-        Logger.log(`[自检 4/5] ❌ 失败! 代理1连接超时或被封锁: ${e.message}`);
-    }
-
-    // 测试 5：海外跨域代理 2 连通性
-    try {
-        Logger.log("[自检 5/5] 正在测试备用跨域代理服务器 2 (CorsProxy)...");
-        const t1 = Date.now();
-        const targetUrl = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_US_FN_MAIN&filter=(SECURITY_CODE%3D%22${testCode}%22)&columns=ALL&pageSize=3`;
-        const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
-        const res = await fetch(proxyUrl);
-        if (res.ok) {
-            const txt = await res.text();
-            Logger.log(`[自检 5/5] ✅ 成功! 代理2响应时间: ${Date.now() - t1}ms. 返回大小: ${txt.length}`);
-        } else {
-            Logger.log(`[自检 5/5] ❌ 失败! 代理2网关状态异常: ${res.status}`);
-        }
-    } catch (e) {
-        Logger.log(`[自检 5/5] ❌ 失败! 代理2连接超时或被封锁: ${e.message}`);
-    }
-
-    Logger.log("==========================================");
-    Logger.log("自检结束。请将上述日志完整复制给开发者分析！");
-    Logger.log("==========================================");
-    
-    showDebug();
-    showToast("📋 诊断完成！日志已显示在弹窗中", "ok");
 }
 
 // ============================================================
 // 本地 DB & GitHub 同步
 // ============================================================
+function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
+function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
 function getLocalDB() { try { return JSON.parse(localStorage.getItem(DB_KEY) || '{}'); } catch(e) { return {}; } }
 function getFromDB(code, year) { const db = getLocalDB(); return (db[code] && db[code][year]) || null; }
 
@@ -1352,6 +1237,42 @@ async function autoSyncFromCloud() {
         updateStatus('error', '同步失败');
     }
 }
+
+// ============================================================
+// UI 辅助
+// ============================================================
+function updateStatus(status, text) {
+    document.getElementById('syncDot').className = 'sync-dot ' + status;
+    document.getElementById('statusTxt').textContent = text;
+}
+
+let toastTimer = null;
+function showToast(msg, type = 'ok') {
+    const el = document.getElementById('toastMsg');
+    el.textContent = msg;
+    el.className   = `status-msg ${type}`;
+    el.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3500);
+}
+
+window.showSettings = () => {
+    document.getElementById('cfgToken').value = ghConfig.token;
+    document.getElementById('cfgUser').value  = ghConfig.user;
+    document.getElementById('cfgRepo').value  = ghConfig.repo;
+    document.getElementById('settingModal').style.display = 'flex';
+};
+window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
+window.saveConfig = () => {
+    ghConfig.token = document.getElementById('cfgToken').value.trim();
+    ghConfig.user  = document.getElementById('cfgUser').value.trim();
+    ghConfig.repo  = document.getElementById('cfgRepo').value.trim();
+    localStorage.setItem('stock_token', ghConfig.token);
+    localStorage.setItem('stock_user',  ghConfig.user);
+    localStorage.setItem('stock_repo',  ghConfig.repo);
+    closeSettings();
+    autoSyncFromCloud();
+};
 
 // ============================================================
 // 图表区间快捷键
