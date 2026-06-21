@@ -685,15 +685,21 @@ async function runAnalysis(silent = false) {
             for (let i = 0; i < Math.min(targetYears.length, reports.length); i++) {
                 const y = targetYears[i];
                 const rep = reports[i];
+                const unitText = rep.currency || '未识别';
+                const originText = rep.originalCurrency
+                    ? (rep.converted
+                        ? `原币${rep.originalCurrency}→${unitText}`
+                        : `原币${rep.originalCurrency}(未换算)`)
+                    : `单位${unitText}`;
                 finMap[y] = {
                     year : y,
                     rev  : rep.rev,
                     prof : rep.prof,
                     source: 'real',
-                    name : `年报(${rep.date})`,
-                    label: `${y}年(报告期${rep.date})`
+                    name : `年报(${rep.date}, ${originText})`,
+                    label: `${y}年(报告期${rep.date}, ${originText})`
                 };
-                Logger.log(`[Fin]   ${y}年 ← 报告期 ${rep.date}（营收${(rep.rev/1e8).toFixed(1)}亿/净利${(rep.prof/1e8).toFixed(1)}亿）`);
+                Logger.log(`[Fin]   ${y}年 ← 报告期 ${rep.date}（${originText}，营收${(rep.rev/1e8).toFixed(1)}亿/净利${(rep.prof/1e8).toFixed(1)}亿）`);
             }
         }
         delete finMap.__rawAnnualReports;
@@ -1194,7 +1200,7 @@ async function fetchFxRate(date, fromCcy, toCcy) {
 
     let rate = null;
     let tryDate = date;
-    for (let i = 0; i < 6 && rate == null; i++) {
+    for (let i = 0; i < 3 && rate == null; i++) {
         try {
             const url = `https://api.frankfurter.app/${tryDate}?from=${fromCcy}&to=${toCcy}`;
             const json = await apiFetch(url, null, `FX-${fromCcy}${toCcy}-${tryDate}`);
@@ -1478,6 +1484,8 @@ async function fetchHistoricalFinancials(stockObj) {
             const rawCcyField = summaryCurrencyMap[dateStr] ?? item.CURRENCY ?? item.CURRENCY_NAME ?? '(无该字段)';
             Logger.log(`[Fin] ${dateStr} 币种字段原始值="${rawCcyField}" → 识别为 ${reportCcy || '未识别'}（交易币种=${tradingCurrency}）`);
 
+            let outputCurrency = reportCcy || tradingCurrency;
+            let converted = false;
             if (!reportCcy) {
                 Logger.log(`[Fin] ⚠️ ${dateStr} 未能识别财报币种，跳过汇率换算（如果该公司财报实际不是${tradingCurrency}，金额会和股价单位不一致！）`);
             } else if (reportCcy !== tradingCurrency) {
@@ -1486,12 +1494,14 @@ async function fetchHistoricalFinancials(stockObj) {
                     Logger.log(`[Fin] ${dateStr} 财报币种=${reportCcy}，按 1${reportCcy}=${rate}${tradingCurrency} 换算成${tradingCurrency}。`);
                     revVal *= rate;
                     profVal *= rate;
+                    outputCurrency = tradingCurrency;
+                    converted = true;
                 } else {
                     Logger.log(`[Fin] ⚠️ ${dateStr} 汇率换算失败（${reportCcy}→${tradingCurrency}），该年数据可能币种不一致！`);
                 }
             }
 
-            parsed.push({ date: dateStr, rev: revVal, prof: profVal });
+            parsed.push({ date: dateStr, rev: revVal, prof: profVal, originalCurrency: reportCcy || null, currency: outputCurrency, converted });
         }
         parsed.sort((a, b) => b.date.localeCompare(a.date));
 
