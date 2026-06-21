@@ -673,6 +673,31 @@ async function runAnalysis(silent = false) {
 
         const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0, 4))));
         const sortedYears = Array.from(yearsSet).sort((a, b) => a - b);
+
+        // ★ 港股/美股：财年结算日非12-31，按"倒序回填"分配年度报告
+        //   最新一份已披露年报 → 倒数第2新的日历年（最新的日历年留空，弹窗手动补录）
+        //   第2新的已披露年报 → 倒数第3新的日历年，依此类推
+        if (Array.isArray(finMap.__rawAnnualReports) && finMap.__rawAnnualReports.length > 0) {
+            const reports = finMap.__rawAnnualReports;
+            const nowYear = new Date().getFullYear();
+            const targetYears = sortedYears.filter(y => y !== nowYear).sort((a, b) => b - a); // 倒序，排除"今年"
+            Logger.log(`[Fin] 回填模式：${reports.length} 份年报 → ${targetYears.length} 个日历年（已排除当前年 ${nowYear}）`);
+            for (let i = 0; i < Math.min(targetYears.length, reports.length); i++) {
+                const y = targetYears[i];
+                const rep = reports[i];
+                finMap[y] = {
+                    year : y,
+                    rev  : rep.rev,
+                    prof : rep.prof,
+                    source: 'real',
+                    name : `年报(${rep.date})`,
+                    label: `${y}年(报告期${rep.date})`
+                };
+                Logger.log(`[Fin]   ${y}年 ← 报告期 ${rep.date}（营收${(rep.rev/1e8).toFixed(1)}亿/净利${(rep.prof/1e8).toFixed(1)}亿）`);
+            }
+        }
+        delete finMap.__rawAnnualReports;
+
         let missingYears = [];
 
         for (const year of sortedYears) {
@@ -742,7 +767,7 @@ function calculate(finMap) {
                 ...item,
                 year      : fin.year,
                 sourceType: fin.source,
-                sourceName: fin.source === 'real' ? `${fin.year}年报` : fin.name,
+                sourceName: fin.source === 'real' ? (fin.label || `${fin.year}年报`) : fin.name,
                 mktCap,
                 rev : fin.rev,
                 prof: fin.prof,
@@ -1076,7 +1101,276 @@ async function fetchKline(beg, end) {
 }
 
 // ============================================================
-// 双引擎财报抓取（不变接口逻辑）
+// ★ 港美股财报字段名自动识别
+// 由于无法实测 RPT_HKF10_FN_MAININDICATOR / RPT_USF10_FN_*MAININDICATOR
+// 的真实返回字段名，这里不再猜测固定字段名单，而是直接在返回数据的
+// 真实字段里按"命名规律"扫描：营收字段名一定包含 INCOME/REVENUE，
+// 净利字段名一定包含 PROFIT，EPS 字段名一定包含 EPS；同时排除掉同比(YOY)、
+// 增长率、占比、利润率等明显是"比率/百分比"而不是"金额"的字段。
+// ============================================================
+function fieldTokens(key) { return String(key).toUpperCase().split('_').filter(Boolean); }
+
+function selectField(item, includeSubstrings, preferTokens, excludeExactTokens) {
+    const keys = Object.keys(item || {});
+    const candidates = keys.filter(k => {
+        const tokens = fieldTokens(k);
+        if (tokens.some(t => excludeExactTokens.includes(t))) return false;
+        return tokens.some(t => includeSubstrings.some(inc => t.includes(inc)));
+    });
+    if (candidates.length === 0) return null;
+
+    const scored = candidates.map(k => ({ k, score: fieldTokens(k).filter(t => preferTokens.includes(t)).length }));
+    scored.sort((a, b) => b.score - a.score);
+    const topScore = scored[0].score;
+    const topCandidates = scored.filter(s => s.score === topScore).map(s => s.k);
+
+    // 同分多个候选时，优先选数值非空、且数量级明显是金额（而非比率）的字段
+    let best = topCandidates[0], bestVal = -Infinity;
+    topCandidates.forEach(k => {
+        const v = parseFloat(item[k]);
+        if (!isNaN(v) && Math.abs(v) > bestVal) { bestVal = Math.abs(v); best = k; }
+    });
+    return best;
+}
+
+const EXCLUDE_RATIO_TOKENS = ['YOY', 'GROWTH', 'RATIO', 'MARGIN', 'RATE', 'PCT', 'PERCENT'];
+
+function detectFinFieldNames(sampleItem) {
+    const revKey  = selectField(sampleItem, ['INCOME', 'REVENUE'], ['TOTAL', 'OPERATE'], EXCLUDE_RATIO_TOKENS);
+    const profKey = selectField(sampleItem, ['PROFIT'], ['PARENT', 'HOLDER'], EXCLUDE_RATIO_TOKENS.concat(['MINORITY']));
+    const epsKey  = selectField(sampleItem, ['EPS'], ['BASIC'], EXCLUDE_RATIO_TOKENS);
+
+    if (revKey && profKey) {
+        Logger.log(`[Fin] 字段自动识别成功：营收=${revKey}，净利=${profKey}，EPS=${epsKey || '未找到'}`);
+    } else {
+        Logger.log(`[Fin] ⚠️ 字段自动识别失败！营收=${revKey || '未找到'}，净利=${profKey || '未找到'}。`);
+        Logger.log(`[Fin] 该报表实际返回的全部字段名：${Object.keys(sampleItem || {}).join(', ')}`);
+    }
+    return { revKey, profKey, epsKey };
+}
+
+function normalizeReportDate(item) {
+    let d = item.REPORT_DATE || item.REPORTDATE || item.REPORT_DATE_NAME || '';
+    if (!d) return '';
+    d = String(d).trim();
+    if (/^\d{8}$/.test(d)) d = d.substring(0,4) + '-' + d.substring(4,6) + '-' + d.substring(6,8);
+    if (d.length >= 10) d = d.substring(0, 10);
+    return d;
+}
+
+// ============================================================
+// ★ 财报原始货币识别 + 汇率折算
+// 很多在港股上市的内地公司（如卫龙美味），财报是按人民币(CNY)披露的，
+// 但股价、市值都是按港币(HKD)计算的，PE/PS 必须把财报金额折算成同一货币才有意义。
+// 东方财富的港美股F10接口里带有 CURRENCY / CURRENCY_NAME 字段，标明财报原始货币。
+// ============================================================
+function normalizeCurrencyCode(raw) {
+    if (!raw) return null;
+    const s = String(raw).trim();
+    const u = s.toUpperCase();
+    if (u === 'CNY' || u === 'RMB' || s.includes('人民币')) return 'CNY';
+    if (u === 'HKD' || s.includes('港元') || s.includes('港币')) return 'HKD';
+    if (u === 'USD' || s.includes('美元')) return 'USD';
+    if (u === 'EUR' || s.includes('欧元')) return 'EUR';
+    if (u === 'GBP' || s.includes('英镑')) return 'GBP';
+    if (u === 'JPY' || s.includes('日元')) return 'JPY';
+    if (/^[A-Z]{3}$/.test(u)) return u; // 其他能直接识别的 ISO 代码
+    return null;
+}
+
+function detectReportCurrency(item) {
+    return normalizeCurrencyCode(item.CURRENCY) || normalizeCurrencyCode(item.CURRENCY_NAME);
+}
+
+const fxRateCache = {};
+const hkIncomeSummaryCurrencyCache = {};
+
+// 用 frankfurter.app（免费、无需 Key、覆盖 CNY/HKD/USD 等主要货币）查历史汇率；
+// 财报披露日若恰逢非交易日，自动往前找最近一个有汇率数据的日子。
+async function fetchFxRate(date, fromCcy, toCcy) {
+    if (!fromCcy || !toCcy || fromCcy === toCcy) return 1;
+    const cacheKey = `${date}_${fromCcy}_${toCcy}`;
+    if (fxRateCache[cacheKey] !== undefined) return fxRateCache[cacheKey];
+
+    let rate = null;
+    let tryDate = date;
+    for (let i = 0; i < 6 && rate == null; i++) {
+        try {
+            const url = `https://api.frankfurter.app/${tryDate}?from=${fromCcy}&to=${toCcy}`;
+            const json = await apiFetch(url, null, `FX-${fromCcy}${toCcy}-${tryDate}`);
+            const r = json?.rates?.[toCcy];
+            if (r && !isNaN(r)) { rate = r; break; }
+        } catch (e) { /* 继续往前尝试 */ }
+        const d = new Date(tryDate);
+        d.setDate(d.getDate() - 1);
+        tryDate = d.toISOString().substring(0, 10);
+    }
+    if (rate != null) {
+        Logger.log(`[FX] ${date}（实际取汇率日 ${tryDate}）：1 ${fromCcy} = ${rate} ${toCcy}`);
+    } else {
+        Logger.log(`[FX] ⚠️ 多次尝试后仍无法获取 ${fromCcy}→${toCcy} 汇率（约 ${date} 附近），本期数据将不做货币折算！`);
+    }
+    fxRateCache[cacheKey] = rate;
+    return rate;
+}
+
+// ============================================================
+// ★ 年报识别（解决港美股财年结算日非12月31日的问题）
+// 优先用官方确认的 DATE_TYPE_CODE="001"（年度报告）字段精确识别；
+// 找不到该字段时，退化为报告类型文本字段匹配，再退化为"财年节奏+营收量级"推断。
+// ============================================================
+function detectAnnualReports(rawList) {
+    if (!rawList || rawList.length === 0) return [];
+
+    // 0) 最权威：DATE_TYPE_CODE 字段，官方确认 "001" = 年度报告
+    if (rawList.some(it => it.DATE_TYPE_CODE != null && it.DATE_TYPE_CODE !== '')) {
+        const annual = rawList.filter(it => String(it.DATE_TYPE_CODE) === '001');
+        if (annual.length > 0) {
+            Logger.log(`[Fin] 年报识别：DATE_TYPE_CODE="001" 命中 ${annual.length} 条。`);
+            return annual;
+        }
+    }
+
+    // 1) 其次：常见的报告类型文本字段
+    const typeFieldCandidates = ['REPORT_TYPE', 'REPORT_DATE_NAME', 'REPORT_TYPE_NAME', 'PERIOD_TYPE', 'DATATYPE', 'DATE_TYPE', 'REPORT_DATA_TYPE'];
+    const annualKeywords  = ['年度', '年报', 'Annual', 'annual', 'FY'];
+    const interimKeywords = ['中期', '半年度', '半年报', 'Interim', 'interim', '一季', '三季', '季报', 'Q1', 'Q2', 'Q3'];
+
+    let explicitFieldFound = false;
+    const annualByField = [];
+    rawList.forEach(item => {
+        for (const f of typeFieldCandidates) {
+            if (item[f] != null && item[f] !== '') {
+                const v = String(item[f]);
+                if (annualKeywords.some(k => v.includes(k))) { explicitFieldFound = true; annualByField.push(item); }
+                else if (interimKeywords.some(k => v.includes(k))) { explicitFieldFound = true; }
+                break;
+            }
+        }
+    });
+    if (explicitFieldFound && annualByField.length > 0) {
+        Logger.log(`[Fin] 年报识别：找到报告类型文本字段，共 ${annualByField.length} 份年度报告。`);
+        return annualByField;
+    }
+
+    // 2) 兜底：财年节奏 + 营收量级 推断
+    Logger.log(`[Fin] 年报识别：未找到任何报告类型字段，改用财年节奏推断…`);
+    const groups = {};
+    rawList.forEach(item => {
+        const d = normalizeReportDate(item);
+        if (d.length < 10) return;
+        const suffix = d.substring(5, 10); // MM-DD
+        (groups[suffix] = groups[suffix] || []).push(item);
+    });
+
+    const candidates = Object.entries(groups).filter(([suf, arr]) => {
+        if (arr.length < 2) return true;
+        const dates = arr.map(it => new Date(normalizeReportDate(it))).sort((a, b) => a - b);
+        for (let i = 1; i < dates.length; i++) {
+            const diffDays = (dates[i] - dates[i - 1]) / 86400000;
+            if (diffDays < 300 || diffDays > 430) return false;
+        }
+        return true;
+    });
+
+    if (candidates.length === 0) {
+        Logger.log(`[Fin] 财年节奏推断失败：未发现稳定的年度周期。`);
+        return [];
+    }
+
+    let bestSuffix = candidates[0][0], bestAvg = -Infinity;
+    candidates.forEach(([suf, arr]) => {
+        const revKey = selectField(arr[0], ['INCOME', 'REVENUE'], ['TOTAL', 'OPERATE'], EXCLUDE_RATIO_TOKENS);
+        const avg = arr.reduce((s, it) => {
+            const v = parseFloat(revKey ? it[revKey] : NaN);
+            return s + (isNaN(v) ? 0 : v);
+        }, 0) / arr.length;
+        if (avg > bestAvg) { bestAvg = avg; bestSuffix = suf; }
+    });
+
+    Logger.log(`[Fin] 财年节奏推断：财年结算日 ≈ ${bestSuffix}，识别出 ${groups[bestSuffix].length} 份年度报告。`);
+    return groups[bestSuffix];
+}
+
+async function fetchEMReport(url, context) {
+    const json = await apiFetch(url, 'callback', context);
+    return (json?.result?.data && Array.isArray(json.result.data)) ? json.result.data : [];
+}
+
+async function fetchHKIncomeSummaryCurrencyMap(secuCode) {
+    if (!secuCode) return {};
+    if (hkIncomeSummaryCurrencyCache[secuCode]) return hkIncomeSummaryCurrencyCache[secuCode];
+
+    const url = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_CUSTOM_HKF10_APPFN_INCOME_SUMMARY&columns=SECUCODE,SECURITY_CODE,SECURITY_NAME_ABBR,START_DATE,REPORT_DATE,FISCAL_YEAR,CURRENCY,ACCOUNT_STANDARD,REPORT_TYPE&quoteColumns=&filter=${encodeURIComponent(`(SECUCODE="${secuCode}")`)}&source=F10&client=PC&v=${Date.now()}`;
+    const rows = await fetchEMReport(url, 'Fin-HKIncomeSummary');
+    const reportList = rows?.[0]?.REPORT_LIST || [];
+    const map = {};
+
+    reportList.forEach(item => {
+        const dateStr = normalizeReportDate(item);
+        const ccy = normalizeCurrencyCode(item.CURRENCY);
+        if (dateStr && ccy) map[dateStr] = ccy;
+    });
+
+    hkIncomeSummaryCurrencyCache[secuCode] = map;
+    return map;
+}
+
+// ============================================================
+// ★ 港股/美股主要财务指标 —— 走正确的 securities/F10 接口
+// （东方财富的港美股基本面数据并不在 datacenter-web 网关上，
+//  而是在 datacenter.eastmoney.com/securities/... 网关，reportName 也完全不同。
+//  这里的接口名、字段、DATE_TYPE_CODE="001"=年度报告，均参考自东方财富官方
+//  akshare 客户端库的真实抓取逻辑，而非猜测。）
+// ============================================================
+async function fetchHKUSMainIndicators(sid, code) {
+    const isHK = sid.startsWith('116.');
+    let secuCode = isHK ? `${code}.HK` : code;
+
+    if (!isHK) {
+        // 美股需要先把代码解析成东方财富内部的规范 SECUCODE（例如 TSLA → TSLA.O）
+        try {
+            const profileUrl = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_USF10_INFO_ORGPROFILE&columns=SECUCODE,SECURITY_CODE&filter=${encodeURIComponent(`(SECURITY_CODE="${code}")`)}&pageNumber=1&pageSize=5&source=SECURITIES&client=PC&v=${Date.now()}`;
+            const rows = await fetchEMReport(profileUrl, 'US-SECUCODE');
+            if (rows.length > 0 && rows[0].SECUCODE) {
+                secuCode = rows[0].SECUCODE;
+                Logger.log(`[Fin] 美股 SECUCODE 解析成功：${code} → ${secuCode}`);
+            } else {
+                Logger.log(`[Fin] 美股 SECUCODE 解析失败，回退使用原始代码：${code}`);
+            }
+        } catch (e) { Logger.error('[Fin] US SECUCODE lookup exception', e); }
+    }
+
+    const reportNames = isHK
+        ? ['RPT_HKF10_FN_MAININDICATOR']
+        : ['RPT_USF10_FN_GMAININDICATOR', 'RPT_USF10_FN_IMAININDICATOR'];
+    const sourceParam = isHK ? 'F10' : 'SECURITIES';
+
+    // 每个 reportName 先尝试服务端直接按年报过滤（更快更准），失败再整体拉取交给客户端识别
+    for (const reportName of reportNames) {
+        const filterAnnual = `(SECUCODE="${secuCode}")(DATE_TYPE_CODE="001")`;
+        const urlAnnual = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=${reportName}&columns=ALL&filter=${encodeURIComponent(filterAnnual)}&pageNumber=1&pageSize=100&sortTypes=-1&sortColumns=REPORT_DATE&source=${sourceParam}&client=PC&v=${Date.now()}`;
+        let rows = await fetchEMReport(urlAnnual, `Fin-${reportName}-annual`);
+        if (rows.length > 0) {
+            Logger.log(`[Fin] ${reportName} 服务端年报过滤成功，共 ${rows.length} 条。`);
+            return rows;
+        }
+
+        const filterAll = `(SECUCODE="${secuCode}")`;
+        const urlAll = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=${reportName}&columns=ALL&filter=${encodeURIComponent(filterAll)}&pageNumber=1&pageSize=200&sortTypes=-1&sortColumns=REPORT_DATE&source=${sourceParam}&client=PC&v=${Date.now()}`;
+        rows = await fetchEMReport(urlAll, `Fin-${reportName}-all`);
+        if (rows.length > 0) {
+            Logger.log(`[Fin] ${reportName} 未过滤拉取成功，共 ${rows.length} 条，交给客户端识别年报。`);
+            return detectAnnualReports(rows);
+        }
+    }
+
+    Logger.log(`[Fin] 港美股主要指标接口均未返回数据。`);
+    return [];
+}
+
+// ============================================================
+// 双引擎财报抓取
 // ============================================================
 async function fetchHistoricalFinancials(stockObj) {
     const map  = {};
@@ -1084,70 +1378,128 @@ async function fetchHistoricalFinancials(stockObj) {
     const code = stockObj.code;
     currentStock._latestSharesFromFin = 0;
 
-    let reportName = 'RPT_LICO_FN_CPD';
-    let filterStr  = `(SECURITY_CODE="${code}")`;
-    let fieldRev   = 'TOTAL_OPERATE_INCOME';
-    let fieldProf  = 'PARENT_NETPROFIT';
-    let aShareSecuCode = code;
-    if (sid.startsWith('1.')) aShareSecuCode += '.SH';
-    else if (sid.startsWith('0.')) aShareSecuCode += '.SZ';
+    const isHKorUS = sid.startsWith('116.') || sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.');
 
-    if (sid.startsWith('116.')) {
-        reportName = 'RPT_HK_FN_MAIN';
-        filterStr  = `(SECUCODE="${code}.HK")`;
-        fieldRev   = 'OPERATE_INCOME';
-        fieldProf  = 'PARENT_NETPROFIT';
-    } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) {
-        reportName = 'RPT_US_FN_MAIN';
-        filterStr  = `(SECURITY_CODE="${code}")`;
-        fieldRev   = 'TOTAL_REVENUE';
-        fieldProf  = 'PARENT_NETPROFIT';
+    if (!isHKorUS) {
+        // ---- A股：财年=自然年，年报恒为 12-31，沿用原有精确日期过滤逻辑（不变） ----
+        let reportName = 'RPT_LICO_FN_CPD';
+        let filterStr  = `(SECURITY_CODE="${code}")`;
+        const fieldRev = 'TOTAL_OPERATE_INCOME';
+        const fieldProf = 'PARENT_NETPROFIT';
+        let aShareSecuCode = code;
+        if (sid.startsWith('1.')) aShareSecuCode += '.SH';
+        else if (sid.startsWith('0.')) aShareSecuCode += '.SZ';
+
+        try {
+            const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
+            Logger.log(`[FinAPI] Primary URL: ${url}`);
+            let json = await apiFetch(url, 'callback', 'FinAPI');
+
+            if ((!json?.result?.data || json.result.data.length === 0)) {
+                Logger.log(`[FinAPI] Primary returned empty. Trying fallback RPT_DMSK_FN_INCOME...`);
+                reportName = 'RPT_DMSK_FN_INCOME';
+                filterStr = `(SECUCODE="${aShareSecuCode}")`;
+                const fallbackUrl = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
+                Logger.log(`[FinAPI] Fallback URL: ${fallbackUrl}`);
+                json = await apiFetch(fallbackUrl, 'callback', 'FinAPI-Fallback');
+            }
+
+            if (json?.result?.data && Array.isArray(json.result.data)) {
+                Logger.log(`[Fin] Processed ${json.result.data.length} financial reports.`);
+                json.result.data.forEach(item => {
+                    const dateStr = item.REPORT_DATE || item.REPORTDATE || '';
+                    if (!dateStr.includes('-12-31') && !dateStr.endsWith('1231')) return;
+                    const y = parseInt(dateStr.substring(0, 4));
+                    if (!y || isNaN(y)) return;
+
+                    const r = item[fieldRev] || item['TOTAL_OPERATE_INCOME'] || item['OPERATE_INCOME'] || item['TOTAL_REVENUE'];
+                    const p = item[fieldProf] || item['PARENT_NETPROFIT'] || item['NET_PROFIT'];
+
+                    const epsStr = item['BASIC_EPS'] || item['EPS'];
+                    const pVal = parseFloat(p);
+                    const epsVal = parseFloat(epsStr);
+                    if (!isNaN(pVal) && !isNaN(epsVal) && epsVal !== 0) {
+                        const shares = Math.abs(pVal / epsVal);
+                        if (!currentStock._latestSharesFromFin || y > (currentStock._latestYear || 0)) {
+                            currentStock._latestSharesFromFin = shares;
+                            currentStock._latestYear = y;
+                        }
+                    }
+
+                    if (r != null && p != null) {
+                        map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
+                    }
+                });
+                Logger.log(`[Fin] Extracted ${Object.keys(map).length} yearly reports successfully.`);
+            }
+        } catch (e) {
+            Logger.error('[Fin] API Exception', e);
+        }
+        return map;
     }
 
+    // ---- 港股/美股：财年结束日因公司而异，走 securities/F10 专用接口 ----
     try {
-        const url  = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
-        Logger.log(`[FinAPI] Primary URL: ${url}`);
-        let json = await apiFetch(url, 'callback', 'FinAPI');
+        const annualItems = await fetchHKUSMainIndicators(sid, code);
 
-        if ((!json?.result?.data || json.result.data.length === 0) && (sid.startsWith('1.') || sid.startsWith('0.'))) {
-            Logger.log(`[FinAPI] Primary returned empty. Trying fallback RPT_DMSK_FN_INCOME...`);
-            reportName = 'RPT_DMSK_FN_INCOME';
-            filterStr = `(SECUCODE="${aShareSecuCode}")`;
-            const fallbackUrl = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=${reportName}&filter=${encodeURIComponent(filterStr)}&columns=ALL&pageSize=500&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
-            Logger.log(`[FinAPI] Fallback URL: ${fallbackUrl}`);
-            json = await apiFetch(fallbackUrl, 'callback', 'FinAPI-Fallback');
+        if (annualItems.length === 0) {
+            Logger.log(`[Fin] 港美股接口未返回任何记录。`);
+            return map;
         }
 
-        if (json?.result?.data && Array.isArray(json.result.data)) {
-            Logger.log(`[Fin] Processed ${json.result.data.length} financial reports.`);
-            json.result.data.forEach(item => {
-                const dateStr = item.REPORT_DATE || item.REPORTDATE || '';
-                if (!dateStr.includes('-12-31') && !dateStr.endsWith('1231')) return;
-                const y = parseInt(dateStr.substring(0, 4));
-                if (!y || isNaN(y)) return;
+        // 用第一条记录的真实字段，自动识别"营收/净利/EPS"分别叫什么字段名
+        const { revKey, profKey, epsKey } = detectFinFieldNames(annualItems[0]);
+        const isHK = sid.startsWith('116.');
+        const tradingCurrency = isHK ? 'HKD' : 'USD'; // 港股交易币种=港元，美股=美元
+        const summaryCurrencyMap = isHK ? await fetchHKIncomeSummaryCurrencyMap(`${code}.HK`) : {};
 
-                const r = item[fieldRev] || item['TOTAL_OPERATE_INCOME'] || item['OPERATE_INCOME'] || item['TOTAL_REVENUE'];
-                const p = item[fieldProf] || item['PARENT_NETPROFIT'] || item['NET_PROFIT'];
+        const parsed = [];
+        for (const item of annualItems) {
+            const dateStr = normalizeReportDate(item);
+            const r = revKey ? item[revKey] : null;
+            const p = profKey ? item[profKey] : null;
+            const epsStr = epsKey ? item[epsKey] : null;
 
-                const epsStr = item['BASIC_EPS'] || item['EPS'];
-                const pVal = parseFloat(p);
-                const epsVal = parseFloat(epsStr);
-                if (!isNaN(pVal) && !isNaN(epsVal) && epsVal !== 0) {
-                    const shares = Math.abs(pVal / epsVal);
-                    if (!currentStock._latestSharesFromFin || y > (currentStock._latestYear || 0)) {
-                        currentStock._latestSharesFromFin = shares;
-                        currentStock._latestYear = y;
-                    }
+            const pVal = parseFloat(p);
+            const epsVal = parseFloat(epsStr);
+            if (!isNaN(pVal) && !isNaN(epsVal) && epsVal !== 0) {
+                const shares = Math.abs(pVal / epsVal);
+                if (!currentStock._latestSharesFromFin || dateStr > (currentStock._latestReportDate || '')) {
+                    currentStock._latestSharesFromFin = shares;
+                    currentStock._latestReportDate = dateStr;
                 }
+            }
 
-                if (r != null && p != null) {
-                    map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
+            let revVal = parseFloat(r), profVal = parseFloat(p);
+            if (!dateStr || isNaN(revVal) || isNaN(profVal)) continue;
+
+            // ★ 财报币种 ≠ 交易币种（比如卫龙年报是人民币，但股价是港元）时，按报告期当天汇率换算
+            const reportCcy = summaryCurrencyMap[dateStr] || detectReportCurrency(item);
+            const rawCcyField = summaryCurrencyMap[dateStr] ?? item.CURRENCY ?? item.CURRENCY_NAME ?? '(无该字段)';
+            Logger.log(`[Fin] ${dateStr} 币种字段原始值="${rawCcyField}" → 识别为 ${reportCcy || '未识别'}（交易币种=${tradingCurrency}）`);
+
+            if (!reportCcy) {
+                Logger.log(`[Fin] ⚠️ ${dateStr} 未能识别财报币种，跳过汇率换算（如果该公司财报实际不是${tradingCurrency}，金额会和股价单位不一致！）`);
+            } else if (reportCcy !== tradingCurrency) {
+                const rate = await fetchFxRate(dateStr, reportCcy, tradingCurrency);
+                if (rate) {
+                    Logger.log(`[Fin] ${dateStr} 财报币种=${reportCcy}，按 1${reportCcy}=${rate}${tradingCurrency} 换算成${tradingCurrency}。`);
+                    revVal *= rate;
+                    profVal *= rate;
+                } else {
+                    Logger.log(`[Fin] ⚠️ ${dateStr} 汇率换算失败（${reportCcy}→${tradingCurrency}），该年数据可能币种不一致！`);
                 }
-            });
-            Logger.log(`[Fin] Extracted ${Object.keys(map).length} yearly reports successfully.`);
+            }
+
+            parsed.push({ date: dateStr, rev: revVal, prof: profVal });
         }
+        parsed.sort((a, b) => b.date.localeCompare(a.date));
+
+        Logger.log(`[Fin] 港美股年报解析完成，共 ${parsed.length} 份有效年度报告（最新：${parsed[0]?.date || '无'}）。`);
+        // 暂存原始年报列表，留给 runAnalysis 按"价格所在日历年"倒序回填
+        map.__rawAnnualReports = parsed;
     } catch (e) {
-        Logger.error('[Fin] API Exception', e);
+        Logger.error('[Fin] HK/US API Exception', e);
     }
     return map;
 }
