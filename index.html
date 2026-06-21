@@ -1841,6 +1841,7 @@ function drawChart() {
 
     const peData = globalData.map(d => (d.pe && d.pe > 0) ? +d.pe.toFixed(2) : null);
     const psData = globalData.map(d => (d.ps != null && d.ps > 0) ? +d.ps.toFixed(2) : null);
+    const priceData = globalData.map(d => (d.price != null && d.price > 0) ? +d.price.toFixed(2) : null);
     const forecastPeData = globalData.map(d => (d.fw2pe != null && d.fw2pe > 0) ? +d.fw2pe.toFixed(2) : null);
     const forecastPsData = globalData.map(d => (d.fw2ps != null && d.fw2ps > 0) ? +d.fw2ps.toFixed(2) : null);
     const hasForecastLine = forecastPeData.some(v => v != null) || forecastPsData.some(v => v != null);
@@ -1876,6 +1877,17 @@ function drawChart() {
         data: {
             labels  : globalData.map(d => d.date),
             datasets:[
+                {
+                    label          : '股价（前复权）',
+                    data           : priceData,
+                    borderColor    : '#111111',
+                    backgroundColor: 'rgba(17,17,17,0.05)',
+                    borderWidth    : 1.8,
+                    yAxisID        : 'y_price',
+                    pointRadius    : 0,
+                    pointHoverRadius: 4,
+                    spanGaps       : true
+                },
                 {
                     label          : 'PE（右轴）',
                     data           : peData,
@@ -1919,6 +1931,9 @@ function drawChart() {
                             const d = globalData[item.dataIndex];
                             if (!d) return '';
                             const dsLabel = item.dataset?.label || '';
+                            if (dsLabel.includes('股价')) {
+                                return ` 股价: ${item.formattedValue} 元`;
+                            }
                             if (dsLabel.includes('PE')) {
                                 const extra = dsLabel.startsWith('FW') ? `（${dsLabel}）` : `（${d.sourceName || ''}）`;
                                 return ` PE: ${item.formattedValue} 倍${extra}`;
@@ -1956,6 +1971,13 @@ function drawChart() {
                     position: 'left',
                     title   : { display: true, text: 'PS 倍数', color: '#2980b9', font: { size: 10 } },
                     grace   : '5%'
+                },
+                y_price: {
+                    type    : 'linear',
+                    position: 'right',
+                    offset  : true,
+                    title   : { display: true, text: '股价', color: '#111111', font: { size: 10 } },
+                    grid    : { drawOnChartArea: false }
                 }
             }
         },
