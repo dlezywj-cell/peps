@@ -242,6 +242,7 @@
             <div class="divider-v"></div>
             <div class="group-actions">
                 <button class="btn-success" id="btn-run" disabled>⚡ 计算</button>
+                <button class="btn-outline" onclick="openForecastModal()">🔮 预测</button>
                 <button class="btn-outline" onclick="resetZoom()">🔄 重置</button>
             </div>
         </div>
@@ -301,6 +302,23 @@
         <div class="modal-footer">
             <button class="btn-block btn-cancel" onclick="closeBatchModal(false)">取消</button>
             <button class="btn-block btn-confirm" onclick="closeBatchModal(true)">💾 保存全部</button>
+        </div>
+    </div>
+</div>
+
+<!-- 预测输入弹窗 -->
+<div id="forecastInputModal" class="modal-overlay">
+    <div class="modal-box">
+        <div class="modal-header">
+            <span>🔮 预测财务数据</span>
+        </div>
+        <div style="font-size:12px;color:#096dd9;background:#e6f7ff;padding:8px 10px;border-radius:4px;margin-bottom:10px;">
+            只输入最新实际年对应的下一年收入、净利（单位：亿元），图表只绘制 fw2year 的最新年度虚线。
+        </div>
+        <div class="modal-body" id="forecastInputContainer"></div>
+        <div class="modal-footer">
+            <button class="btn-block btn-cancel" onclick="closeForecastModal(false)">取消</button>
+            <button class="btn-block btn-confirm" onclick="closeForecastModal(true)">💾 保存预测</button>
         </div>
     </div>
 </div>
@@ -396,6 +414,8 @@ let globalData     = [];
 let currentTotalShares = 0;
 let chartInstance  = null;
 let batchModalResolve = null;
+let forecastModalResolve = null;
+let latestActualYear = new Date().getFullYear();
 let syncTimer      = null;
 
 const DB_KEY = 'stock_valuation_db_v2';
@@ -428,6 +448,32 @@ function getTencentSymbol(secId, code) {
     if (secId.startsWith('116.')) return 'hk' + code;
     if (secId.startsWith('105.') || secId.startsWith('106.') || secId.startsWith('107.')) return 'us' + code.toUpperCase();
     return 'sh' + code;
+}
+
+function getLatestActualYear(finMap) {
+    const years = Object.keys(finMap || {}).map(y => parseInt(y)).filter(y => !isNaN(y));
+    if (years.length) return Math.max(...years);
+    const dataYears = globalData.map(d => parseInt((d.date || '').substring(0, 4))).filter(y => !isNaN(y));
+    if (dataYears.length) return Math.max(...dataYears);
+    return new Date().getFullYear();
+}
+
+function getForecastTargetYear(finMap) {
+    return getLatestActualYear(finMap) + 1;
+}
+
+function getForwardFinancialEntry(finMap, year) {
+    if (finMap && finMap[year]) return finMap[year];
+    const forecast = getForecastLocal(currentStock.code) || {};
+    const item = forecast[year];
+    if (!item) return null;
+    return {
+        year,
+        rev: item.rev,
+        prof: item.prof,
+        source: 'forecast',
+        name: `预测${year}年`
+    };
 }
 
 // ============================================================
@@ -764,24 +810,46 @@ async function runAnalysis(silent = false) {
 // ============================================================
 function calculate(finMap) {
     if (Object.keys(finMap).length === 0) return;
+    latestActualYear = getLatestActualYear(finMap);
+
     globalData = globalData.map(item => {
         const y   = parseInt(item.date.substring(0, 4));
         const fin = finMap[y];
+        const forwardFin = getForwardFinancialEntry(finMap, y + 1);
+        const mktCap = item.price * currentTotalShares;
+        const base = {
+            ...item,
+            mktCap
+        };
+
         if (fin) {
-            const mktCap = item.price * currentTotalShares;
-            return {
-                ...item,
-                year      : fin.year,
-                sourceType: fin.source,
-                sourceName: fin.source === 'real' ? (fin.label || `${fin.year}年报`) : fin.name,
-                mktCap,
-                rev : fin.rev,
-                prof: fin.prof,
-                pe  : fin.prof > 0 ? mktCap / fin.prof : -1,
-                ps  : fin.rev  > 0 ? mktCap / fin.rev  : 0
-            };
+            base.year       = fin.year;
+            base.sourceType = fin.source;
+            base.sourceName = fin.source === 'real' ? (fin.label || `${fin.year}年报`) : fin.name;
+            base.rev        = fin.rev;
+            base.prof       = fin.prof;
+            base.pe         = fin.prof > 0 ? mktCap / fin.prof : -1;
+            base.ps         = fin.rev  > 0 ? mktCap / fin.rev  : 0;
+        } else {
+            base.pe = null;
+            base.ps = null;
         }
-        return { ...item, pe: null, ps: null };
+
+        if (forwardFin) {
+            base.fw2year = forwardFin.year;
+            base.fw2name = forwardFin.source === 'forecast'
+                ? `FW2(${forwardFin.year})`
+                : (forwardFin.label || `FW2(${forwardFin.year})`);
+            base.fw2pe = forwardFin.prof > 0 ? mktCap / forwardFin.prof : -1;
+            base.fw2ps = forwardFin.rev > 0 ? mktCap / forwardFin.rev : 0;
+        } else {
+            base.fw2year = null;
+            base.fw2name = null;
+            base.fw2pe = null;
+            base.fw2ps = null;
+        }
+
+        return base;
     });
 }
 
@@ -832,6 +900,70 @@ function closeBatchModal(isConfirm) {
         batchModalResolve(null);
     }
     batchModalResolve = null;
+}
+
+function getForecastLocal(code) {
+    const db = getLocalDB();
+    return (db[code] && db[code].__forecast) || {};
+}
+
+async function saveForecastToDB(code, year, rev, prof, immediateSync = true) {
+    const db = getLocalDB();
+    if (!db[code]) db[code] = {};
+    if (!db[code].__forecast) db[code].__forecast = {};
+    db[code].__forecast[year] = { rev, prof, ts: Date.now() };
+    localStorage.setItem(DB_KEY, JSON.stringify(db));
+    if (immediateSync) triggerSync();
+}
+
+function openForecastModal() {
+    if (!currentStock.code) return;
+    const targetYear = latestActualYear + 1;
+    const forecastDB = getForecastLocal(currentStock.code);
+    const container = document.getElementById('forecastInputContainer');
+    container.innerHTML = '';
+
+    const pre = forecastDB[targetYear] || {};
+    const row = document.createElement('div');
+    row.className = 'batch-row';
+    row.dataset.year = targetYear;
+    row.innerHTML = `
+        <div class="row-year">${targetYear}</div>
+        <div class="row-inputs">
+            <input type="number" step="0.01" placeholder="收入(亿)" class="in-rev"
+                value="${pre.rev != null ? (pre.rev / 1e8) : ''}" inputmode="decimal">
+            <input type="number" step="0.01" placeholder="净利(亿)" class="in-prof"
+                value="${pre.prof != null ? (pre.prof / 1e8) : ''}" inputmode="decimal">
+        </div>`;
+    container.appendChild(row);
+
+    document.getElementById('forecastInputModal').style.display = 'flex';
+    forecastModalResolve = null;
+}
+
+function closeForecastModal(isConfirm) {
+    document.getElementById('forecastInputModal').style.display = 'none';
+    if (!isConfirm) return;
+
+    const payload = {};
+    document.querySelectorAll('#forecastInputContainer .batch-row').forEach(row => {
+        const y = row.dataset.year;
+        const revV = parseFloat(row.querySelector('.in-rev').value);
+        const prV  = parseFloat(row.querySelector('.in-prof').value);
+        if (!isNaN(revV) && !isNaN(prV)) {
+            payload[y] = { rev: revV * 1e8, prof: prV * 1e8 };
+        }
+    });
+
+    Object.keys(payload).forEach(y => {
+        const { rev, prof } = payload[y];
+        saveForecastToDB(currentStock.code, parseInt(y), rev, prof, false);
+    });
+    triggerSync();
+    showToast('✅ 预测数据已保存', 'ok');
+    if (currentStock.code) {
+        setTimeout(() => runAnalysis(true), 0);
+    }
 }
 
 async function editYearData(year) {
@@ -1709,6 +1841,35 @@ function drawChart() {
 
     const peData = globalData.map(d => (d.pe && d.pe > 0) ? +d.pe.toFixed(2) : null);
     const psData = globalData.map(d => (d.ps != null && d.ps > 0) ? +d.ps.toFixed(2) : null);
+    const forecastPeData = globalData.map(d => (d.fw2pe != null && d.fw2pe > 0) ? +d.fw2pe.toFixed(2) : null);
+    const forecastPsData = globalData.map(d => (d.fw2ps != null && d.fw2ps > 0) ? +d.fw2ps.toFixed(2) : null);
+    const hasForecastLine = forecastPeData.some(v => v != null) || forecastPsData.some(v => v != null);
+    const forecastDatasets = hasForecastLine ? [
+        {
+            label          : 'FW2 PE',
+            data           : forecastPeData,
+            borderColor    : '#16a085',
+            backgroundColor: 'rgba(22,160,133,0.08)',
+            borderWidth    : 1.4,
+            borderDash     : [6, 4],
+            yAxisID        : 'y_pe',
+            pointRadius    : 0,
+            pointHoverRadius: 4,
+            spanGaps       : true
+        },
+        {
+            label          : 'FW2 PS',
+            data           : forecastPsData,
+            borderColor    : '#8e44ad',
+            backgroundColor: 'rgba(142,68,173,0.08)',
+            borderWidth    : 1.4,
+            borderDash     : [2, 3],
+            yAxisID        : 'y_ps',
+            pointRadius    : 0,
+            pointHoverRadius: 4,
+            spanGaps       : true
+        }
+    ] : [];
 
     chartInstance = new Chart(ctx, {
         type: 'line',
@@ -1739,7 +1900,7 @@ function drawChart() {
                     spanGaps       : true,
                     segment: { borderDash: c => globalData[c.p0DataIndex]?.sourceType === 'manual' ? [5, 4] : undefined }
                 }
-            ]
+            ].concat(forecastDatasets)
         },
         options: {
             responsive       : true,
@@ -1757,8 +1918,16 @@ function drawChart() {
                         label: item => {
                             const d = globalData[item.dataIndex];
                             if (!d) return '';
-                            if (item.datasetIndex === 0) return ` PE: ${item.formattedValue} 倍（${d.sourceName || ''}）`;
-                            return ` PS: ${item.formattedValue} 倍`;
+                            const dsLabel = item.dataset?.label || '';
+                            if (dsLabel.includes('PE')) {
+                                const extra = dsLabel.startsWith('FW') ? `（${dsLabel}）` : `（${d.sourceName || ''}）`;
+                                return ` PE: ${item.formattedValue} 倍${extra}`;
+                            }
+                            if (dsLabel.includes('PS')) {
+                                const extra = dsLabel.startsWith('FW') ? `（${dsLabel}）` : '';
+                                return ` PS: ${item.formattedValue} 倍${extra}`;
+                            }
+                            return `${dsLabel}: ${item.formattedValue}`;
                         }
                     }
                 },
