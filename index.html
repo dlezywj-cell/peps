@@ -104,6 +104,14 @@
         }
 
         .chart-container { position: relative; height: 460px; padding: 15px 20px; width: 100%; }
+        .current-stock-banner {
+            display: none; margin: 12px 20px 0; padding: 10px 12px;
+            background: #f8fbff; border: 1px solid #d6eaf8; border-radius: 6px;
+            color: #1f618d; font-size: 13px; font-weight: 600;
+        }
+        .current-stock-banner .stock-code {
+            color: #5d6d7e; font-weight: 500; margin-left: 6px;
+        }
         .chart-tip {
             position: absolute; top: 10px; right: 15px; font-size: 11px; color: #999;
             background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px;
@@ -259,6 +267,8 @@
         <button class="btn-outline btn-sm" onclick="setChartRange('3y', event)">近3年</button>
         <button class="btn-outline btn-sm" onclick="setChartRange('5y', event)">近5年</button>
     </div>
+
+    <div class="current-stock-banner" id="currentStockBanner"></div>
 
     <div class="chart-container" style="position:relative;">
         <canvas id="valuationChart"></canvas>
@@ -435,6 +445,7 @@ document.getElementById('btnSearch').addEventListener('click', runSearch);
 document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
 document.getElementById('stockInput').addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
 document.getElementById('emptyState').style.display = 'block';
+updateCurrentStockBanner();
 
 if (ghConfig.token && ghConfig.user && ghConfig.repo) {
     setTimeout(autoSyncFromCloud, 600);
@@ -474,6 +485,18 @@ function getForwardFinancialEntry(finMap, year) {
         source: 'forecast',
         name: `预测${year}年`
     };
+}
+
+function updateCurrentStockBanner() {
+    const banner = document.getElementById('currentStockBanner');
+    if (!banner) return;
+    if (!currentStock.code) {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+        return;
+    }
+    banner.innerHTML = `当前股票：${currentStock.name || '-'}<span class="stock-code">(${currentStock.code})</span>`;
+    banner.style.display = 'block';
 }
 
 // ============================================================
@@ -654,6 +677,7 @@ async function runSearch() {
             currentStock = { code: item.Code, name: item.Name, secId };
             Logger.log(`[Search] Found: ${currentStock.name} (SecID: ${currentStock.secId})`);
             document.getElementById('btn-run').disabled = false;
+            updateCurrentStockBanner();
             showToast(`✅ 已选定：${item.Name}（${item.Code}）`, 'ok');
         } else {
             Logger.log(`[Search] No match found.`);
@@ -1654,6 +1678,46 @@ function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str)));
 function getLocalDB() { try { return JSON.parse(localStorage.getItem(DB_KEY) || '{}'); } catch(e) { return {}; } }
 function getFromDB(code, year) { const db = getLocalDB(); return (db[code] && db[code][year]) || null; }
 
+function mergeEntryByTs(localEntry, cloudEntry) {
+    if (!localEntry) return cloudEntry || null;
+    if (!cloudEntry) return localEntry || null;
+    return (cloudEntry.ts || 0) > (localEntry.ts || 0) ? cloudEntry : localEntry;
+}
+
+function mergeStockRecord(localRecord = {}, cloudRecord = {}) {
+    const merged = {};
+    const keys = new Set([...Object.keys(localRecord || {}), ...Object.keys(cloudRecord || {})]);
+
+    keys.forEach(key => {
+        if (key === '__forecast') {
+            const localForecast = localRecord.__forecast || {};
+            const cloudForecast = cloudRecord.__forecast || {};
+            const mergedForecast = {};
+            const forecastYears = new Set([...Object.keys(localForecast), ...Object.keys(cloudForecast)]);
+            forecastYears.forEach(year => {
+                const mergedEntry = mergeEntryByTs(localForecast[year], cloudForecast[year]);
+                if (mergedEntry) mergedForecast[year] = mergedEntry;
+            });
+            if (Object.keys(mergedForecast).length > 0) merged.__forecast = mergedForecast;
+            return;
+        }
+
+        const mergedEntry = mergeEntryByTs(localRecord[key], cloudRecord[key]);
+        if (mergedEntry) merged[key] = mergedEntry;
+    });
+
+    return merged;
+}
+
+function mergeDatabases(localDB = {}, cloudDB = {}) {
+    const merged = {};
+    const stockCodes = new Set([...Object.keys(localDB || {}), ...Object.keys(cloudDB || {})]);
+    stockCodes.forEach(code => {
+        merged[code] = mergeStockRecord(localDB[code] || {}, cloudDB[code] || {});
+    });
+    return merged;
+}
+
 async function saveToDB(code, year, rev, prof, immediateSync = true) {
     const db = getLocalDB();
     if (!db[code]) db[code] = {};
@@ -1672,11 +1736,19 @@ function triggerSync() {
         updateStatus('syncing', '上传中');
         try {
             const apiUrl = `https://api.github.com/repos/${ghConfig.user}/${ghConfig.repo}/contents/${ghConfig.file}`;
+            const localDB = getLocalDB();
+            let cloudDB = {};
             const getRes = await fetch(apiUrl, {
                 headers: { 'Authorization': `token ${ghConfig.token}`, 'Accept': 'application/vnd.github.v3+json' }
             });
             let sha = null;
-            if (getRes.ok) sha = (await getRes.json()).sha;
+            if (getRes.ok) {
+                const cloudFile = await getRes.json();
+                sha = cloudFile.sha;
+                cloudDB = JSON.parse(b64_to_utf8(cloudFile.content.replace(/\n/g, '')));
+            }
+            const mergedDB = mergeDatabases(localDB, cloudDB);
+            localStorage.setItem(DB_KEY, JSON.stringify(mergedDB));
 
             const putRes = await fetch(apiUrl, {
                 method : 'PUT',
@@ -1687,7 +1759,7 @@ function triggerSync() {
                 },
                 body: JSON.stringify({
                     message: `update ${currentStock.code || 'data'}`,
-                    content: utf8_to_b64(JSON.stringify(getLocalDB())),
+                    content: utf8_to_b64(JSON.stringify(mergedDB)),
                     sha
                 })
             });
@@ -1717,7 +1789,7 @@ async function autoSyncFromCloud() {
         if (res.ok) {
             const data    = await res.json();
             const cloudDB = JSON.parse(b64_to_utf8(data.content.replace(/\n/g, '')));
-            const merged  = { ...getLocalDB(), ...cloudDB };
+            const merged  = mergeDatabases(getLocalDB(), cloudDB);
             localStorage.setItem(DB_KEY, JSON.stringify(merged));
             updateStatus('online', '已同步');
         } else if (res.status === 404) {
