@@ -75,6 +75,14 @@
         .range-selector {
             display: none; padding: 10px 20px 0; gap: 8px; align-items: center; background: #fff;
         }
+        .display-range-inputs {
+            display: flex; gap: 8px; align-items: center;
+        }
+        .display-range-inputs .input-group input {
+            width: 130px;
+            height: 30px;
+            font-size: 12px;
+        }
 
         @media (min-width: 769px) {
             .tools-bar { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
@@ -101,6 +109,9 @@
             .group-actions button { flex: 1; height: 38px; font-size: 14px; }
             .chart-container { height: 300px !important; padding: 5px 10px; }
             .range-selector { padding: 10px 15px 0; flex-wrap: wrap; }
+            .display-range-inputs { width: 100%; }
+            .display-range-inputs .input-group { flex: 1; }
+            .display-range-inputs .input-group input { width: 100%; }
         }
 
         .chart-container { position: relative; height: 460px; padding: 15px 20px; width: 100%; }
@@ -266,6 +277,11 @@
         <button class="btn-outline btn-sm" onclick="setChartRange('1y', event)">近1年</button>
         <button class="btn-outline btn-sm" onclick="setChartRange('3y', event)">近3年</button>
         <button class="btn-outline btn-sm" onclick="setChartRange('5y', event)">近5年</button>
+        <div class="display-range-inputs">
+            <div class="input-group"><input type="date" id="displayStartDate"></div>
+            <div class="input-group"><input type="date" id="displayEndDate"></div>
+        </div>
+        <button class="btn-outline btn-sm" onclick="setChartRange('input', event)">按输入区间</button>
     </div>
 
     <div class="current-stock-banner" id="currentStockBanner"></div>
@@ -441,6 +457,8 @@ let ghConfig = {
 // 初始化
 // ============================================================
 document.getElementById('endDate').value = new Date().toISOString().split('T')[0];
+document.getElementById('displayEndDate').value = new Date().toISOString().split('T')[0];
+document.getElementById('displayStartDate').value = '2016-01-01';
 document.getElementById('btnSearch').addEventListener('click', runSearch);
 document.getElementById('btn-run').addEventListener('click', () => runAnalysis(false));
 document.getElementById('stockInput').addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
@@ -710,6 +728,8 @@ async function runAnalysis(silent = false) {
     try {
         const beg = document.getElementById('startDate').value.replace(/-/g, '');
         const end = document.getElementById('endDate').value.replace(/-/g, '');
+        document.getElementById('displayStartDate').value = document.getElementById('startDate').value;
+        document.getElementById('displayEndDate').value = document.getElementById('endDate').value;
         Logger.log(`[Main] Request Range: ${beg} to ${end}`);
 
         if (!silent || globalData.length === 0) {
@@ -1863,6 +1883,22 @@ window.setChartRange = function(type, evt) {
     } else if (type === '5y') {
         minDate = new Date(latestDate);
         minDate.setFullYear(minDate.getFullYear() - 5);
+    } else if (type === 'input') {
+        const startDate = document.getElementById('displayStartDate').value;
+        const endDate = document.getElementById('displayEndDate').value;
+        if (!startDate || !endDate) {
+            showToast('请先输入显示开始和结束日期', 'warn');
+            return;
+        }
+        if (startDate > endDate) {
+            showToast('显示开始日期不能晚于结束日期', 'warn');
+            return;
+        }
+        chartInstance.resetZoom();
+        chartInstance.options.scales.x.min = startDate;
+        chartInstance.options.scales.x.max = endDate;
+        chartInstance.update();
+        return;
     } else {
         chartInstance.resetZoom();
         chartInstance.options.scales.x.min = undefined;
