@@ -118,6 +118,22 @@
         #forecastHistoryWrap {
             border-top: 1px solid #f0f0f0;
         }
+        .forecast-history-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px 0;
+        }
+        .forecast-history-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #555;
+        }
+        .forecast-history-switch {
+            display: flex;
+            gap: 8px;
+        }
         .current-stock-banner {
             display: none; margin: 12px 20px 0; padding: 10px 12px;
             background: #f8fbff; border: 1px solid #d6eaf8; border-radius: 6px;
@@ -296,6 +312,13 @@
     </div>
 
     <div class="chart-container" id="forecastHistoryWrap" style="display:none;height:320px;padding-top:0;">
+        <div class="forecast-history-toolbar">
+            <div class="forecast-history-title">历史预期变化</div>
+            <div class="forecast-history-switch">
+                <button class="btn-outline btn-sm active" id="btn-history-rev" onclick="setForecastHistoryMetric('rev', event)">收入</button>
+                <button class="btn-outline btn-sm" id="btn-history-prof" onclick="setForecastHistoryMetric('prof', event)">净利润</button>
+            </div>
+        </div>
         <canvas id="forecastHistoryChart"></canvas>
     </div>
 
@@ -451,6 +474,7 @@ let batchModalResolve = null;
 let forecastModalResolve = null;
 let latestActualYear = new Date().getFullYear();
 let syncTimer      = null;
+let forecastHistoryMetric = 'rev';
 
 const DB_KEY = 'stock_valuation_db_v2';
 
@@ -2247,14 +2271,22 @@ function renderForecastHistoryChart() {
     }
     if (!hasHistory) return;
 
+    const metric = forecastHistoryMetric === 'prof' ? 'prof' : 'rev';
+    const metricLabel = metric === 'rev' ? '收入' : '净利';
+    const metricAxisLabel = metric === 'rev' ? '收入预测(亿)' : '净利预测(亿)';
+    const btnRev = document.getElementById('btn-history-rev');
+    const btnProf = document.getElementById('btn-history-prof');
+    if (btnRev) btnRev.classList.toggle('active', metric === 'rev');
+    if (btnProf) btnProf.classList.toggle('active', metric === 'prof');
+
     const ctx = canvas.getContext('2d');
     forecastHistoryChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
             datasets: [
                 {
-                    label: `FW1净利(${fw1Year})`,
-                    data: fw1History.map(item => ({ x: getHistoryPlotX(item), y: +(item.prof / 1e8).toFixed(2) })),
+                    label: `FW1${metricLabel}(${fw1Year})`,
+                    data: fw1History.map(item => ({ x: getHistoryPlotX(item), y: +(item[metric] / 1e8).toFixed(2) })),
                     borderColor: '#d35400',
                     backgroundColor: 'rgba(211,84,0,0.08)',
                     borderWidth: 1.8,
@@ -2264,8 +2296,8 @@ function renderForecastHistoryChart() {
                     spanGaps: true
                 },
                 {
-                    label: `FW2净利(${fw2Year})`,
-                    data: fw2History.map(item => ({ x: getHistoryPlotX(item), y: +(item.prof / 1e8).toFixed(2) })),
+                    label: `FW2${metricLabel}(${fw2Year})`,
+                    data: fw2History.map(item => ({ x: getHistoryPlotX(item), y: +(item[metric] / 1e8).toFixed(2) })),
                     borderColor: '#16a085',
                     backgroundColor: 'rgba(22,160,133,0.08)',
                     borderWidth: 1.8,
@@ -2284,7 +2316,7 @@ function renderForecastHistoryChart() {
                 legend: { position: 'top', labels: { boxWidth: 12, font: { size: 12 } } },
                 title: {
                     display: true,
-                    text: 'FW1 / FW2 净利预期变化历史（单位：亿元）',
+                    text: `FW1 / FW2 ${metricLabel}预期变化历史（单位：亿元）`,
                     align: 'start',
                     color: '#2c3e50',
                     font: { size: 13, weight: '600' }
@@ -2307,13 +2339,21 @@ function renderForecastHistoryChart() {
                     ticks: { font: { size: 10 }, maxRotation: 0 }
                 },
                 y: {
-                    title: { display: true, text: '净利预测(亿)' },
+                    title: { display: true, text: metricAxisLabel },
                     grace: '10%'
                 }
             }
         }
     });
 }
+
+window.setForecastHistoryMetric = function(metric, evt) {
+    forecastHistoryMetric = metric === 'prof' ? 'prof' : 'rev';
+    document.querySelectorAll('.forecast-history-switch button').forEach(btn => btn.classList.remove('active'));
+    const clickedBtn = evt?.currentTarget || document.getElementById(forecastHistoryMetric === 'rev' ? 'btn-history-rev' : 'btn-history-prof');
+    if (clickedBtn) clickedBtn.classList.add('active');
+    renderForecastHistoryChart();
+};
 
 // ============================================================
 // 数据表格
