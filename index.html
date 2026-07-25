@@ -134,6 +134,17 @@
             display: flex;
             gap: 8px;
         }
+        .forecast-history-controls {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .forecast-history-scale {
+            padding-left: 12px;
+            border-left: 1px solid #e5e7eb;
+        }
         .current-stock-banner {
             display: none; margin: 12px 20px 0; padding: 10px 12px;
             background: #f8fbff; border: 1px solid #d6eaf8; border-radius: 6px;
@@ -311,12 +322,18 @@
         <div class="loading-overlay" id="chartLoading"><div class="spinner"></div></div>
     </div>
 
-    <div class="chart-container" id="forecastHistoryWrap" style="display:none;height:320px;padding-top:0;">
+    <div class="chart-container" id="forecastHistoryWrap" style="display:none;height:380px;padding-top:0;">
         <div class="forecast-history-toolbar">
             <div class="forecast-history-title">FW1 / FW2 财务数据</div>
-            <div class="forecast-history-switch">
-                <button class="btn-outline btn-sm active" id="btn-history-rev" onclick="setForecastHistoryMetric('rev', event)">收入</button>
-                <button class="btn-outline btn-sm" id="btn-history-prof" onclick="setForecastHistoryMetric('prof', event)">净利润</button>
+            <div class="forecast-history-controls">
+                <div class="forecast-history-switch metric-switch">
+                    <button class="btn-outline btn-sm active" id="btn-history-rev" onclick="setForecastHistoryMetric('rev', event)">收入</button>
+                    <button class="btn-outline btn-sm" id="btn-history-prof" onclick="setForecastHistoryMetric('prof', event)">净利润</button>
+                </div>
+                <div class="forecast-history-switch forecast-history-scale">
+                    <button class="btn-outline btn-sm active" id="btn-history-linear" onclick="setForecastHistoryScale('linear', event)">金额</button>
+                    <button class="btn-outline btn-sm" id="btn-history-elastic" onclick="setForecastHistoryScale('elastic', event)">弹性</button>
+                </div>
             </div>
         </div>
         <canvas id="forecastHistoryChart"></canvas>
@@ -475,6 +492,7 @@ let forecastModalResolve = null;
 let latestActualYear = new Date().getFullYear();
 let syncTimer      = null;
 let forecastHistoryMetric = 'rev';
+let forecastHistoryScaleByMetric = { rev: 'linear', prof: 'elastic' };
 
 const DB_KEY = 'stock_valuation_db_v2';
 
@@ -2277,6 +2295,22 @@ function getRecordedFinancialForDate(year, date) {
     return items.filter(item => item.effectiveDay <= date).pop() || items[0];
 }
 
+function toElasticScale(value) {
+    if (value == null) return null;
+    return Math.sign(value) * Math.log10(1 + Math.abs(value));
+}
+
+function fromElasticScale(value) {
+    if (!value) return 0;
+    return Math.sign(value) * (Math.pow(10, Math.abs(value)) - 1);
+}
+
+function formatFinancialAxisValue(value) {
+    const abs = Math.abs(value);
+    const digits = abs >= 100 ? 0 : (abs >= 10 ? 1 : 2);
+    return value.toLocaleString('zh-CN', { maximumFractionDigits: digits });
+}
+
 function renderForecastHistoryChart() {
     const wrap = document.getElementById('forecastHistoryWrap');
     const canvas = document.getElementById('forecastHistoryChart');
@@ -2284,19 +2318,19 @@ function renderForecastHistoryChart() {
 
     const metric = forecastHistoryMetric === 'prof' ? 'prof' : 'rev';
     const fw2Metric = metric === 'rev' ? 'fw2rev' : 'fw2prof';
-    const fw1Data = globalData.map(item => {
+    const fw1RawData = globalData.map(item => {
         const year = item.year || parseInt(item.date.substring(0, 4));
         const recorded = getRecordedFinancialForDate(year, item.date);
         const value = recorded?.[metric] ?? item[metric];
         return value != null ? +(value / 1e8).toFixed(2) : null;
     });
-    const fw2Data = globalData.map(item => {
+    const fw2RawData = globalData.map(item => {
         const year = item.fw2year || (parseInt(item.date.substring(0, 4)) + 1);
         const recorded = getRecordedFinancialForDate(year, item.date);
         const value = recorded?.[metric] ?? item[fw2Metric];
         return value != null ? +(value / 1e8).toFixed(2) : null;
     });
-    const hasData = fw1Data.some(value => value != null) || fw2Data.some(value => value != null);
+    const hasData = fw1RawData.some(value => value != null) || fw2RawData.some(value => value != null);
 
     wrap.style.display = hasData ? 'block' : 'none';
     if (forecastHistoryChartInstance) {
@@ -2306,11 +2340,19 @@ function renderForecastHistoryChart() {
     if (!hasData) return;
 
     const metricLabel = metric === 'rev' ? '收入' : '净利';
-    const metricAxisLabel = metric === 'rev' ? '收入(亿)' : '净利(亿)';
+    const scaleMode = forecastHistoryScaleByMetric[metric] || 'linear';
+    const isElastic = scaleMode === 'elastic';
+    const fw1Data = isElastic ? fw1RawData.map(toElasticScale) : fw1RawData;
+    const fw2Data = isElastic ? fw2RawData.map(toElasticScale) : fw2RawData;
+    const metricAxisLabel = `${metricLabel}(亿${isElastic ? '，弹性刻度' : ''})`;
     const btnRev = document.getElementById('btn-history-rev');
     const btnProf = document.getElementById('btn-history-prof');
+    const btnLinear = document.getElementById('btn-history-linear');
+    const btnElastic = document.getElementById('btn-history-elastic');
     if (btnRev) btnRev.classList.toggle('active', metric === 'rev');
     if (btnProf) btnProf.classList.toggle('active', metric === 'prof');
+    if (btnLinear) btnLinear.classList.toggle('active', !isElastic);
+    if (btnElastic) btnElastic.classList.toggle('active', isElastic);
 
     const ctx = canvas.getContext('2d');
     forecastHistoryChartInstance = new Chart(ctx, {
@@ -2351,7 +2393,7 @@ function renderForecastHistoryChart() {
                 legend: { position: 'top', labels: { boxWidth: 12, font: { size: 12 } } },
                 title: {
                     display: true,
-                    text: `FW1 当年 / FW2 下一年 ${metricLabel}（单位：亿元）`,
+                    text: `FW1 当年 / FW2 下一年 ${metricLabel}（单位：亿元${isElastic ? ' · 弹性视图' : ''}）`,
                     align: 'start',
                     color: '#2c3e50',
                     font: { size: 13, weight: '600' }
@@ -2362,7 +2404,19 @@ function renderForecastHistoryChart() {
                         label: item => {
                             const row = globalData[item.dataIndex];
                             const year = item.datasetIndex === 0 ? row?.year : row?.fw2year;
-                            return `${item.dataset.label}: ${item.formattedValue} 亿（${year || '-'}年）`;
+                            const rawValue = item.datasetIndex === 0
+                                ? fw1RawData[item.dataIndex]
+                                : fw2RawData[item.dataIndex];
+                            return `${item.dataset.label}: ${rawValue?.toLocaleString('zh-CN') ?? '-'} 亿（${year || '-'}年）`;
+                        },
+                        afterBody: items => {
+                            const index = items[0]?.dataIndex;
+                            const fw1 = fw1RawData[index];
+                            const fw2 = fw2RawData[index];
+                            if (!(fw1 > 0) || !(fw2 > 0)) return '';
+                            const multiple = fw2 / fw1;
+                            const growth = (multiple - 1) * 100;
+                            return `下一年 / 当年：${multiple.toFixed(2)} 倍（${growth >= 0 ? '+' : ''}${growth.toFixed(0)}%）`;
                         }
                     }
                 }
@@ -2376,6 +2430,9 @@ function renderForecastHistoryChart() {
                 },
                 y: {
                     title: { display: true, text: metricAxisLabel },
+                    ticks: {
+                        callback: value => formatFinancialAxisValue(isElastic ? fromElasticScale(value) : value)
+                    },
                     grace: '10%'
                 }
             }
@@ -2385,8 +2442,17 @@ function renderForecastHistoryChart() {
 
 window.setForecastHistoryMetric = function(metric, evt) {
     forecastHistoryMetric = metric === 'prof' ? 'prof' : 'rev';
-    document.querySelectorAll('.forecast-history-switch button').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.metric-switch button').forEach(btn => btn.classList.remove('active'));
     const clickedBtn = evt?.currentTarget || document.getElementById(forecastHistoryMetric === 'rev' ? 'btn-history-rev' : 'btn-history-prof');
+    if (clickedBtn) clickedBtn.classList.add('active');
+    renderForecastHistoryChart();
+};
+
+window.setForecastHistoryScale = function(scale, evt) {
+    const mode = scale === 'elastic' ? 'elastic' : 'linear';
+    forecastHistoryScaleByMetric[forecastHistoryMetric] = mode;
+    document.querySelectorAll('.forecast-history-scale button').forEach(btn => btn.classList.remove('active'));
+    const clickedBtn = evt?.currentTarget || document.getElementById(mode === 'elastic' ? 'btn-history-elastic' : 'btn-history-linear');
     if (clickedBtn) clickedBtn.classList.add('active');
     renderForecastHistoryChart();
 };
