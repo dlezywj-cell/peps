@@ -1060,14 +1060,32 @@ function upsertHistoryEntry(list, entry) {
     return items.sort((a, b) => (a.ts || 0) - (b.ts || 0));
 }
 
+function seedPreviousFinancialValue(history, previous, nextRev, nextProf, baselineDay) {
+    const items = Array.isArray(history) ? history : [];
+    const hasChanged = previous && (previous.rev !== nextRev || previous.prof !== nextProf);
+    if (items.length > 0 || !hasChanged) return items;
+
+    return upsertHistoryEntry(items, {
+        rev: previous.rev,
+        prof: previous.prof,
+        day: baselineDay,
+        ts: new Date(`${baselineDay}T00:00:00`).getTime()
+    });
+}
+
 async function saveForecastToDB(code, year, rev, prof, immediateSync = true) {
     const db = getLocalDB();
     if (!db[code]) db[code] = {};
     if (!db[code].__forecast) db[code].__forecast = {};
     if (!db[code].__forecastHistory) db[code].__forecastHistory = {};
     const ts = Date.now();
+    const previous = db[code].__forecast[year];
+    const baselineDay = `${year - 1}-01-01`;
+    const seededHistory = seedPreviousFinancialValue(
+        db[code].__forecastHistory[year], previous, rev, prof, baselineDay
+    );
     db[code].__forecast[year] = { rev, prof, ts };
-    db[code].__forecastHistory[year] = upsertHistoryEntry(db[code].__forecastHistory[year], { rev, prof, ts });
+    db[code].__forecastHistory[year] = upsertHistoryEntry(seededHistory, { rev, prof, ts });
     localStorage.setItem(DB_KEY, JSON.stringify(db));
     if (immediateSync) triggerSync();
 }
@@ -1896,8 +1914,13 @@ async function saveToDB(code, year, rev, prof, immediateSync = true) {
     if (!db[code]) db[code] = {};
     if (!db[code].__manualHistory) db[code].__manualHistory = {};
     const ts = Date.now();
+    const previous = db[code][year];
+    const baselineDay = `${year}-01-01`;
+    const seededHistory = seedPreviousFinancialValue(
+        db[code].__manualHistory[year], previous, rev, prof, baselineDay
+    );
     db[code][year] = { rev, prof, ts };
-    db[code].__manualHistory[year] = upsertHistoryEntry(db[code].__manualHistory[year], { rev, prof, ts });
+    db[code].__manualHistory[year] = upsertHistoryEntry(seededHistory, { rev, prof, ts });
     localStorage.setItem(DB_KEY, JSON.stringify(db));
     if (immediateSync) triggerSync();
 }
