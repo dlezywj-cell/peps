@@ -328,14 +328,14 @@
             <i class="fas fa-calendar-alt"></i> 显示区间:
         </span>
         <button class="btn-outline btn-sm active" id="btn-range-all" onclick="setChartRange('all', event)">全部</button>
-        <button class="btn-outline btn-sm" onclick="setChartRange('1y', event)">近1年</button>
-        <button class="btn-outline btn-sm" onclick="setChartRange('3y', event)">近3年</button>
-        <button class="btn-outline btn-sm" onclick="setChartRange('5y', event)">近5年</button>
+        <button class="btn-outline btn-sm" id="btn-range-1y" onclick="setChartRange('1y', event)">近1年</button>
+        <button class="btn-outline btn-sm" id="btn-range-3y" onclick="setChartRange('3y', event)">近3年</button>
+        <button class="btn-outline btn-sm" id="btn-range-5y" onclick="setChartRange('5y', event)">近5年</button>
         <div class="display-range-inputs">
             <div class="input-group"><input type="date" id="displayStartDate"></div>
             <div class="input-group"><input type="date" id="displayEndDate"></div>
         </div>
-        <button class="btn-outline btn-sm" onclick="setChartRange('input', event)">按输入区间</button>
+        <button class="btn-outline btn-sm" id="btn-range-input" onclick="setChartRange('input', event)">按输入区间</button>
     </div>
 
     <div class="current-stock-banner" id="currentStockBanner"></div>
@@ -537,6 +537,7 @@ let latestActualYear = new Date().getFullYear();
 let syncTimer      = null;
 let forecastHistoryMetric = 'rev';
 let forecastHistoryScaleByMetric = { rev: 'linear', prof: 'elastic' };
+let chartRangeState = { type: 'all', min: null, max: null };
 
 const DB_KEY = 'stock_valuation_db_v2';
 
@@ -799,6 +800,9 @@ async function runSearch() {
                 else if (m === '31' || m === '5')     secId = `116.${item.Code}`;
                 else if (item.Code.startsWith('6'))   secId = `1.${item.Code}`;
                 else                                   secId = `0.${item.Code}`;
+            }
+            if (currentStock.code && currentStock.code !== item.Code) {
+                chartRangeState = { type: 'all', min: null, max: null };
             }
             currentStock = { code: item.Code, name: item.Name, secId };
             Logger.log(`[Search] Found: ${currentStock.name} (SecID: ${currentStock.secId})`);
@@ -2403,24 +2407,120 @@ function scheduleSharedXAxisLayout() {
     });
 }
 
-function syncSharedChartRangeFrom(sourceChart) {
-    const targetChart = sourceChart === chartInstance
-        ? forecastHistoryChartInstance
-        : chartInstance;
-    if (!sourceChart?.scales?.x || !targetChart) return;
+function toDateInputValue(value) {
+    if (value == null || value === '') return '';
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString().split('T')[0];
+}
 
-    targetChart.options.scales.x.min = sourceChart.scales.x.min;
-    targetChart.options.scales.x.max = sourceChart.scales.x.max;
-    targetChart.update('none');
+function getFullDataRange() {
+    if (!globalData.length) return { min: '', max: '' };
+    return {
+        min: globalData[0].date,
+        max: globalData[globalData.length - 1].date
+    };
+}
+
+function updateRangeSelector(type, min, max) {
+    const buttonIds = {
+        all: 'btn-range-all',
+        '1y': 'btn-range-1y',
+        '3y': 'btn-range-3y',
+        '5y': 'btn-range-5y',
+        input: 'btn-range-input'
+    };
+    document.querySelectorAll('.range-selector button').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(buttonIds[type] || buttonIds.input)?.classList.add('active');
+
+    const fullRange = getFullDataRange();
+    const startValue = toDateInputValue(min) || fullRange.min;
+    const endValue = toDateInputValue(max) || fullRange.max;
+    if (startValue) document.getElementById('displayStartDate').value = startValue;
+    if (endValue) document.getElementById('displayEndDate').value = endValue;
+}
+
+function setChartRangeState(type, min, max) {
+    chartRangeState = {
+        type: ['all', '1y', '3y', '5y', 'input'].includes(type) ? type : 'input',
+        min: min ?? null,
+        max: max ?? null
+    };
+    updateRangeSelector(chartRangeState.type, chartRangeState.min, chartRangeState.max);
+}
+
+function getRangeTimestamp(value, fallback) {
+    if (value == null || value === '') return fallback;
+    if (typeof value === 'number') return value;
+    const time = new Date(value).getTime();
+    return Number.isNaN(time) ? fallback : time;
+}
+
+function getVisibleAxisBounds(chart, axisId, min, max) {
+    const minTime = getRangeTimestamp(min, -Infinity);
+    const maxTime = getRangeTimestamp(max, Infinity);
+    const values = [];
+
+    chart.data.datasets.forEach((dataset, datasetIndex) => {
+        if (dataset.yAxisID !== axisId || !chart.isDatasetVisible(datasetIndex)) return;
+        dataset.data.forEach((value, dataIndex) => {
+            if (!Number.isFinite(value)) return;
+            const time = getRangeTimestamp(chart.data.labels[dataIndex], NaN);
+            if (Number.isFinite(time) && time >= minTime && time <= maxTime) values.push(value);
+        });
+    });
+
+    if (!values.length) return null;
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const span = maxValue - minValue;
+    const padding = span > 0 ? span * 0.08 : Math.max(Math.abs(maxValue) * 0.05, 0.5);
+    return {
+        min: Math.max(0, minValue - padding),
+        max: maxValue + padding
+    };
+}
+
+function refreshValuationAxes(chart, min, max) {
+    if (!chart || chart !== chartInstance) return;
+    ['y_ps', 'y_pe', 'y_price'].forEach(axisId => {
+        const scaleOptions = chart.options.scales[axisId];
+        const hasVisibleDataset = chart.data.datasets.some((dataset, index) =>
+            dataset.yAxisID === axisId && chart.isDatasetVisible(index)
+        );
+        const bounds = hasVisibleDataset ? getVisibleAxisBounds(chart, axisId, min, max) : null;
+        scaleOptions.display = Boolean(bounds);
+        if (bounds) {
+            scaleOptions.min = bounds.min;
+            scaleOptions.max = bounds.max;
+        } else {
+            delete scaleOptions.min;
+            delete scaleOptions.max;
+        }
+    });
+}
+
+function syncSharedChartRangeFrom(sourceChart) {
+    if (!sourceChart?.scales?.x) return;
+    const min = sourceChart.scales.x.min;
+    const max = sourceChart.scales.x.max;
+    setChartRangeState('input', min, max);
+
+    [chartInstance, forecastHistoryChartInstance].filter(Boolean).forEach(chart => {
+        chart.options.scales.x.min = min;
+        chart.options.scales.x.max = max;
+        refreshValuationAxes(chart, min, max);
+        chart.update('none');
+    });
     scheduleSharedXAxisLayout();
 }
 
 function applySharedChartRange(min, max) {
     [chartInstance, forecastHistoryChartInstance].filter(Boolean).forEach(chart => {
-        if (typeof chart.resetZoom === 'function') chart.resetZoom();
         chart.options.scales.x.min = min;
         chart.options.scales.x.max = max;
-        chart.update();
+        refreshValuationAxes(chart, min, max);
+        chart.update('none');
     });
     scheduleSharedXAxisLayout();
 }
@@ -2429,10 +2529,6 @@ window.addEventListener('resize', scheduleSharedXAxisLayout);
 
 window.setChartRange = function(type, evt) {
     if (!chartInstance || !globalData.length) return;
-
-    document.querySelectorAll('.range-selector button').forEach(btn => btn.classList.remove('active'));
-    const clickedBtn = evt?.currentTarget || document.getElementById('btn-range-all');
-    if (clickedBtn) clickedBtn.classList.add('active');
 
     const latestDateStr = globalData[globalData.length - 1].date;
     const latestDate = new Date(latestDateStr);
@@ -2458,34 +2554,24 @@ window.setChartRange = function(type, evt) {
             showToast('显示开始日期不能晚于结束日期', 'warn');
             return;
         }
+        setChartRangeState('input', startDate, endDate);
         applySharedChartRange(startDate, endDate);
         return;
     } else {
+        setChartRangeState('all', null, null);
         applySharedChartRange(undefined, undefined);
         return;
     }
 
     const minDateStr = minDate.toISOString().split('T')[0];
+    setChartRangeState(type, minDateStr, latestDateStr);
     applySharedChartRange(minDateStr, latestDateStr);
 };
 
 // ============================================================
 // 图表
 // ============================================================
-function resetZoom() { applySharedChartRange(undefined, undefined); }
-
-function getFixedValuationAxisBounds(series) {
-    const values = series.flat().filter(value => Number.isFinite(value));
-    if (!values.length) return {};
-    const minValue = Math.min(...values);
-    const maxValue = Math.max(...values);
-    const span = maxValue - minValue;
-    const padding = span > 0 ? span * 0.05 : Math.max(Math.abs(maxValue) * 0.05, 1);
-    return {
-        min: Math.max(0, minValue - padding),
-        max: maxValue + padding
-    };
-}
+function resetZoom() { window.setChartRange('all'); }
 
 function handleValuationLegendClick(event, legendItem, legend) {
     const chart = legend.chart;
@@ -2493,19 +2579,25 @@ function handleValuationLegendClick(event, legendItem, legend) {
     const clickedDataset = chart.data.datasets[clickedIndex];
     const axisId = clickedDataset?.yAxisID;
 
-    if (axisId !== 'y_pe' && axisId !== 'y_ps') {
-        Chart.defaults.plugins.legend.onClick(event, legendItem, legend);
-        scheduleSharedXAxisLayout();
-        return;
-    }
+    if (!['y_pe', 'y_ps', 'y_price'].includes(axisId)) return;
 
-    // PE 与 FW2 PE、PS 与 FW2 PS 各自作为一组，避免只剩坐标轴或预测线。
+    // 同一估值指标的 FW1/FW2 共用一根独立轴，也作为一组显示或隐藏。
+    const xMin = chartRangeState.type === 'all'
+        ? undefined
+        : (chart.options.scales.x.min ?? chartRangeState.min);
+    const xMax = chartRangeState.type === 'all'
+        ? undefined
+        : (chart.options.scales.x.max ?? chartRangeState.max);
     const shouldShow = !chart.isDatasetVisible(clickedIndex);
     chart.data.datasets.forEach((dataset, index) => {
         if (dataset.yAxisID === axisId) chart.setDatasetVisibility(index, shouldShow);
     });
     chart.options.scales[axisId].display = shouldShow;
-    chart.update();
+    chart.options.scales.x.min = xMin;
+    chart.options.scales.x.max = xMax;
+    refreshValuationAxes(chart, xMin, xMax);
+    chart.update('none');
+    updateRangeSelector(chartRangeState.type, chartRangeState.min, chartRangeState.max);
     scheduleSharedXAxisLayout();
 }
 
@@ -2595,7 +2687,7 @@ const crosshairPlugin = {
         const isPeVisible = peDatasetIndex >= 0 && chart.isDatasetVisible(peDatasetIndex);
         const isPsVisible = psDatasetIndex >= 0 && chart.isDatasetVisible(psDatasetIndex);
 
-        if (psScale && isPsVisible) {
+        if (psScale?.options?.display !== false && isPsVisible) {
             drawAxisTag({
                 text: `PS ${psScale.getValueForPixel(y).toFixed(2)}`,
                 centerX: left - 3,
@@ -2604,7 +2696,7 @@ const crosshairPlugin = {
                 align: 'right'
             });
         }
-        if (peScale && isPeVisible) {
+        if (peScale?.options?.display !== false && isPeVisible) {
             drawAxisTag({
                 text: `PE ${peScale.getValueForPixel(y).toFixed(2)}`,
                 centerX: right + 3,
@@ -2620,19 +2712,13 @@ function drawChart() {
     if (!globalData.length) return;
     const ctx = document.getElementById('valuationChart').getContext('2d');
     if (chartInstance) chartInstance.destroy();
-
-    document.querySelectorAll('.range-selector button').forEach(btn => btn.classList.remove('active'));
-    const btnAll = document.getElementById('btn-range-all');
-    if (btnAll) btnAll.classList.add('active');
+    updateRangeSelector(chartRangeState.type, chartRangeState.min, chartRangeState.max);
 
     const peData = globalData.map(d => (d.pe && d.pe > 0) ? +d.pe.toFixed(2) : null);
     const psData = globalData.map(d => (d.ps != null && d.ps > 0) ? +d.ps.toFixed(2) : null);
     const priceData = globalData.map(d => (d.price != null && d.price > 0) ? +d.price.toFixed(2) : null);
     const forecastPeData = globalData.map(d => (d.fw2pe != null && d.fw2pe > 0) ? +d.fw2pe.toFixed(2) : null);
     const forecastPsData = globalData.map(d => (d.fw2ps != null && d.fw2ps > 0) ? +d.fw2ps.toFixed(2) : null);
-    // 纵轴按全量数据固定，切换近1年/自定义区间时只裁剪横轴，不改变估值尺度。
-    const peAxisBounds = getFixedValuationAxisBounds([peData, forecastPeData]);
-    const psAxisBounds = getFixedValuationAxisBounds([psData, forecastPsData]);
     const hasForecastLine = forecastPeData.some(v => v != null) || forecastPsData.some(v => v != null);
     const forecastDatasets = hasForecastLine ? [
         {
@@ -2710,7 +2796,7 @@ function drawChart() {
             plugins: {
                 legend: {
                     position: 'top',
-                    labels: { boxWidth: 12, font: { size: 12 } },
+                    labels: { boxWidth: 11, padding: 16, font: { size: 12 } },
                     onClick: handleValuationLegendClick
                 },
                 tooltip: {
@@ -2758,6 +2844,8 @@ function drawChart() {
                 x: {
                     type: 'time',
                     display: false,
+                    min: chartRangeState.min || undefined,
+                    max: chartRangeState.max || undefined,
                     time: { unit: 'month', tooltipFormat: 'yyyy-MM-dd' },
                     grid: { display: false },
                     ticks: { font: { size: 10 }, maxRotation: 0 }
@@ -2765,27 +2853,37 @@ function drawChart() {
                 y_pe: {
                     type    : 'linear',
                     position: 'right',
-                    ...peAxisBounds,
-                    title   : { display: true, text: 'PE 倍数', color: '#c0392b', font: { size: 10 } },
+                    weight  : 10,
+                    title   : { display: true, text: 'PE 倍数', color: '#c0392b', font: { size: 11, weight: '600' } },
+                    ticks   : { color: '#a93226', maxTicksLimit: 7, callback: formatFinancialAxisValue },
+                    border  : { color: 'rgba(192,57,43,0.45)' },
                     grid    : { drawOnChartArea: false }
                 },
                 y_ps: {
                     type    : 'linear',
                     position: 'left',
-                    ...psAxisBounds,
-                    title   : { display: true, text: 'PS 倍数', color: '#2980b9', font: { size: 10 } },
+                    weight  : 10,
+                    title   : { display: true, text: 'PS 倍数', color: '#2980b9', font: { size: 11, weight: '600' } },
+                    ticks   : { color: '#2471a3', maxTicksLimit: 7, callback: formatFinancialAxisValue },
+                    border  : { color: 'rgba(41,128,185,0.45)' },
+                    grid    : { color: 'rgba(52,73,94,0.08)' }
                 },
                 y_price: {
                     type    : 'linear',
                     position: 'right',
                     offset  : true,
-                    title   : { display: true, text: '股价', color: '#111111', font: { size: 10 } },
+                    weight  : 20,
+                    title   : { display: true, text: '股价', color: '#111111', font: { size: 11, weight: '600' } },
+                    ticks   : { color: '#333', maxTicksLimit: 7, callback: formatFinancialAxisValue },
+                    border  : { color: 'rgba(17,17,17,0.45)' },
                     grid    : { drawOnChartArea: false }
                 }
             }
         },
         plugins: [crosshairPlugin]
     });
+    refreshValuationAxes(chartInstance, chartRangeState.min, chartRangeState.max);
+    chartInstance.update('none');
     scheduleSharedXAxisLayout();
 }
 
@@ -2928,6 +3026,8 @@ function renderForecastHistoryChart() {
             scales: {
                 x: {
                     type: 'time',
+                    min: chartRangeState.min || undefined,
+                    max: chartRangeState.max || undefined,
                     time: { unit: 'month', tooltipFormat: 'yyyy-MM-dd' },
                     grid: { display: false },
                     ticks: { font: { size: 10 }, maxRotation: 0 }
