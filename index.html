@@ -2474,6 +2474,41 @@ window.setChartRange = function(type, evt) {
 // ============================================================
 function resetZoom() { applySharedChartRange(undefined, undefined); }
 
+function getFixedValuationAxisBounds(series) {
+    const values = series.flat().filter(value => Number.isFinite(value));
+    if (!values.length) return {};
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const span = maxValue - minValue;
+    const padding = span > 0 ? span * 0.05 : Math.max(Math.abs(maxValue) * 0.05, 1);
+    return {
+        min: Math.max(0, minValue - padding),
+        max: maxValue + padding
+    };
+}
+
+function handleValuationLegendClick(event, legendItem, legend) {
+    const chart = legend.chart;
+    const clickedIndex = legendItem.datasetIndex;
+    const clickedDataset = chart.data.datasets[clickedIndex];
+    const axisId = clickedDataset?.yAxisID;
+
+    if (axisId !== 'y_pe' && axisId !== 'y_ps') {
+        Chart.defaults.plugins.legend.onClick(event, legendItem, legend);
+        scheduleSharedXAxisLayout();
+        return;
+    }
+
+    // PE 与 FW2 PE、PS 与 FW2 PS 各自作为一组，避免只剩坐标轴或预测线。
+    const shouldShow = !chart.isDatasetVisible(clickedIndex);
+    chart.data.datasets.forEach((dataset, index) => {
+        if (dataset.yAxisID === axisId) chart.setDatasetVisibility(index, shouldShow);
+    });
+    chart.options.scales[axisId].display = shouldShow;
+    chart.update();
+    scheduleSharedXAxisLayout();
+}
+
 const crosshairPlugin = {
     id: 'crosshair',
     afterEvent(chart, args) {
@@ -2595,6 +2630,9 @@ function drawChart() {
     const priceData = globalData.map(d => (d.price != null && d.price > 0) ? +d.price.toFixed(2) : null);
     const forecastPeData = globalData.map(d => (d.fw2pe != null && d.fw2pe > 0) ? +d.fw2pe.toFixed(2) : null);
     const forecastPsData = globalData.map(d => (d.fw2ps != null && d.fw2ps > 0) ? +d.fw2ps.toFixed(2) : null);
+    // 纵轴按全量数据固定，切换近1年/自定义区间时只裁剪横轴，不改变估值尺度。
+    const peAxisBounds = getFixedValuationAxisBounds([peData, forecastPeData]);
+    const psAxisBounds = getFixedValuationAxisBounds([psData, forecastPsData]);
     const hasForecastLine = forecastPeData.some(v => v != null) || forecastPsData.some(v => v != null);
     const forecastDatasets = hasForecastLine ? [
         {
@@ -2670,7 +2708,11 @@ function drawChart() {
             maintainAspectRatio: false,
             interaction      : { mode: 'index', intersect: false },
             plugins: {
-                legend: { position: 'top', labels: { boxWidth: 12, font: { size: 12 } } },
+                legend: {
+                    position: 'top',
+                    labels: { boxWidth: 12, font: { size: 12 } },
+                    onClick: handleValuationLegendClick
+                },
                 tooltip: {
                     backgroundColor: 'rgba(255,255,255,0.96)',
                     titleColor: '#333', bodyColor: '#333',
@@ -2723,15 +2765,15 @@ function drawChart() {
                 y_pe: {
                     type    : 'linear',
                     position: 'right',
+                    ...peAxisBounds,
                     title   : { display: true, text: 'PE 倍数', color: '#c0392b', font: { size: 10 } },
-                    grace   : '5%',
                     grid    : { drawOnChartArea: false }
                 },
                 y_ps: {
                     type    : 'linear',
                     position: 'left',
+                    ...psAxisBounds,
                     title   : { display: true, text: 'PS 倍数', color: '#2980b9', font: { size: 10 } },
-                    grace   : '5%'
                 },
                 y_price: {
                     type    : 'linear',
