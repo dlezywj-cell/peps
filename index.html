@@ -2483,7 +2483,7 @@ function getVisibleAxisBounds(chart, axisId, min, max) {
 
 function refreshValuationAxes(chart, min, max) {
     if (!chart || chart !== chartInstance) return;
-    ['y_ps', 'y_pe', 'y_price'].forEach(axisId => {
+    ['y_ps', 'y_pe'].forEach(axisId => {
         const scaleOptions = chart.options.scales[axisId];
         const hasVisibleDataset = chart.data.datasets.some((dataset, index) =>
             dataset.yAxisID === axisId && chart.isDatasetVisible(index)
@@ -2498,6 +2498,8 @@ function refreshValuationAxes(chart, min, max) {
             delete scaleOptions.max;
         }
     });
+    // 股价仅用于观察走势，不显示其纵坐标，避免和估值轴争夺视觉空间。
+    chart.options.scales.y_price.display = false;
 }
 
 function syncSharedChartRangeFrom(sourceChart) {
@@ -2596,6 +2598,7 @@ function handleValuationLegendClick(event, legendItem, legend) {
     chart.options.scales.x.min = xMin;
     chart.options.scales.x.max = xMax;
     refreshValuationAxes(chart, xMin, xMax);
+    chart.options.scales.y_price.display = false;
     chart.update('none');
     updateRangeSelector(chartRangeState.type, chartRangeState.min, chartRangeState.max);
     scheduleSharedXAxisLayout();
@@ -2871,6 +2874,7 @@ function drawChart() {
                 y_price: {
                     type    : 'linear',
                     position: 'right',
+                    display : false,
                     offset  : true,
                     weight  : 20,
                     title   : { display: true, text: '股价', color: '#111111', font: { size: 11, weight: '600' } },
