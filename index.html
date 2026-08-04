@@ -920,11 +920,22 @@ async function runAnalysis(silent = false) {
 function calculate(finMap) {
     if (Object.keys(finMap).length === 0) return;
     latestActualYear = getLatestActualYear(finMap);
+    const financialHistoryTimelines = buildFinancialHistoryTimelines(currentStock.code);
 
     globalData = globalData.map(item => {
         const y   = parseInt(item.date.substring(0, 4));
-        const fin = finMap[y];
-        const forwardFin = getForwardFinancialEntry(finMap, y + 1);
+        const fin = resolveFinancialForDate(
+            financialHistoryTimelines,
+            y,
+            item.date,
+            finMap[y] || null
+        );
+        const forwardFin = resolveFinancialForDate(
+            financialHistoryTimelines,
+            y + 1,
+            item.date,
+            getForwardFinancialEntry(finMap, y + 1)
+        );
         const mktCap = item.price * currentTotalShares;
         const base = {
             ...item,
@@ -1028,6 +1039,60 @@ function getForecastHistoryLocal(code) {
 function getManualHistoryLocal(code) {
     const db = getLocalDB();
     return (db[code] && db[code].__manualHistory) || {};
+}
+
+function buildFinancialHistoryTimelines(code) {
+    if (!code) return {};
+
+    const manualByYear = getManualHistoryLocal(code);
+    const forecastByYear = getForecastHistoryLocal(code);
+    const years = new Set([...Object.keys(forecastByYear), ...Object.keys(manualByYear)]);
+    const timelines = {};
+
+    years.forEach(year => {
+        const forecastItems = Array.isArray(forecastByYear[year]) ? forecastByYear[year] : [];
+        const manualItems = Array.isArray(manualByYear[year]) ? manualByYear[year] : [];
+        const items = [
+            ...forecastItems.map(item => ({ ...item, historySource: 'forecast', sourcePriority: 0 })),
+            ...manualItems.map(item => ({ ...item, historySource: 'manual', sourcePriority: 1 }))
+        ]
+            .filter(Boolean)
+            .map(item => ({ ...item, effectiveDay: item.day || getHistoryDayKey(item.ts) }))
+            .sort((a, b) =>
+                a.effectiveDay.localeCompare(b.effectiveDay) ||
+                a.sourcePriority - b.sourcePriority ||
+                (a.ts || 0) - (b.ts || 0)
+            );
+
+        if (items.length) timelines[year] = items;
+    });
+
+    return timelines;
+}
+
+function findFinancialRecordForDate(timeline, date) {
+    if (!Array.isArray(timeline) || !timeline.length || !date) return null;
+    // T 日录入的数据从 T 日起生效；T 日以前只使用当时已经存在的最近记录。
+    return timeline.filter(item => item.effectiveDay <= date).pop() || null;
+}
+
+function resolveFinancialForDate(timelines, year, date, fallback = null) {
+    const timeline = timelines?.[year] || [];
+    const recorded = findFinancialRecordForDate(timeline, date);
+    if (recorded) {
+        const isManual = recorded.historySource === 'manual';
+        return {
+            year,
+            rev: recorded.rev,
+            prof: recorded.prof,
+            source: isManual ? 'manual' : 'forecast',
+            name: isManual
+                ? `★${year}（${recorded.effectiveDay}录入）`
+                : `FW2(${year}，${recorded.effectiveDay}录入）`
+        };
+    }
+    // 已有历史但查询日尚无生效记录时保持为空，避免最新预期倒灌到过去。
+    return timeline.length ? null : fallback;
 }
 
 function pad2(n) {
@@ -2360,26 +2425,10 @@ function drawChart() {
     });
 }
 
-function getRecordedFinancialForDate(year, date) {
+function getRecordedFinancialForDate(year, date, timelines = null) {
     if (!currentStock.code || !year) return null;
-
-    const manualItems = getManualHistoryLocal(currentStock.code)[year];
-    const forecastItems = getForecastHistoryLocal(currentStock.code)[year];
-    // 同一年若存在常规手工录入，以常规录入为准；否则使用 FW2 预测录入。
-    const sourceItems = Array.isArray(manualItems) && manualItems.length
-        ? manualItems
-        : (Array.isArray(forecastItems) ? forecastItems : []);
-    if (!sourceItems.length) return null;
-
-    const items = sourceItems
-        .filter(Boolean)
-        .map(item => ({ ...item, effectiveDay: item.day || getHistoryDayKey(item.ts) }))
-        .sort((a, b) => a.effectiveDay.localeCompare(b.effectiveDay));
-    if (!items.length) return null;
-
-    // 取该交易日之前最近一次录入；若全部录入都晚于该日期，则使用最早一次录入。
-    // 这样录入过的年份始终优先，同时可在录入日期处展示预期变化。
-    return items.filter(item => item.effectiveDay <= date).pop() || items[0];
+    const historyTimelines = timelines || buildFinancialHistoryTimelines(currentStock.code);
+    return findFinancialRecordForDate(historyTimelines[year], date);
 }
 
 function toElasticScale(value) {
@@ -2405,16 +2454,19 @@ function renderForecastHistoryChart() {
 
     const metric = forecastHistoryMetric === 'prof' ? 'prof' : 'rev';
     const fw2Metric = metric === 'rev' ? 'fw2rev' : 'fw2prof';
+    const financialHistoryTimelines = buildFinancialHistoryTimelines(currentStock.code);
     const fw1RawData = globalData.map(item => {
         const year = item.year || parseInt(item.date.substring(0, 4));
-        const recorded = getRecordedFinancialForDate(year, item.date);
-        const value = recorded?.[metric] ?? item[metric];
+        const timeline = financialHistoryTimelines[year] || [];
+        const recorded = getRecordedFinancialForDate(year, item.date, financialHistoryTimelines);
+        const value = recorded ? recorded[metric] : (timeline.length ? null : item[metric]);
         return value != null ? +(value / 1e8).toFixed(2) : null;
     });
     const fw2RawData = globalData.map(item => {
         const year = item.fw2year || (parseInt(item.date.substring(0, 4)) + 1);
-        const recorded = getRecordedFinancialForDate(year, item.date);
-        const value = recorded?.[metric] ?? item[fw2Metric];
+        const timeline = financialHistoryTimelines[year] || [];
+        const recorded = getRecordedFinancialForDate(year, item.date, financialHistoryTimelines);
+        const value = recorded ? recorded[metric] : (timeline.length ? null : item[fw2Metric]);
         return value != null ? +(value / 1e8).toFixed(2) : null;
     });
     const hasData = fw1RawData.some(value => value != null) || fw2RawData.some(value => value != null);
