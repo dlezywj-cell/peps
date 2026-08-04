@@ -863,7 +863,10 @@ async function runAnalysis(silent = false) {
 
         for (const year of sortedYears) {
             const saved = getFromDB(currentStock.code, year);
-            if (saved) {
+            // 已披露真实财务数据优先；只有接口没有真实数据时才使用手工录入。
+            if (finMap[year]?.source === 'real') {
+                continue;
+            } else if (saved) {
                 finMap[year] = { year, rev: saved.rev, prof: saved.prof, source: 'manual', name: `★${year}` };
             } else if (!finMap[year]) {
                 missingYears.push(year);
@@ -929,13 +932,15 @@ function calculate(finMap) {
             financialHistoryTimelines,
             y,
             item.date,
-            finMap[y] || null
+            finMap[y] || null,
+            `${y}-01-01`
         );
         const forwardFin = resolveFinancialForDate(
             financialHistoryTimelines,
             y + 1,
             item.date,
-            getForwardFinancialEntry(finMap, y + 1)
+            getForwardFinancialEntry(finMap, y + 1),
+            `${y}-01-01`
         );
         const mktCap = item.price * currentTotalShares;
         const base = {
@@ -1068,31 +1073,32 @@ function buildFinancialHistoryTimelines(code) {
                 (a.ts || 0) - (b.ts || 0)
             );
 
-        // 如果这一年此前完全没有预期记录，首笔录入从录入年份的 1 月 1 日起回填。
-        // 若首日同时存在 FW2 与手工录入，两者一起回填，并仍由手工录入优先。
-        const firstRecordedDay = items[0]?.recordedDay;
-        if (firstRecordedDay) {
-            const backfillDay = `${firstRecordedDay.substring(0, 4)}-01-01`;
-            items.forEach(item => {
-                if (item.recordedDay === firstRecordedDay) item.effectiveDay = backfillDay;
-            });
-        }
-
         if (items.length) timelines[year] = items;
     });
 
     return timelines;
 }
 
-function findFinancialRecordForDate(timeline, date) {
+function findFinancialRecordForDate(timeline, date, backfillStartDate = null) {
     if (!Array.isArray(timeline) || !timeline.length || !date) return null;
-    // T 日录入的数据从 T 日起生效；T 日以前只使用当时已经存在的最近记录。
-    return timeline.filter(item => item.effectiveDay <= date).pop() || null;
+    // 正常情况下取查询日以前最近一次录入，后续修订不会覆盖之前的记录。
+    const recorded = timeline.filter(item => item.recordedDay <= date).pop();
+    if (recorded) return recorded;
+
+    // 此前没有任何数据时，首笔记录回填到该序列所属年份的 1 月 1 日。
+    if (backfillStartDate && date >= backfillStartDate) {
+        const firstRecordedDay = timeline[0].recordedDay;
+        return timeline.filter(item => item.recordedDay === firstRecordedDay).pop() || null;
+    }
+    return null;
 }
 
-function resolveFinancialForDate(timelines, year, date, fallback = null) {
+function resolveFinancialForDate(timelines, year, date, fallback = null, backfillStartDate = null) {
+    // 同一目标年份一旦存在真实披露数据，就不再使用手工或预测数据覆盖。
+    if (fallback?.source === 'real') return fallback;
+
     const timeline = timelines?.[year] || [];
-    const recorded = findFinancialRecordForDate(timeline, date);
+    const recorded = findFinancialRecordForDate(timeline, date, backfillStartDate);
     if (recorded) {
         const isManual = recorded.historySource === 'manual';
         return {
@@ -1105,7 +1111,7 @@ function resolveFinancialForDate(timelines, year, date, fallback = null) {
                 : `FW2(${year}，${recorded.recordedDay}录入）`
         };
     }
-    // 已有历史但查询日尚无生效记录时保持为空，避免最新预期倒灌到过去。
+    // 查询日早于该序列的回填起点时保持为空；完全没有历史时才使用普通兜底值。
     return timeline.length ? null : fallback;
 }
 
@@ -2505,12 +2511,6 @@ function drawChart() {
     scheduleSharedXAxisLayout();
 }
 
-function getRecordedFinancialForDate(year, date, timelines = null) {
-    if (!currentStock.code || !year) return null;
-    const historyTimelines = timelines || buildFinancialHistoryTimelines(currentStock.code);
-    return findFinancialRecordForDate(historyTimelines[year], date);
-}
-
 function toElasticScale(value) {
     if (value == null) return null;
     return Math.sign(value) * Math.log10(1 + Math.abs(value));
@@ -2534,21 +2534,14 @@ function renderForecastHistoryChart() {
 
     const metric = forecastHistoryMetric === 'prof' ? 'prof' : 'rev';
     const fw2Metric = metric === 'rev' ? 'fw2rev' : 'fw2prof';
-    const financialHistoryTimelines = buildFinancialHistoryTimelines(currentStock.code);
-    const fw1RawData = globalData.map(item => {
-        const year = item.year || parseInt(item.date.substring(0, 4));
-        const timeline = financialHistoryTimelines[year] || [];
-        const recorded = getRecordedFinancialForDate(year, item.date, financialHistoryTimelines);
-        const value = recorded ? recorded[metric] : (timeline.length ? null : item[metric]);
-        return value != null ? +(value / 1e8).toFixed(2) : null;
-    });
-    const fw2RawData = globalData.map(item => {
-        const year = item.fw2year || (parseInt(item.date.substring(0, 4)) + 1);
-        const timeline = financialHistoryTimelines[year] || [];
-        const recorded = getRecordedFinancialForDate(year, item.date, financialHistoryTimelines);
-        const value = recorded ? recorded[metric] : (timeline.length ? null : item[fw2Metric]);
-        return value != null ? +(value / 1e8).toFixed(2) : null;
-    });
+    // calculate() 已统一执行“真实数据优先、录入数据补缺”的年份映射，
+    // 此处直接使用同一结果，避免下方图再次套历史记录而覆盖真实财务数据。
+    const fw1RawData = globalData.map(item =>
+        item[metric] != null ? +(item[metric] / 1e8).toFixed(2) : null
+    );
+    const fw2RawData = globalData.map(item =>
+        item[fw2Metric] != null ? +(item[fw2Metric] / 1e8).toFixed(2) : null
+    );
     const hasData = fw1RawData.some(value => value != null) || fw2RawData.some(value => value != null);
 
     wrap.style.display = hasData ? 'block' : 'none';
