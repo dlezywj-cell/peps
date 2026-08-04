@@ -224,6 +224,30 @@
             border-radius: 4px; font-size: 13px;
         }
         .row-inputs input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
+        .history-record-row {
+            display: grid; grid-template-columns: 118px 118px minmax(110px,1fr) minmax(110px,1fr) 64px;
+            gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px dashed #e5e7eb;
+        }
+        .history-record-row:last-child { border-bottom: none; }
+        .history-record-row.pending-delete { opacity: 0.48; background: #fff1f0; }
+        .history-record-row label { display: block; font-size: 10px; color: #888; margin-bottom: 3px; }
+        .history-record-row input {
+            width: 100%; height: 32px; padding: 5px 7px; border: 1px solid #ccc;
+            border-radius: 4px; font-size: 12px;
+        }
+        .history-record-meta { align-self: center; }
+        .history-record-year { font-weight: 700; color: #2c3e50; margin-top: 3px; }
+        .history-source-tag { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; }
+        .history-source-manual { background: #fff7e6; color: #d35400; }
+        .history-source-forecast { background: #e6fffb; color: #138d75; }
+        .history-delete-btn { height: 32px; padding: 0 8px; font-size: 11px; background: #fff1f0; color: #c0392b; border: 1px solid #ffa39e; }
+        .history-record-row.pending-delete .history-delete-btn { background: #f5f5f5; color: #555; border-color: #ccc; }
+        .history-empty { padding: 35px 10px; text-align: center; color: #999; }
+        @media (max-width: 768px) {
+            .history-record-row { grid-template-columns: 1fr 1fr; }
+            .history-record-meta { grid-column: 1 / -1; }
+            .history-delete-btn { width: 100%; }
+        }
         .modal-footer { margin-top: auto; display: flex; gap: 10px; }
         .btn-block { flex: 1; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; font-size: 14px; }
         .btn-cancel  { background: #f5f5f5; color: #666; border: 1px solid #eee; }
@@ -326,6 +350,7 @@
         <div class="forecast-history-toolbar">
             <div class="forecast-history-title">FW1 / FW2 财务数据</div>
             <div class="forecast-history-controls">
+                <button class="btn-outline btn-sm" onclick="openHistoryManager()">🗂 管理记录</button>
                 <div class="forecast-history-switch metric-switch">
                     <button class="btn-outline btn-sm active" id="btn-history-rev" onclick="setForecastHistoryMetric('rev', event)">收入</button>
                     <button class="btn-outline btn-sm" id="btn-history-prof" onclick="setForecastHistoryMetric('prof', event)">净利润</button>
@@ -392,6 +417,24 @@
         <div class="modal-footer">
             <button class="btn-block btn-cancel" onclick="closeForecastModal(false)">取消</button>
             <button class="btn-block btn-confirm" onclick="closeForecastModal(true)">💾 保存预测</button>
+        </div>
+    </div>
+</div>
+
+<!-- 历史录入管理弹窗 -->
+<div id="historyManagerModal" class="modal-overlay">
+    <div class="modal-box" style="max-width:760px;width:94%;">
+        <div class="modal-header">
+            <span>🗂 历史录入管理</span>
+            <i class="fas fa-times" onclick="closeHistoryManager()" style="cursor:pointer;color:#999;"></i>
+        </div>
+        <div style="font-size:12px;color:#555;background:#f8f9fa;padding:8px 10px;border-radius:4px;margin-bottom:10px;">
+            可修改日期、收入和净利润；删除操作需点击“保存修改”后生效。单位：亿元。
+        </div>
+        <div class="modal-body" id="historyManagerContainer"></div>
+        <div class="modal-footer">
+            <button class="btn-block btn-cancel" onclick="closeHistoryManager()">取消</button>
+            <button class="btn-block btn-confirm" onclick="saveHistoryManager()">💾 保存修改</button>
         </div>
     </div>
 </div>
@@ -550,7 +593,7 @@ function getLatestManualInputYear(code) {
     const db = getLocalDB();
     const record = db[code] || {};
     const years = Object.keys(record)
-        .filter(key => !key.startsWith('__'))
+        .filter(key => !key.startsWith('__') && record[key] && !record[key].deleted)
         .map(key => parseInt(key))
         .filter(year => !isNaN(year));
     return years.length ? Math.max(...years) : latestActualYear;
@@ -1034,7 +1077,10 @@ function closeBatchModal(isConfirm) {
 
 function getForecastLocal(code) {
     const db = getLocalDB();
-    return (db[code] && db[code].__forecast) || {};
+    const forecast = (db[code] && db[code].__forecast) || {};
+    return Object.fromEntries(
+        Object.entries(forecast).filter(([, item]) => item && !item.deleted)
+    );
 }
 
 function getForecastHistoryLocal(code) {
@@ -1062,7 +1108,7 @@ function buildFinancialHistoryTimelines(code) {
             ...forecastItems.map(item => ({ ...item, historySource: 'forecast', sourcePriority: 0 })),
             ...manualItems.map(item => ({ ...item, historySource: 'manual', sourcePriority: 1 }))
         ]
-            .filter(Boolean)
+            .filter(item => item && !item.deleted)
             .map(item => {
                 const recordedDay = item.day || getHistoryDayKey(item.ts);
                 return { ...item, recordedDay, effectiveDay: recordedDay };
@@ -1147,7 +1193,9 @@ function upsertHistoryEntry(list, entry) {
 
 function seedPreviousFinancialValue(history, previous, nextRev, nextProf, baselineDay) {
     const items = Array.isArray(history) ? history : [];
-    const hasChanged = previous && (previous.rev !== nextRev || previous.prof !== nextProf);
+    const hasChanged = previous && !previous.deleted &&
+        Number.isFinite(previous.rev) && Number.isFinite(previous.prof) &&
+        (previous.rev !== nextRev || previous.prof !== nextProf);
     if (items.length > 0 || !hasChanged) return items;
 
     return upsertHistoryEntry(items, {
@@ -1223,6 +1271,190 @@ function closeForecastModal(isConfirm) {
         setTimeout(() => runAnalysis(true), 0);
     }
 }
+
+function getEditableFinancialHistory(code) {
+    const rows = [];
+    [
+        { type: 'manual', history: getManualHistoryLocal(code) },
+        { type: 'forecast', history: getForecastHistoryLocal(code) }
+    ].forEach(({ type, history }) => {
+        Object.keys(history || {}).forEach(year => {
+            const items = Array.isArray(history[year]) ? history[year] : [];
+            items.filter(item => item && !item.deleted).forEach(item => {
+                rows.push({
+                    type,
+                    year: String(year),
+                    day: item.day || getHistoryDayKey(item.ts),
+                    rev: item.rev,
+                    prof: item.prof,
+                    ts: item.ts || 0
+                });
+            });
+        });
+    });
+    return rows.sort((a, b) =>
+        b.day.localeCompare(a.day) || Number(b.year) - Number(a.year) || b.ts - a.ts
+    );
+}
+
+window.openHistoryManager = function() {
+    if (!currentStock.code) {
+        showToast('请先查询一只股票', 'warn');
+        return;
+    }
+    const container = document.getElementById('historyManagerContainer');
+    const rows = getEditableFinancialHistory(currentStock.code);
+    container.innerHTML = '';
+
+    if (!rows.length) {
+        container.innerHTML = '<div class="history-empty">当前股票还没有可管理的手工或预测录入记录。</div>';
+    } else {
+        rows.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'history-record-row';
+            row.dataset.type = item.type;
+            row.dataset.year = item.year;
+            row.dataset.originalDay = item.day;
+            row.dataset.originalRev = String(item.rev);
+            row.dataset.originalProf = String(item.prof);
+            row.dataset.deleted = 'false';
+            const sourceName = item.type === 'manual' ? '手工数据' : '预测数据';
+            row.innerHTML = `
+                <div class="history-record-meta">
+                    <span class="history-source-tag history-source-${item.type}">${sourceName}</span>
+                    <strong class="history-record-year">${item.year}年</strong>
+                </div>
+                <div><label>录入生效日</label><input type="date" class="history-day" value="${item.day}"></div>
+                <div><label>收入（亿）</label><input type="number" step="0.01" class="history-rev" value="${item.rev / 1e8}"></div>
+                <div><label>净利润（亿）</label><input type="number" step="0.01" class="history-prof" value="${item.prof / 1e8}"></div>
+                <button type="button" class="history-delete-btn" onclick="toggleHistoryRecordDelete(this)">删除</button>`;
+            container.appendChild(row);
+        });
+    }
+    document.getElementById('historyManagerModal').style.display = 'flex';
+};
+
+window.closeHistoryManager = function() {
+    document.getElementById('historyManagerModal').style.display = 'none';
+};
+
+window.toggleHistoryRecordDelete = function(button) {
+    const row = button.closest('.history-record-row');
+    const shouldDelete = row.dataset.deleted !== 'true';
+    row.dataset.deleted = String(shouldDelete);
+    row.classList.toggle('pending-delete', shouldDelete);
+    row.querySelectorAll('input').forEach(input => { input.disabled = shouldDelete; });
+    button.textContent = shouldDelete ? '撤销' : '删除';
+};
+
+function refreshFinancialSnapshotAfterHistoryChange(stockRecord, type, year, mutationTs) {
+    const historyKey = type === 'manual' ? '__manualHistory' : '__forecastHistory';
+    const items = Array.isArray(stockRecord[historyKey]?.[year]) ? stockRecord[historyKey][year] : [];
+    const active = items
+        .filter(item => item && !item.deleted && Number.isFinite(item.rev) && Number.isFinite(item.prof))
+        .sort((a, b) =>
+            (a.day || getHistoryDayKey(a.ts)).localeCompare(b.day || getHistoryDayKey(b.ts)) ||
+            (a.ts || 0) - (b.ts || 0)
+        );
+    const latest = active[active.length - 1];
+    const snapshot = latest
+        ? { rev: latest.rev, prof: latest.prof, ts: mutationTs }
+        : { deleted: true, ts: mutationTs };
+
+    if (type === 'manual') {
+        stockRecord[year] = snapshot;
+    } else {
+        if (!stockRecord.__forecast) stockRecord.__forecast = {};
+        stockRecord.__forecast[year] = snapshot;
+    }
+}
+
+window.saveHistoryManager = function() {
+    const code = currentStock.code;
+    if (!code) return;
+    const rows = [...document.querySelectorAll('#historyManagerContainer .history-record-row')];
+    const parsedRows = [];
+    const activeKeys = new Set();
+
+    for (const row of rows) {
+        const deleted = row.dataset.deleted === 'true';
+        const day = row.querySelector('.history-day').value;
+        const revValue = parseFloat(row.querySelector('.history-rev').value);
+        const profValue = parseFloat(row.querySelector('.history-prof').value);
+        if (!deleted && (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(revValue) || !Number.isFinite(profValue))) {
+            showToast('请完整填写有效的日期、收入和净利润', 'warn');
+            return;
+        }
+        const uniqueKey = `${row.dataset.type}|${row.dataset.year}|${day}`;
+        if (!deleted && activeKeys.has(uniqueKey)) {
+            showToast('同一类型、年份和日期不能有两条记录', 'warn');
+            return;
+        }
+        if (!deleted) activeKeys.add(uniqueKey);
+        parsedRows.push({
+            row,
+            deleted,
+            type: row.dataset.type,
+            year: row.dataset.year,
+            originalDay: row.dataset.originalDay,
+            day,
+            rev: revValue * 1e8,
+            prof: profValue * 1e8
+        });
+    }
+
+    const changedRows = parsedRows.filter(item =>
+        item.deleted || item.day !== item.originalDay ||
+        item.rev !== Number(item.row.dataset.originalRev) ||
+        item.prof !== Number(item.row.dataset.originalProf)
+    );
+    if (!changedRows.length) {
+        closeHistoryManager();
+        showToast('没有需要保存的修改', 'info');
+        return;
+    }
+
+    const db = getLocalDB();
+    if (!db[code]) db[code] = {};
+    if (!db[code].__manualHistory) db[code].__manualHistory = {};
+    if (!db[code].__forecastHistory) db[code].__forecastHistory = {};
+    const touched = new Set();
+    let mutationTs = Date.now();
+
+    changedRows.forEach(item => {
+        const historyKey = item.type === 'manual' ? '__manualHistory' : '__forecastHistory';
+        const history = db[code][historyKey];
+        const currentItems = Array.isArray(history[item.year]) ? history[item.year] : [];
+        let nextItems = currentItems;
+        if (item.deleted || item.day !== item.originalDay) {
+            nextItems = upsertHistoryEntry(nextItems, {
+                day: item.originalDay,
+                deleted: true,
+                ts: mutationTs++
+            });
+        }
+        if (!item.deleted) {
+            nextItems = upsertHistoryEntry(nextItems, {
+                day: item.day,
+                rev: item.rev,
+                prof: item.prof,
+                ts: mutationTs++
+            });
+        }
+        history[item.year] = nextItems;
+        touched.add(`${item.type}|${item.year}`);
+    });
+
+    touched.forEach(key => {
+        const [type, year] = key.split('|');
+        refreshFinancialSnapshotAfterHistoryChange(db[code], type, year, mutationTs++);
+    });
+    localStorage.setItem(DB_KEY, JSON.stringify(db));
+    closeHistoryManager();
+    triggerSync();
+    showToast('✅ 历史记录已更新', 'ok');
+    setTimeout(() => runAnalysis(true), 0);
+};
 
 async function editYearData(year) {
     const saved  = getFromDB(currentStock.code, year);
@@ -1910,7 +2142,11 @@ async function fetchHistoricalFinancials(stockObj) {
 function utf8_to_b64(str) { return window.btoa(unescape(encodeURIComponent(str))); }
 function b64_to_utf8(str) { return decodeURIComponent(escape(window.atob(str))); }
 function getLocalDB() { try { return JSON.parse(localStorage.getItem(DB_KEY) || '{}'); } catch(e) { return {}; } }
-function getFromDB(code, year) { const db = getLocalDB(); return (db[code] && db[code][year]) || null; }
+function getFromDB(code, year) {
+    const db = getLocalDB();
+    const entry = db[code] && db[code][year];
+    return entry && !entry.deleted ? entry : null;
+}
 
 function mergeEntryByTs(localEntry, cloudEntry) {
     if (!localEntry) return cloudEntry || null;
