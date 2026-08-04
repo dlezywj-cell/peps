@@ -487,6 +487,7 @@ let globalData     = [];
 let currentTotalShares = 0;
 let chartInstance  = null;
 let forecastHistoryChartInstance = null;
+let sharedXAxisSyncFrame = null;
 let batchModalResolve = null;
 let forecastModalResolve = null;
 let latestActualYear = new Date().getFullYear();
@@ -1057,12 +1058,25 @@ function buildFinancialHistoryTimelines(code) {
             ...manualItems.map(item => ({ ...item, historySource: 'manual', sourcePriority: 1 }))
         ]
             .filter(Boolean)
-            .map(item => ({ ...item, effectiveDay: item.day || getHistoryDayKey(item.ts) }))
+            .map(item => {
+                const recordedDay = item.day || getHistoryDayKey(item.ts);
+                return { ...item, recordedDay, effectiveDay: recordedDay };
+            })
             .sort((a, b) =>
-                a.effectiveDay.localeCompare(b.effectiveDay) ||
+                a.recordedDay.localeCompare(b.recordedDay) ||
                 a.sourcePriority - b.sourcePriority ||
                 (a.ts || 0) - (b.ts || 0)
             );
+
+        // 如果这一年此前完全没有预期记录，首笔录入从录入年份的 1 月 1 日起回填。
+        // 若首日同时存在 FW2 与手工录入，两者一起回填，并仍由手工录入优先。
+        const firstRecordedDay = items[0]?.recordedDay;
+        if (firstRecordedDay) {
+            const backfillDay = `${firstRecordedDay.substring(0, 4)}-01-01`;
+            items.forEach(item => {
+                if (item.recordedDay === firstRecordedDay) item.effectiveDay = backfillDay;
+            });
+        }
 
         if (items.length) timelines[year] = items;
     });
@@ -1087,8 +1101,8 @@ function resolveFinancialForDate(timelines, year, date, fallback = null) {
             prof: recorded.prof,
             source: isManual ? 'manual' : 'forecast',
             name: isManual
-                ? `★${year}（${recorded.effectiveDay}录入）`
-                : `FW2(${year}，${recorded.effectiveDay}录入）`
+                ? `★${year}（${recorded.recordedDay}录入）`
+                : `FW2(${year}，${recorded.recordedDay}录入）`
         };
     }
     // 已有历史但查询日尚无生效记录时保持为空，避免最新预期倒灌到过去。
@@ -2107,6 +2121,58 @@ window.saveConfig = () => {
 // ============================================================
 // 图表区间快捷键
 // ============================================================
+function setChartHorizontalPadding(chart, left, right) {
+    const layout = chart.options.layout || {};
+    const currentPadding = (layout.padding && typeof layout.padding === 'object')
+        ? layout.padding
+        : {};
+    chart.options.layout = {
+        ...layout,
+        padding: { ...currentPadding, left, right }
+    };
+}
+
+function synchronizeSharedXAxisLayout() {
+    if (!chartInstance || !forecastHistoryChartInstance) return;
+
+    const charts = [chartInstance, forecastHistoryChartInstance];
+    // 先移除上一次补偿，再根据两张图各自纵轴占用的宽度重新计算。
+    charts.forEach(chart => {
+        setChartHorizontalPadding(chart, 0, 0);
+        chart.update('none');
+    });
+
+    const targetLeft = Math.max(...charts.map(chart => chart.chartArea.left));
+    const targetRightGutter = Math.max(...charts.map(chart => chart.width - chart.chartArea.right));
+
+    charts.forEach(chart => {
+        const leftPadding = Math.max(0, targetLeft - chart.chartArea.left);
+        const rightPadding = Math.max(0, targetRightGutter - (chart.width - chart.chartArea.right));
+        setChartHorizontalPadding(chart, leftPadding, rightPadding);
+        chart.update('none');
+    });
+}
+
+function scheduleSharedXAxisLayout() {
+    if (sharedXAxisSyncFrame != null) cancelAnimationFrame(sharedXAxisSyncFrame);
+    sharedXAxisSyncFrame = requestAnimationFrame(() => {
+        sharedXAxisSyncFrame = null;
+        synchronizeSharedXAxisLayout();
+    });
+}
+
+function syncSharedChartRangeFrom(sourceChart) {
+    const targetChart = sourceChart === chartInstance
+        ? forecastHistoryChartInstance
+        : chartInstance;
+    if (!sourceChart?.scales?.x || !targetChart) return;
+
+    targetChart.options.scales.x.min = sourceChart.scales.x.min;
+    targetChart.options.scales.x.max = sourceChart.scales.x.max;
+    targetChart.update('none');
+    scheduleSharedXAxisLayout();
+}
+
 function applySharedChartRange(min, max) {
     [chartInstance, forecastHistoryChartInstance].filter(Boolean).forEach(chart => {
         if (typeof chart.resetZoom === 'function') chart.resetZoom();
@@ -2114,7 +2180,10 @@ function applySharedChartRange(min, max) {
         chart.options.scales.x.max = max;
         chart.update();
     });
+    scheduleSharedXAxisLayout();
 }
+
+window.addEventListener('resize', scheduleSharedXAxisLayout);
 
 window.setChartRange = function(type, evt) {
     if (!chartInstance || !globalData.length) return;
@@ -2388,13 +2457,23 @@ function drawChart() {
                 },
                 zoom: {
                     limits: { x: { min: 'original', max: 'original' } },
-                    pan   : { enabled: true, mode: 'x' },
-                    zoom  : { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+                    pan   : {
+                        enabled: true,
+                        mode: 'x',
+                        onPanComplete: ({ chart }) => syncSharedChartRangeFrom(chart)
+                    },
+                    zoom  : {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'x',
+                        onZoomComplete: ({ chart }) => syncSharedChartRangeFrom(chart)
+                    }
                 }
             },
             scales: {
                 x: {
                     type: 'time',
+                    display: false,
                     time: { unit: 'month', tooltipFormat: 'yyyy-MM-dd' },
                     grid: { display: false },
                     ticks: { font: { size: 10 }, maxRotation: 0 }
@@ -2423,6 +2502,7 @@ function drawChart() {
         },
         plugins: [crosshairPlugin]
     });
+    scheduleSharedXAxisLayout();
 }
 
 function getRecordedFinancialForDate(year, date, timelines = null) {
@@ -2558,6 +2638,20 @@ function renderForecastHistoryChart() {
                             return `下一年 / 当年：${multiple.toFixed(2)} 倍（${growth >= 0 ? '+' : ''}${growth.toFixed(0)}%）`;
                         }
                     }
+                },
+                zoom: {
+                    limits: { x: { min: 'original', max: 'original' } },
+                    pan: {
+                        enabled: true,
+                        mode: 'x',
+                        onPanComplete: ({ chart }) => syncSharedChartRangeFrom(chart)
+                    },
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'x',
+                        onZoomComplete: ({ chart }) => syncSharedChartRangeFrom(chart)
+                    }
                 }
             },
             scales: {
@@ -2575,8 +2669,10 @@ function renderForecastHistoryChart() {
                     grace: '10%'
                 }
             }
-        }
+        },
+        plugins: [crosshairPlugin]
     });
+    scheduleSharedXAxisLayout();
 }
 
 window.setForecastHistoryMetric = function(metric, evt) {
