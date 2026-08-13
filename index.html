@@ -1805,10 +1805,12 @@ function normalizeReportDate(item) {
 }
 
 // ============================================================
-// ★ 财报原始货币识别 + 汇率折算
-// 很多在港股上市的内地公司（如卫龙美味），财报是按人民币(CNY)披露的，
-// 但股价、市值都是按港币(HKD)计算的，PE/PS 必须把财报金额折算成同一货币才有意义。
-// 东方财富的港美股F10接口里带有 CURRENCY / CURRENCY_NAME 字段，标明财报原始货币。
+// ★ 财报货币识别 + 汇率折算
+// 港股股价和市值按港币(HKD)计算，而东方财富当前的港股 F10“主要指标”金额
+// 统一折算为人民币(CNY)展示，因此 PE/PS 计算前必须再把金额换算成港币。
+// 注意：RPT_HKF10_FN_MAININDICATOR 返回的 CURRENCY / CURRENCY_NAME 不能作为
+// 金额单位依据（例如联想金额实际为人民币，字段却返回 HKD）；收入摘要中的币种
+// 则表示公司的原始披露币种，只用于说明，不能用于对主要指标金额重复换算。
 // ============================================================
 function normalizeCurrencyCode(raw) {
     if (!raw) return null;
@@ -1826,6 +1828,13 @@ function normalizeCurrencyCode(raw) {
 
 function detectReportCurrency(item) {
     return normalizeCurrencyCode(item.CURRENCY) || normalizeCurrencyCode(item.CURRENCY_NAME);
+}
+
+function detectMainIndicatorAmountCurrency(isHK, item, filingCurrency = null) {
+    // 东财港股 F10 页面当前统一标注“币种：人民币”，且金额与人民币折算值一致。
+    // 这里不能相信主指标行内常见但与金额口径不一致的 CURRENCY=HKD。
+    if (isHK) return 'CNY';
+    return detectReportCurrency(item) || filingCurrency;
 }
 
 const fxRateCache = {};
@@ -2122,16 +2131,15 @@ async function fetchHistoricalFinancials(stockObj) {
             let revVal = parseFloat(r), profVal = parseFloat(p);
             if (!dateStr || isNaN(revVal) || isNaN(profVal)) continue;
 
-            // 金额来自主要指标接口，因此必须优先采用该接口与金额同行的 CURRENCY。
-            // 收入摘要的 CURRENCY 表示原始报表披露币种；主要指标可能已把金额换算成港币。
-            // 例如联想：摘要为 USD，但主要指标的金额和 CURRENCY 都是 HKD，不能再乘一次 USD/HKD。
-            const amountCcy = detectReportCurrency(item);
+            // 东财当前把港股主要指标统一换算成人民币；行内 CURRENCY 字段并不可靠。
+            // 收入摘要的 CURRENCY 只是原始披露币种，保留作说明，不参与主要指标金额换算。
+            const reportedAmountCcy = detectReportCurrency(item);
             const filingCcy = summaryCurrencyMap[dateStr] || null;
-            const inputCcy = amountCcy || filingCcy;
+            const inputCcy = detectMainIndicatorAmountCurrency(isHK, item, filingCcy);
             const rawAmountCcy = item.CURRENCY ?? item.CURRENCY_NAME ?? '(无该字段)';
-            Logger.log(`[Fin] ${dateStr} 主指标金额币种="${rawAmountCcy}"→${amountCcy || '未识别'}；摘要披露币种=${filingCcy || '未识别'}；交易币种=${tradingCurrency}`);
-            if (amountCcy && filingCcy && amountCcy !== filingCcy) {
-                Logger.log(`[Fin] ${dateStr} 金额接口已使用 ${amountCcy}，忽略摘要中的原始披露币种 ${filingCcy}，避免重复换算。`);
+            Logger.log(`[Fin] ${dateStr} 主指标字段币种="${rawAmountCcy}"→${reportedAmountCcy || '未识别'}；实际金额口径=${inputCcy || '未识别'}；摘要披露币种=${filingCcy || '未识别'}；交易币种=${tradingCurrency}`);
+            if (isHK && reportedAmountCcy && reportedAmountCcy !== inputCcy) {
+                Logger.log(`[Fin] ${dateStr} 忽略港股主指标中不代表金额口径的 ${reportedAmountCcy} 字段，按东财页面的人民币口径换算。`);
             }
 
             let outputCurrency = inputCcy || tradingCurrency;
@@ -2160,7 +2168,8 @@ async function fetchHistoricalFinancials(stockObj) {
                 prof: profVal,
                 shares,
                 inputCurrency: inputCcy || null,
-                amountCurrency: amountCcy || null,
+                amountCurrency: inputCcy || null,
+                reportedAmountCurrency: reportedAmountCcy || null,
                 filingCurrency: filingCcy,
                 currency: outputCurrency,
                 converted
