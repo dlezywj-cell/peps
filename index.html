@@ -528,6 +528,7 @@ window.copyDebugLogs = () => {
 let currentStock   = { code: '', name: '', secId: '' };
 let globalData     = [];
 let currentTotalShares = 0;
+let currentKlineSource = '';
 let chartInstance  = null;
 let forecastHistoryChartInstance = null;
 let sharedXAxisSyncFrame = null;
@@ -572,6 +573,16 @@ function getTencentSymbol(secId, code) {
     if (secId.startsWith('116.')) return 'hk' + code;
     if (secId.startsWith('105.') || secId.startsWith('106.') || secId.startsWith('107.')) return 'us' + code.toUpperCase();
     return 'sh' + code;
+}
+
+function getAnnualReportTargetYear(reportDate) {
+    const match = String(reportDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const reportYear = parseInt(match[1]);
+    const reportMonth = parseInt(match[2]);
+    // 财年在一季度结束的公司通常把它视作上一价格年度：
+    // NVDA 2025-01-26、联想 2025-03-31 均对应 2024 价格年度。
+    return reportMonth <= 3 ? reportYear - 1 : reportYear;
 }
 
 function getLatestActualYear(finMap) {
@@ -876,32 +887,31 @@ async function runAnalysis(silent = false) {
         const yearsSet = new Set(globalData.map(d => parseInt(d.date.substring(0, 4))));
         const sortedYears = Array.from(yearsSet).sort((a, b) => a - b);
 
-        // ★ 港股/美股：财年结算日非12-31，按"倒序回填"分配年度报告
-        //   最新一份已披露年报 → 倒数第2新的日历年（最新的日历年留空，弹窗手动补录）
-        //   第2新的已披露年报 → 倒数第3新的日历年，依此类推
+        // 港股/美股：按报告期本身确定价格年度，不能根据本次查询包含了几年倒序回填。
+        // 否则只查询 2024 年时，会把最新的 2026 年报错误塞进 2024 年。
         if (Array.isArray(finMap.__rawAnnualReports) && finMap.__rawAnnualReports.length > 0) {
             const reports = finMap.__rawAnnualReports;
-            const nowYear = new Date().getFullYear();
-            const targetYears = sortedYears.filter(y => y !== nowYear).sort((a, b) => b - a); // 倒序，排除"今年"
-            Logger.log(`[Fin] 回填模式：${reports.length} 份年报 → ${targetYears.length} 个日历年（已排除当前年 ${nowYear}）`);
-            for (let i = 0; i < Math.min(targetYears.length, reports.length); i++) {
-                const y = targetYears[i];
-                const rep = reports[i];
-                const unitText = rep.currency || '未识别';
-                const originText = rep.originalCurrency
-                    ? (rep.converted
-                        ? `原币${rep.originalCurrency}→${unitText}`
-                        : `原币${rep.originalCurrency}(未换算)`)
-                    : `单位${unitText}`;
+            Logger.log(`[Fin] 报告期映射模式：按每份年报的实际截止日期确定价格年度。`);
+            for (const rep of reports) {
+                const y = getAnnualReportTargetYear(rep.date);
+                if (!y || finMap[y]) continue;
+                const amountText = rep.converted
+                    ? `金额${rep.inputCurrency || '未识别'}→${rep.currency || '未识别'}`
+                    : `金额${rep.currency || rep.inputCurrency || '未识别'}`;
+                const filingText = rep.filingCurrency && rep.filingCurrency !== rep.inputCurrency
+                    ? `，原始披露${rep.filingCurrency}`
+                    : '';
+                const currencyText = `${amountText}${filingText}`;
                 finMap[y] = {
                     year : y,
                     rev  : rep.rev,
                     prof : rep.prof,
+                    shares: rep.shares || null,
                     source: 'real',
-                    name : `年报(${rep.date}, ${originText})`,
-                    label: `${y}年(报告期${rep.date}, ${originText})`
+                    name : `年报(${rep.date}, ${currencyText})`,
+                    label: `${y}年(报告期${rep.date}, ${currencyText})`
                 };
-                Logger.log(`[Fin]   ${y}年 ← 报告期 ${rep.date}（${originText}，营收${(rep.rev/1e8).toFixed(1)}亿/净利${(rep.prof/1e8).toFixed(1)}亿）`);
+                Logger.log(`[Fin]   ${y}年 ← 报告期 ${rep.date}（${currencyText}，营收${(rep.rev/1e8).toFixed(1)}亿/净利${(rep.prof/1e8).toFixed(1)}亿）`);
             }
         }
         delete finMap.__rawAnnualReports;
@@ -989,10 +999,14 @@ function calculate(finMap) {
             getForwardFinancialEntry(finMap, y + 1),
             `${y}-01-01`
         );
-        const mktCap = item.price * currentTotalShares;
+        // 优先使用与该财务期匹配的股本。它由净利润/EPS反推，天然与拆股后的EPS口径一致；
+        // 接口缺少该字段时才退回当前总股本。
+        const shares = fin?.shares || currentTotalShares;
+        const mktCap = item.price * shares;
         const base = {
             ...item,
-            mktCap
+            mktCap,
+            shares
         };
 
         if (fin) {
@@ -1487,11 +1501,75 @@ async function fetchShares() {
     }
 }
 
+const COMMON_SPLIT_FACTORS = [2, 3, 4, 5, 10, 20, 50, 100];
+
+function normalizeAdjustedKline(rows, sourceName) {
+    const normalized = (rows || [])
+        .map(item => ({ date: item.date, price: Number(item.price) }))
+        .filter(item => /^\d{4}-\d{2}-\d{2}$/.test(item.date || '') && Number.isFinite(item.price) && item.price > 0)
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    for (let i = 1; i < normalized.length; i++) {
+        const previous = normalized[i - 1];
+        const current = normalized[i];
+        const factor = Math.max(previous.price, current.price) / Math.min(previous.price, current.price);
+        const matchedSplit = COMMON_SPLIT_FACTORS.find(candidate => Math.abs(factor - candidate) / candidate <= 0.12);
+        if (matchedSplit) {
+            Logger.log(`[Kline] REJECT ${sourceName}: ${previous.date}→${current.date} 出现约 ${factor.toFixed(2)} 倍跳变（疑似 ${matchedSplit}:1 未复权拆股）。`);
+            return [];
+        }
+    }
+    return normalized;
+}
+
+function useAdjustedKline(rows, sourceName) {
+    const normalized = normalizeAdjustedKline(rows, sourceName);
+    if (normalized.length === 0) return false;
+    globalData = normalized;
+    currentKlineSource = sourceName;
+    Logger.log(`[Kline] ${sourceName} Success: ${globalData.length} records (split-adjusted validated).`);
+    return true;
+}
+
+async function fetchYahooAdjustedKline(beg, end, sid, code) {
+    const isAShare = sid.startsWith('1.') || sid.startsWith('0.');
+    const isHK = sid.startsWith('116.');
+    const isUS = sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.');
+    let yahooSymbol = '';
+    if (isAShare) yahooSymbol = sid.startsWith('1.') ? code + '.SS' : code + '.SZ';
+    else if (isHK) yahooSymbol = code.padStart(4, '0') + '.HK';
+    else if (isUS) yahooSymbol = code.toUpperCase();
+    if (!yahooSymbol) return false;
+
+    Logger.log(`[Kline] Yahoo adjusted route Start for: ${yahooSymbol}`);
+    try {
+        const begTs = Math.floor(new Date(beg.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).getTime() / 1000);
+        const endTs = Math.floor(new Date(end.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).getTime() / 1000) + 86400;
+        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&period1=${begTs}&period2=${endTs}&events=history,splits`;
+        const yJson = await apiFetch(yahooUrl, null, 'YahooFinance');
+        const result = yJson?.chart?.result?.[0];
+        const timestamps = result?.timestamp || [];
+        const closes = result?.indicators?.quote?.[0]?.close || [];
+        if (!timestamps.length || !closes.length) return false;
+
+        const rows = timestamps.map((ts, i) => ({
+            date: new Date(ts * 1000).toISOString().split('T')[0],
+            // Yahoo 的历史 close 已按拆股回溯调整，但不扣除现金分红，适合计算历史市值。
+            price: closes[i] == null ? null : parseFloat(closes[i].toFixed(4))
+        }));
+        return useAdjustedKline(rows, 'Yahoo Finance');
+    } catch(e) {
+        Logger.error(`[Kline] Yahoo adjusted route Exception`, e);
+        return false;
+    }
+}
+
 // ============================================================
-// K线获取（不变接口，仅调整内部JSONP超时为3s）
+// K线获取：所有被采用的数据源必须是前复权/拆股调整口径
 // ============================================================
 async function fetchKline(beg, end) {
     let success = false;
+    currentKlineSource = '';
     const sid  = currentStock.secId;
     const code = currentStock.code;
 
@@ -1527,12 +1605,11 @@ async function fetchKline(beg, end) {
     });
 
     if (emKlineResult) {
-        globalData = emKlineResult.map(k => {
+        const rows = emKlineResult.map(k => {
             const parts = k.split(',');
             return { date: parts[0], price: parseFloat(parts[2]) };
         });
-        Logger.log(`[Kline] Route 1 Success! ${globalData.length} records.`);
-        success = true;
+        success = useAdjustedKline(rows, 'EastMoney 前复权');
     }
 
     if (!success && isAShare) {
@@ -1542,15 +1619,14 @@ async function fetchKline(beg, end) {
             const sinaUrl = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sinaSymbol}&type=day&datalen=3200&fq=qfq`;
             const sinaData = await apiFetch(sinaUrl, null, 'SinaKlineA');
             if (Array.isArray(sinaData) && sinaData.length > 0) {
-                globalData = sinaData.map(k => ({
+                const rows = sinaData.map(k => ({
                     date : k.day,
                     price: parseFloat(k.close)
                 })).filter(d => {
                     const dStr = d.date.replace(/-/g, '');
                     return dStr >= beg && dStr <= end;
                 });
-                Logger.log(`[Kline] Route 2 (Sina A-Share) Success: ${globalData.length} records.`);
-                if (globalData.length > 0) success = true;
+                success = useAdjustedKline(rows, 'Sina A股前复权');
             }
         } catch(e) { Logger.error(`[Kline] Sina A-Share Exception`, e); }
     }
@@ -1579,25 +1655,29 @@ async function fetchKline(beg, end) {
             else if (sinaData?.data) rows = sinaData.data;
 
             if (rows && rows.length > 0) {
-                globalData = rows.map(k => ({
+                const normalizedRows = rows.map(k => ({
                     date : k.d || k.day || k.date,
                     price: parseFloat(k.c || k.close)
                 })).filter(d => d.date && !isNaN(d.price) && (() => {
                     const dStr = (d.date || '').replace(/-/g, '');
                     return dStr >= beg && dStr <= end;
                 })());
-                Logger.log(`[Kline] Route 2b (Sina JSONP) Success: ${globalData.length} records.`);
-                if (globalData.length > 0) success = true;
+                success = useAdjustedKline(normalizedRows, 'Sina A股前复权 JSONP');
             }
         } catch(e) { Logger.error(`[Kline] Route 2b Sina JSONP Exception`, e); }
     }
 
+    // 美股优先使用 Yahoo 的拆股调整历史价；新浪美股接口会返回未复权 close，禁止再使用。
+    if (!success && isUS) {
+        success = await fetchYahooAdjustedKline(beg, end, sid, code);
+    }
+
     if (!success) {
         const tSymbol = getTencentSymbol(sid, code);
-        const tParams = [`${tSymbol},day,,,5000,qfq`, `${tSymbol},day,,,5000`];
+        const tParams = [`${tSymbol},day,,,5000,qfq`];
 
-        // ★ 加速：两个 Tencent param 变体并发赛跑
-        Logger.log(`[Kline] Route 3 (Tencent) racing ${tParams.length} params concurrently...`);
+        // 只允许腾讯前复权参数，绝不与未复权 day 数据竞速。
+        Logger.log(`[Kline] Route 3 (Tencent qfq only) Start...`);
         const tResult = await new Promise(resolve => {
             let settled = false;
             let pending = tParams.length;
@@ -1627,9 +1707,7 @@ async function fetchKline(beg, end) {
                             );
                             const stockData = matchKey ? tData[matchKey] : null;
                             if (stockData) {
-                                const klines = stockData.qfqday || stockData.day ||
-                                               stockData.qfqweek || stockData.week ||
-                                               stockData.qfqmonth || stockData.month;
+                                const klines = stockData.qfqday || stockData.qfqweek || stockData.qfqmonth;
                                 if (klines && klines.length > 0 && !settled) {
                                     settled = true;
                                     Logger.log(`[Kline] Route 3 Tencent WIN param: ${tParam}`);
@@ -1648,87 +1726,23 @@ async function fetchKline(beg, end) {
         });
 
         if (tResult) {
-            globalData = tResult.map(k => ({
+            const rows = tResult.map(k => ({
                 date : k[0],
                 price: parseFloat(k[2])
             })).filter(d => {
                 const dStr = (d.date || '').replace(/-/g, '');
                 return dStr >= beg && dStr <= end;
             });
-            Logger.log(`[Kline] Route 3 (Tencent) Success: ${globalData.length} records.`);
-            if (globalData.length > 0) success = true;
+            success = useAdjustedKline(rows, 'Tencent 前复权');
         }
     }
 
-    if (!success && isUS) {
-        const sinaSymbol = code.toLowerCase();
-        Logger.log(`[Kline] Route 4 (Sina US) Start for: ${sinaSymbol}`);
-        try {
-            const sJson = await new Promise((resolve) => {
-                const varName = 'sina_us_' + Date.now() + Math.floor(Math.random() * 1000);
-                const script = document.createElement('script');
-                const timer = setTimeout(() => { cleanup(); resolve(null); }, 5000); // ★ 5s（原10s）
-                function cleanup() {
-                    clearTimeout(timer);
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                }
-                window[varName] = (data) => { resolve(data); cleanup(); try { delete window[varName]; } catch(e){} };
-                script.onerror = () => { cleanup(); resolve(null); };
-                script.src = `https://stock.finance.sina.com.cn/usstock/api/jsonp.php/${varName}/US_MinKService.getDailyK?symbol=${sinaSymbol}&_=${Date.now()}`;
-                document.head.appendChild(script);
-            });
-
-            if (sJson && Array.isArray(sJson)) {
-                globalData = sJson.map(k => ({
-                    date : k.d,
-                    price: parseFloat(k.c)
-                })).filter(d => {
-                    const dStr = d.date.replace(/-/g, '');
-                    return dStr >= beg && dStr <= end;
-                });
-                Logger.log(`[Kline] Route 4 (Sina US) Success: ${globalData.length} records.`);
-                if (globalData.length > 0) success = true;
-            }
-        } catch(e) { Logger.error(`[Kline] Route 4 Sina US Exception`, e); }
+    if (!success && !isUS) {
+        success = await fetchYahooAdjustedKline(beg, end, sid, code);
     }
 
     if (!success) {
-        Logger.log(`[Kline] Route 5 (Yahoo Finance) Start...`);
-        try {
-            let yahooSymbol = '';
-            if (isAShare) {
-                yahooSymbol = sid.startsWith('1.') ? code + '.SS' : code + '.SZ';
-            } else if (isHK) {
-                yahooSymbol = code.padStart(4, '0') + '.HK';
-            } else if (isUS) {
-                yahooSymbol = code.toUpperCase();
-            }
-
-            if (yahooSymbol) {
-                const begTs = Math.floor(new Date(beg.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).getTime() / 1000);
-                const endTs = Math.floor(new Date(end.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')).getTime() / 1000) + 86400;
-                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&period1=${begTs}&period2=${endTs}&events=history`;
-                const yJson = await apiFetch(yahooUrl, null, 'YahooFinance');
-
-                if (yJson?.chart?.result?.[0]) {
-                    const result = yJson.chart.result[0];
-                    const timestamps = result.timestamp || [];
-                    const closes     = result.indicators?.quote?.[0]?.close || [];
-                    if (timestamps.length > 0 && closes.length > 0) {
-                        globalData = timestamps.map((ts, i) => ({
-                            date : new Date(ts * 1000).toISOString().split('T')[0],
-                            price: closes[i] ? parseFloat(closes[i].toFixed(4)) : null
-                        })).filter(d => d.price !== null && !isNaN(d.price));
-                        Logger.log(`[Kline] Route 5 (Yahoo) Success: ${globalData.length} records.`);
-                        if (globalData.length > 0) success = true;
-                    }
-                }
-            }
-        } catch(e) { Logger.error(`[Kline] Route 5 Yahoo Exception`, e); }
-    }
-
-    if (!success) {
-        throw new Error('所有K线数据通道均被阻断，请检查网络或稍后重试。');
+        throw new Error('未能获取通过拆股连续性校验的前复权股价，已阻止错误估值。');
     }
 }
 
@@ -2059,7 +2073,10 @@ async function fetchHistoricalFinancials(stockObj) {
                     }
 
                     if (r != null && p != null) {
-                        map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), source: 'real', name: '年报' };
+                        const shares = (!isNaN(pVal) && !isNaN(epsVal) && epsVal !== 0)
+                            ? Math.abs(pVal / epsVal)
+                            : null;
+                        map[y] = { year: y, rev: parseFloat(r), prof: parseFloat(p), shares, source: 'real', name: '年报' };
                     }
                 });
                 Logger.log(`[Fin] Extracted ${Object.keys(map).length} yearly reports successfully.`);
@@ -2105,29 +2122,49 @@ async function fetchHistoricalFinancials(stockObj) {
             let revVal = parseFloat(r), profVal = parseFloat(p);
             if (!dateStr || isNaN(revVal) || isNaN(profVal)) continue;
 
-            // ★ 财报币种 ≠ 交易币种（比如卫龙年报是人民币，但股价是港元）时，按报告期当天汇率换算
-            const reportCcy = summaryCurrencyMap[dateStr] || detectReportCurrency(item);
-            const rawCcyField = summaryCurrencyMap[dateStr] ?? item.CURRENCY ?? item.CURRENCY_NAME ?? '(无该字段)';
-            Logger.log(`[Fin] ${dateStr} 币种字段原始值="${rawCcyField}" → 识别为 ${reportCcy || '未识别'}（交易币种=${tradingCurrency}）`);
+            // 金额来自主要指标接口，因此必须优先采用该接口与金额同行的 CURRENCY。
+            // 收入摘要的 CURRENCY 表示原始报表披露币种；主要指标可能已把金额换算成港币。
+            // 例如联想：摘要为 USD，但主要指标的金额和 CURRENCY 都是 HKD，不能再乘一次 USD/HKD。
+            const amountCcy = detectReportCurrency(item);
+            const filingCcy = summaryCurrencyMap[dateStr] || null;
+            const inputCcy = amountCcy || filingCcy;
+            const rawAmountCcy = item.CURRENCY ?? item.CURRENCY_NAME ?? '(无该字段)';
+            Logger.log(`[Fin] ${dateStr} 主指标金额币种="${rawAmountCcy}"→${amountCcy || '未识别'}；摘要披露币种=${filingCcy || '未识别'}；交易币种=${tradingCurrency}`);
+            if (amountCcy && filingCcy && amountCcy !== filingCcy) {
+                Logger.log(`[Fin] ${dateStr} 金额接口已使用 ${amountCcy}，忽略摘要中的原始披露币种 ${filingCcy}，避免重复换算。`);
+            }
 
-            let outputCurrency = reportCcy || tradingCurrency;
+            let outputCurrency = inputCcy || tradingCurrency;
             let converted = false;
-            if (!reportCcy) {
+            if (!inputCcy) {
                 Logger.log(`[Fin] ⚠️ ${dateStr} 未能识别财报币种，跳过汇率换算（如果该公司财报实际不是${tradingCurrency}，金额会和股价单位不一致！）`);
-            } else if (reportCcy !== tradingCurrency) {
-                const rate = await fetchFxRate(dateStr, reportCcy, tradingCurrency);
+            } else if (inputCcy !== tradingCurrency) {
+                const rate = await fetchFxRate(dateStr, inputCcy, tradingCurrency);
                 if (rate) {
-                    Logger.log(`[Fin] ${dateStr} 财报币种=${reportCcy}，按 1${reportCcy}=${rate}${tradingCurrency} 换算成${tradingCurrency}。`);
+                    Logger.log(`[Fin] ${dateStr} 金额币种=${inputCcy}，按 1${inputCcy}=${rate}${tradingCurrency} 换算成${tradingCurrency}。`);
                     revVal *= rate;
                     profVal *= rate;
                     outputCurrency = tradingCurrency;
                     converted = true;
                 } else {
-                    Logger.log(`[Fin] ⚠️ ${dateStr} 汇率换算失败（${reportCcy}→${tradingCurrency}），该年数据可能币种不一致！`);
+                    Logger.log(`[Fin] ⚠️ ${dateStr} 汇率换算失败（${inputCcy}→${tradingCurrency}），该年数据可能币种不一致！`);
                 }
             }
 
-            parsed.push({ date: dateStr, rev: revVal, prof: profVal, originalCurrency: reportCcy || null, currency: outputCurrency, converted });
+            const shares = (!isNaN(pVal) && !isNaN(epsVal) && epsVal !== 0)
+                ? Math.abs(pVal / epsVal)
+                : null;
+            parsed.push({
+                date: dateStr,
+                rev: revVal,
+                prof: profVal,
+                shares,
+                inputCurrency: inputCcy || null,
+                amountCurrency: amountCcy || null,
+                filingCurrency: filingCcy,
+                currency: outputCurrency,
+                converted
+            });
         }
         parsed.sort((a, b) => b.date.localeCompare(a.date));
 
@@ -2756,7 +2793,7 @@ function drawChart() {
             labels  : globalData.map(d => d.date),
             datasets:[
                 {
-                    label          : '股价（前复权）',
+                    label          : `股价（前复权 · ${currentKlineSource || '已校验'}）`,
                     data           : priceData,
                     borderColor    : '#111111',
                     backgroundColor: 'rgba(17,17,17,0.05)',
