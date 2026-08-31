@@ -309,8 +309,9 @@
             </div>
             <div class="divider-v"></div>
             <div class="group-dates">
-                <div class="input-group"><input type="date" id="startDate" value="2016-01-01"></div>
-                <div class="input-group"><input type="date" id="endDate"></div>
+                <span style="font-weight:600; color:#555; font-size:12px; align-self:center;">查询区间:</span>
+                <div class="input-group"><input type="date" id="startDate" value="2016-01-01" title="行情查询开始日期"></div>
+                <div class="input-group"><input type="date" id="endDate" title="行情查询结束日期"></div>
             </div>
             <div class="divider-v"></div>
             <div class="group-actions">
@@ -325,7 +326,7 @@
 
     <div class="range-selector" id="rangeSelectorContainer">
         <span style="font-weight: 600; color: #555; font-size: 12px; display: flex; align-items: center; gap: 4px;">
-            <i class="fas fa-calendar-alt"></i> 显示区间:
+            <i class="fas fa-calendar-alt"></i> 显示区间（超出已有数据时自动刷新）:
         </span>
         <button class="btn-outline btn-sm active" id="btn-range-all" onclick="setChartRange('all', event)">全部</button>
         <button class="btn-outline btn-sm" id="btn-range-1y" onclick="setChartRange('1y', event)">近1年</button>
@@ -530,6 +531,7 @@ let globalData     = [];
 let currentTotalShares = 0;
 let currentHistoricalShares = [];
 let currentKlineSource = '';
+let lastKlineRequest = { stockKey: '', start: '', end: '' };
 let chartInstance  = null;
 let forecastHistoryChartInstance = null;
 let sharedXAxisSyncFrame = null;
@@ -816,6 +818,7 @@ async function runSearch() {
             if (currentStock.code && currentStock.code !== item.Code) {
                 chartRangeState = { type: 'all', min: null, max: null };
                 currentHistoricalShares = [];
+                lastKlineRequest = { stockKey: '', start: '', end: '' };
             }
             currentStock = { code: item.Code, name: item.Name, secId };
             Logger.log(`[Search] Found: ${currentStock.name} (SecID: ${currentStock.secId})`);
@@ -838,6 +841,25 @@ async function runSearch() {
 // ============================================================
 // ★ 加速优化2：核心分析主流程 - 股价与财报并行抓取
 // ============================================================
+function shouldRefreshMarketData(silent, beg, end) {
+    if (!silent || globalData.length === 0) return true;
+    const requestedStart = compactDateToIso(beg);
+    const requestedEnd = compactDateToIso(end);
+    const loadedEnd = globalData[globalData.length - 1]?.date || '';
+    const stockKey = `${currentStock.secId}|${currentStock.code}`;
+
+    // 静默重算通常只需重算估值；但查询区间已经超出内存行情时必须重新抓取。
+    // 这也覆盖了页面白天取得的数据停在上一交易日、晚上再编辑财务数据的情况。
+    const needsRefresh = !requestedStart || !requestedEnd ||
+        lastKlineRequest.stockKey !== stockKey ||
+        requestedStart < lastKlineRequest.start || requestedEnd > lastKlineRequest.end ||
+        requestedEnd > loadedEnd;
+    if (needsRefresh) {
+        Logger.log(`[Main] Cached Kline ends at ${loadedEnd || '-'} and does not freshly cover ${requestedStart || beg} to ${requestedEnd || end}; refreshing.`);
+    }
+    return needsRefresh;
+}
+
 async function runAnalysis(silent = false) {
     const btn = document.getElementById('btn-run');
     const loader = document.getElementById('chartLoading');
@@ -857,7 +879,7 @@ async function runAnalysis(silent = false) {
         document.getElementById('displayEndDate').value = document.getElementById('endDate').value;
         Logger.log(`[Main] Request Range: ${beg} to ${end}`);
 
-        if (!silent || globalData.length === 0) {
+        if (shouldRefreshMarketData(silent, beg, end)) {
             if (!silent) showToast('正在并行获取数据…', 'info');
 
             // 股价、当前股本、历史股本、财报并行获取。
@@ -871,6 +893,11 @@ async function runAnalysis(silent = false) {
             // 将财报结果存入闭包变量，后续直接使用
             window._prefetchedFinMap = finMapResult;
             currentHistoricalShares = historicalSharesResult;
+            lastKlineRequest = {
+                stockKey: `${currentStock.secId}|${currentStock.code}`,
+                start: compactDateToIso(beg),
+                end: compactDateToIso(end)
+            };
             setProgress(70);
         }
 
@@ -2810,6 +2837,25 @@ function applySharedChartRange(min, max) {
 
 window.addEventListener('resize', scheduleSharedXAxisLayout);
 
+async function refreshForDisplayRange(startDate, endDate) {
+    const fullRange = getFullDataRange();
+    const queryStartInput = document.getElementById('startDate');
+    const queryEndInput = document.getElementById('endDate');
+
+    if (!fullRange.min || startDate < fullRange.min) queryStartInput.value = startDate;
+    if (!fullRange.max || endDate > fullRange.max) queryEndInput.value = endDate;
+
+    Logger.log(`[Range] 显示区间 ${startDate} to ${endDate} 超出已有行情 ${fullRange.min || '-'} to ${fullRange.max || '-'}，自动重新获取。`);
+    showToast('显示区间超出已有行情，正在自动刷新数据…', 'info');
+    await runAnalysis(false);
+
+    // runAnalysis 会把显示区间重置为查询区间；完成后恢复用户要求的显示范围。
+    document.getElementById('displayStartDate').value = startDate;
+    document.getElementById('displayEndDate').value = endDate;
+    setChartRangeState('input', startDate, endDate);
+    applySharedChartRange(startDate, endDate);
+}
+
 window.setChartRange = function(type, evt) {
     if (!chartInstance || !globalData.length) return;
 
@@ -2835,6 +2881,11 @@ window.setChartRange = function(type, evt) {
         }
         if (startDate > endDate) {
             showToast('显示开始日期不能晚于结束日期', 'warn');
+            return;
+        }
+        const fullRange = getFullDataRange();
+        if (!fullRange.min || startDate < fullRange.min || endDate > fullRange.max) {
+            refreshForDisplayRange(startDate, endDate);
             return;
         }
         setChartRangeState('input', startDate, endDate);
