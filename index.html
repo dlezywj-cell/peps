@@ -528,6 +528,7 @@ window.copyDebugLogs = () => {
 let currentStock   = { code: '', name: '', secId: '' };
 let globalData     = [];
 let currentTotalShares = 0;
+let currentHistoricalShares = [];
 let currentKlineSource = '';
 let chartInstance  = null;
 let forecastHistoryChartInstance = null;
@@ -814,6 +815,7 @@ async function runSearch() {
             }
             if (currentStock.code && currentStock.code !== item.Code) {
                 chartRangeState = { type: 'all', min: null, max: null };
+                currentHistoricalShares = [];
             }
             currentStock = { code: item.Code, name: item.Name, secId };
             Logger.log(`[Search] Found: ${currentStock.name} (SecID: ${currentStock.secId})`);
@@ -858,15 +860,17 @@ async function runAnalysis(silent = false) {
         if (!silent || globalData.length === 0) {
             if (!silent) showToast('正在并行获取数据…', 'info');
 
-            // ★ 加速优化2：股价(含股本) + 财报 三路并行，不再等股价完成再拉财报
-            const [_, __, finMapResult] = await Promise.all([
+            // 股价、当前股本、历史股本、财报并行获取。
+            const [_, __, finMapResult, historicalSharesResult] = await Promise.all([
                 fetchShares(),
                 fetchKline(beg, end),
-                fetchHistoricalFinancials(currentStock)  // ★ 与上面并行
+                fetchHistoricalFinancials(currentStock),
+                fetchDirectHistoricalShares(currentStock)
             ]);
 
             // 将财报结果存入闭包变量，后续直接使用
             window._prefetchedFinMap = finMapResult;
+            currentHistoricalShares = historicalSharesResult;
             setProgress(70);
         }
 
@@ -877,6 +881,7 @@ async function runAnalysis(silent = false) {
         // 使用并行预取的财报数据
         let finMap = window._prefetchedFinMap || await fetchHistoricalFinancials(currentStock);
         window._prefetchedFinMap = null;
+        applyDirectHistoricalShares(finMap, currentHistoricalShares);
 
         if (!currentTotalShares && currentStock._latestSharesFromFin) {
             Logger.log(`[Main] Overriding Shares using FinData: ${currentStock._latestSharesFromFin}`);
@@ -999,8 +1004,8 @@ function calculate(finMap) {
             getForwardFinancialEntry(finMap, y + 1),
             `${y}-01-01`
         );
-        // 优先使用与该财务期匹配的股本。它由净利润/EPS反推，天然与拆股后的EPS口径一致；
-        // 接口缺少该字段时才退回当前总股本。
+        // 优先使用与该财务期匹配的直接披露股本；直接接口缺失时才使用
+        // 净利润/EPS反推值，最后再退回当前总股本。
         const shares = fin?.shares || currentTotalShares;
         const mktCap = item.price * shares;
         const base = {
@@ -1501,7 +1506,141 @@ async function fetchShares() {
     }
 }
 
-const COMMON_SPLIT_FACTORS = [2, 3, 4, 5, 10, 20, 50, 100];
+const COMMON_SPLIT_FACTORS = [2, 3, 4, 5, 7, 10, 20, 50, 100];
+
+function normalizeHistoricalShareRecords(rows, sourceName) {
+    const byDate = new Map();
+    (rows || []).forEach(item => {
+        const date = normalizeReportDate(item) || String(item?.date || '').slice(0, 10);
+        const shares = Number(item?.shares);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(shares) && shares > 0) {
+            byDate.set(date, { date, shares, source: sourceName });
+        }
+    });
+    const normalized = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+    // 数据商可能从某个年度开始把历史股数切换到拆股后口径。识别近似整数倍
+    // 跳变，将更早的股数同步换算到最新口径，使其能与前复权股价相乘。
+    for (let i = 1; i < normalized.length; i++) {
+        const previous = normalized[i - 1];
+        const current = normalized[i];
+        const ratio = Math.max(previous.shares, current.shares) / Math.min(previous.shares, current.shares);
+        const matchedSplit = COMMON_SPLIT_FACTORS.find(candidate => Math.abs(ratio - candidate) / candidate <= 0.12);
+        if (!matchedSplit) continue;
+
+        const previousScale = previous.shares < current.shares ? matchedSplit : 1 / matchedSplit;
+        for (let j = 0; j < i; j++) normalized[j].shares *= previousScale;
+        Logger.log(`[Shares-History] ${sourceName} 口径校正：${previous.date}→${current.date} 约 ${matchedSplit}:1，早期股本×${previousScale.toFixed(6)}。`);
+    }
+    return normalized;
+}
+
+const usSecuCodePromiseCache = {};
+
+async function resolveUsSecuCode(code) {
+    const normalizedCode = String(code || '').toUpperCase();
+    if (!normalizedCode) return '';
+    if (!usSecuCodePromiseCache[normalizedCode]) {
+        usSecuCodePromiseCache[normalizedCode] = (async () => {
+            const profileUrl = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_USF10_INFO_ORGPROFILE&columns=SECUCODE,SECURITY_CODE&filter=${encodeURIComponent(`(SECURITY_CODE="${normalizedCode}")`)}&pageNumber=1&pageSize=5&source=SECURITIES&client=PC&v=${Date.now()}`;
+            const rows = await fetchEMReport(profileUrl, 'US-SECUCODE');
+            const secuCode = rows?.[0]?.SECUCODE || normalizedCode;
+            Logger.log(`[Shares-History] 美股代码映射：${normalizedCode} → ${secuCode}`);
+            return secuCode;
+        })();
+    }
+    return usSecuCodePromiseCache[normalizedCode];
+}
+
+async function fetchDirectHistoricalShares(stockObj) {
+    const sid = stockObj?.secId || '';
+    const code = stockObj?.code || '';
+    let rows = [];
+    let sourceName = '';
+
+    try {
+        if (sid.startsWith('1.') || sid.startsWith('0.')) {
+            const secuCode = `${code}.${sid.startsWith('1.') ? 'SH' : 'SZ'}`;
+            const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_F10_EH_EQUITY&columns=SECUCODE,END_DATE,TOTAL_SHARES&filter=${encodeURIComponent(`(SECUCODE="${secuCode}")`)}&pageNumber=1&pageSize=500&sortTypes=1&sortColumns=END_DATE&source=WEB&client=WEB`;
+            const data = await fetchEMReport(url, 'Shares-History-A');
+            rows = data.map(item => ({ date: item.END_DATE, shares: item.TOTAL_SHARES }));
+            sourceName = '东方财富A股历史总股本';
+        } else if (sid.startsWith('116.')) {
+            const secuCode = `${code}.HK`;
+            const url = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_HKF10_INFO_EQUITY&columns=SECUCODE,CHANGE_DATE,HK_SHARES,CHANGE_REASON,NOTICE_DATE&filter=${encodeURIComponent(`(SECUCODE="${secuCode}")`)}&pageNumber=1&pageSize=500&sortTypes=1&sortColumns=CHANGE_DATE&source=F10&client=PC&v=${Date.now()}`;
+            const data = await fetchEMReport(url, 'Shares-History-HK');
+            rows = data.map(item => ({ date: item.CHANGE_DATE, shares: item.HK_SHARES }));
+            sourceName = '东方财富港股历史已发行股本';
+        } else if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) {
+            const secuCode = await resolveUsSecuCode(code);
+            const filter = `(SECUCODE="${secuCode}")(DATE_TYPE_CODE="001")(STD_ITEM_CODE="004017007")`;
+            const url = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_USF10_FN_INCOME&columns=SECUCODE,REPORT_DATE,DATE_TYPE_CODE,STD_ITEM_CODE,ITEM_NAME,AMOUNT&filter=${encodeURIComponent(filter)}&pageNumber=1&pageSize=200&sortTypes=1&sortColumns=REPORT_DATE&source=SECURITIES&client=PC&v=${Date.now()}`;
+            let data = await fetchEMReport(url, 'Shares-History-US');
+
+            // 少数公司没有基本加权平均股数时，改取摊薄加权平均股数。
+            if (!data.length) {
+                const dilutedFilter = `(SECUCODE="${secuCode}")(DATE_TYPE_CODE="001")(STD_ITEM_CODE="004017008")`;
+                const dilutedUrl = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_USF10_FN_INCOME&columns=SECUCODE,REPORT_DATE,DATE_TYPE_CODE,STD_ITEM_CODE,ITEM_NAME,AMOUNT&filter=${encodeURIComponent(dilutedFilter)}&pageNumber=1&pageSize=200&sortTypes=1&sortColumns=REPORT_DATE&source=SECURITIES&client=PC&v=${Date.now()}`;
+                data = await fetchEMReport(dilutedUrl, 'Shares-History-US-Diluted');
+            }
+            rows = data.map(item => ({ date: item.REPORT_DATE, shares: item.AMOUNT }));
+            sourceName = '东方财富美股年报直接披露股数';
+        }
+    } catch (e) {
+        Logger.error('[Shares-History] Direct shares exception', e);
+    }
+
+    const normalized = normalizeHistoricalShareRecords(rows, sourceName || '历史股本');
+    if (normalized.length) {
+        Logger.log(`[Shares-History] ${sourceName} Success: ${normalized.length} records.`);
+    } else {
+        Logger.log('[Shares-History] 直接股本不可用，将使用财报EPS反推值兜底。');
+    }
+    return normalized;
+}
+
+function findHistoricalSharesForDate(records, date) {
+    if (!Array.isArray(records) || !records.length || !date) return null;
+    const exact = records.find(item => item.date === date);
+    if (exact) return exact;
+
+    const year = String(date).slice(0, 4);
+    const sameYear = records.filter(item => item.date.startsWith(year));
+    if (sameYear.length) {
+        return sameYear.reduce((best, item) =>
+            Math.abs(Date.parse(item.date) - Date.parse(date)) < Math.abs(Date.parse(best.date) - Date.parse(date)) ? item : best
+        );
+    }
+
+    const earlier = records.filter(item => item.date <= date);
+    return earlier.length ? earlier[earlier.length - 1] : records[0];
+}
+
+function applyDirectHistoricalShares(finMap, records) {
+    if (!finMap || !Array.isArray(records) || !records.length) return;
+    let applied = 0;
+
+    if (Array.isArray(finMap.__rawAnnualReports)) {
+        finMap.__rawAnnualReports.forEach(report => {
+            const matched = findHistoricalSharesForDate(records, report.date);
+            if (!matched) return;
+            report.shares = matched.shares;
+            report.sharesSource = matched.source;
+            applied++;
+        });
+    }
+
+    Object.keys(finMap).forEach(key => {
+        if (!/^\d{4}$/.test(key) || !finMap[key]) return;
+        const matched = findHistoricalSharesForDate(records, `${key}-12-31`);
+        if (!matched) return;
+        finMap[key].shares = matched.shares;
+        finMap[key].sharesSource = matched.source;
+        applied++;
+    });
+
+    Logger.log(`[Shares-History] 已将直接股本应用到 ${applied} 份年度财务数据；EPS反推仅作缺失兜底。`);
+}
 
 function normalizeAdjustedKline(rows, sourceName) {
     const normalized = (rows || [])
@@ -1633,16 +1772,20 @@ async function fetchTencentAdjustedKline(beg, end, sid, code) {
     const startDate = compactDateToIso(beg);
     const requestedEndDate = compactDateToIso(end);
     if (!startDate || !requestedEndDate) return false;
+    const today = new Date().toISOString().slice(0, 10);
+    // 港股 day 是原始价。即使用户只查拆股前区间，也要抓到今天才能看到
+    // 后续拆股事件；完成校正后再截取用户区间。
+    const dataEndDate = isHK && today > requestedEndDate ? today : requestedEndDate;
 
     const rangeDays = Math.max(1, Math.ceil(
-        (Date.parse(requestedEndDate + 'T00:00:00Z') - Date.parse(startDate + 'T00:00:00Z')) / 86400000
+        (Date.parse(dataEndDate + 'T00:00:00Z') - Date.parse(startDate + 'T00:00:00Z')) / 86400000
     ));
     const maxPages = Math.min(30, Math.max(2, Math.ceil(rangeDays / 800) + 2));
     const rowsByDate = new Map();
-    let cursorEnd = requestedEndDate;
+    let cursorEnd = dataEndDate;
     let usedRawDay = false;
 
-    Logger.log(`[Kline] Tencent paged route Start: ${tSymbol}, ${startDate} to ${requestedEndDate}`);
+    Logger.log(`[Kline] Tencent paged route Start: ${tSymbol}, ${startDate} to ${dataEndDate}`);
 
     for (let page = 1; page <= maxPages; page++) {
         const result = await fetchTencentKlinePage(tSymbol, cursorEnd);
@@ -1678,11 +1821,12 @@ async function fetchTencentAdjustedKline(beg, end, sid, code) {
         cursorEnd = nextEnd;
     }
 
-    const rows = Array.from(rowsByDate.values()).filter(item =>
+    const allRows = Array.from(rowsByDate.values());
+    const preparedAllRows = usedRawDay ? repairRawSplitKline(allRows, 'Tencent HK raw') : allRows;
+    const preparedRows = preparedAllRows.filter(item =>
         item.date >= startDate && item.date <= requestedEndDate
     );
-    if (rows.length === 0) return false;
-    const preparedRows = usedRawDay ? repairRawSplitKline(rows, 'Tencent HK raw') : rows;
+    if (preparedRows.length === 0) return false;
     const sourceName = usedRawDay ? 'Tencent 港股拆股校正（分页）' : 'Tencent 前复权（分页）';
     return useAdjustedKline(preparedRows, sourceName);
 }
@@ -1722,13 +1866,18 @@ async function fetchSinaUsAdjustedKline(beg, end, code) {
         return false;
     }
 
-    const rows = data.map(k => ({
+    const allRows = data.map(k => ({
         date: k?.d,
         price: parseFloat(k?.c)
-    })).filter(item => item.date >= startDate && item.date <= requestedEndDate);
-    if (rows.length === 0) return false;
+    }));
+    // 必须先在完整历史中识别拆股，再截取用户区间；否则查询2019年以前时
+    // 看不到苹果2020年的4:1拆股，早期价格会保持未复权。
+    const repairedAllRows = repairRawSplitKline(allRows, 'Sina US raw');
+    const repairedRows = repairedAllRows.filter(item =>
+        item.date >= startDate && item.date <= requestedEndDate
+    );
+    if (repairedRows.length === 0) return false;
 
-    const repairedRows = repairRawSplitKline(rows, 'Sina US raw');
     return useAdjustedKline(repairedRows, 'Sina 美股拆股校正');
 }
 
@@ -2076,16 +2225,9 @@ async function fetchHKUSMainIndicators(sid, code) {
     let secuCode = isHK ? `${code}.HK` : code;
 
     if (!isHK) {
-        // 美股需要先把代码解析成东方财富内部的规范 SECUCODE（例如 TSLA → TSLA.O）
         try {
-            const profileUrl = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_USF10_INFO_ORGPROFILE&columns=SECUCODE,SECURITY_CODE&filter=${encodeURIComponent(`(SECURITY_CODE="${code}")`)}&pageNumber=1&pageSize=5&source=SECURITIES&client=PC&v=${Date.now()}`;
-            const rows = await fetchEMReport(profileUrl, 'US-SECUCODE');
-            if (rows.length > 0 && rows[0].SECUCODE) {
-                secuCode = rows[0].SECUCODE;
-                Logger.log(`[Fin] 美股 SECUCODE 解析成功：${code} → ${secuCode}`);
-            } else {
-                Logger.log(`[Fin] 美股 SECUCODE 解析失败，回退使用原始代码：${code}`);
-            }
+            // 美股需要先解析东方财富内部的规范 SECUCODE（例如 AAPL → AAPL.O）。
+            secuCode = await resolveUsSecuCode(code);
         } catch (e) { Logger.error('[Fin] US SECUCODE lookup exception', e); }
     }
 
