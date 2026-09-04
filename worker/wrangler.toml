@@ -1,0 +1,6 @@
+name = "peps-international-api"
+main = "international-api.mjs"
+compatibility_date = "2026-09-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://dlezywj-cell.github.io"

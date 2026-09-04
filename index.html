@@ -52,6 +52,14 @@
             font-size: 13px; outline: none; transition: 0.2s; height: 34px; width: 100%;
         }
         .input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
+        #marketSelect { height: 34px; border: 1px solid #ccc; border-radius: 4px; background: white; min-width: 90px; }
+        .market-help { padding: 8px 20px; color: #666; font-size: 12px; line-height: 1.6; }
+        .market-help label { display: block; margin-top: 5px; }
+        #internationalShares { width: 205px; max-width: 100%; padding: 5px; border: 1px solid #ccc; border-radius: 4px; }
+        .search-results { padding: 0 20px 8px; }
+        .search-results button { margin: 4px 6px 0 0; height: auto; min-height: 34px; white-space: normal; text-align: left; }
+        .group-search .input-group { min-width: 0; }
+        @media (min-width: 769px) { .tools-bar { flex-wrap: wrap; } }
 
         button {
             height: 34px; padding: 0 16px; border: none; border-radius: 4px; cursor: pointer;
@@ -303,8 +311,14 @@
         <div class="tools-bar">
             <div class="group-search">
                 <div class="input-group">
-                    <input type="text" id="stockInput" value="" placeholder="代码/名称/港股/美股" autocomplete="off">
+                    <input type="text" id="stockInput" value="" placeholder="代码/名称，如 7203.T、2330.TW" autocomplete="off">
                 </div>
+                <select id="marketSelect" aria-label="股票市场" title="纯数字代码请先选择市场">
+                    <option value="auto">自动 / A港美</option>
+                    <option value="JP">日本</option>
+                    <option value="KR">韩国</option>
+                    <option value="TW">台湾</option>
+                </select>
                 <button class="btn-primary" id="btnSearch">🔍 搜索</button>
             </div>
             <div class="divider-v"></div>
@@ -321,6 +335,13 @@
             </div>
         </div>
     </header>
+
+    <div id="marketHelp" class="market-help">日股：7203.T；韩股：005930.KS / 247540.KQ；台股：2330.TW / 6488.TWO。纯代码请先选市场。</div>
+    <div id="searchResults" class="search-results" aria-label="匹配的股票" hidden></div>
+    <div id="internationalInfo" class="market-help" hidden>
+        <span id="internationalDataNote"></span>
+        <label>股本补录（亿股，可选）：<input id="internationalShares" type="number" min="0" step="any" placeholder="仅在自动股本缺失时使用"></label>
+    </div>
 
     <div id="toastMsg" class="status-msg"></div>
 
@@ -395,7 +416,7 @@
             <span>✍️ 补充财务数据</span>
         </div>
         <div style="font-size:12px;color:#c0392b;background:#fff1f0;padding:8px 10px;border-radius:4px;margin-bottom:10px;">
-            ⚠️ 以下年份未能自动获取财报，请手动补录（单位：亿元）
+            ⚠️ 以下年份未能自动获取财报，请手动补录（单位：亿<span class="financial-currency-unit">元</span>）
         </div>
         <div class="modal-body" id="batchInputContainer"></div>
         <div class="modal-footer">
@@ -412,7 +433,7 @@
             <span>🔮 预测财务数据</span>
         </div>
         <div style="font-size:12px;color:#096dd9;background:#e6f7ff;padding:8px 10px;border-radius:4px;margin-bottom:10px;">
-            FW1 直接使用你在下方最新年份里手动录入的数据；这里仅输入下一年度的 FW2 预测（单位：亿元）。每次保存都会记录历史。
+            FW1 直接使用你在下方最新年份里手动录入的数据；这里仅输入下一年度的 FW2 预测（单位：亿<span class="financial-currency-unit">元</span>）。每次保存都会记录历史。
         </div>
         <div class="modal-body" id="forecastInputContainer"></div>
         <div class="modal-footer">
@@ -430,7 +451,7 @@
             <i class="fas fa-times" onclick="closeHistoryManager()" style="cursor:pointer;color:#999;"></i>
         </div>
         <div style="font-size:12px;color:#555;background:#f8f9fa;padding:8px 10px;border-radius:4px;margin-bottom:10px;">
-            可修改日期、收入和净利润；删除操作需点击“保存修改”后生效。单位：亿元。
+            可修改日期、收入和净利润；删除操作需点击“保存修改”后生效。单位：亿<span class="financial-currency-unit">元</span>。
         </div>
         <div class="modal-body" id="historyManagerContainer"></div>
         <div class="modal-footer">
@@ -444,10 +465,14 @@
 <div class="modal-overlay" id="settingModal">
     <div class="modal-box" style="height:auto;">
         <div class="modal-header">
-            <span><i class="fab fa-github"></i> GitHub 同步配置</span>
+            <span><i class="fab fa-github"></i> 数据与同步配置</span>
             <i class="fas fa-times" onclick="closeSettings()" style="cursor:pointer;color:#999;"></i>
         </div>
         <div class="modal-body" style="gap:0;">
+            <div class="form-row">
+                <label>日本 / 韩国 / 台湾数据服务（推荐配置，免受公共代理限流）</label>
+                <input type="url" id="cfgInternationalApi" placeholder="https://你的服务.workers.dev">
+            </div>
             <div class="form-row">
                 <label>GitHub Token（用于多设备同步，可选）</label>
                 <input type="password" id="cfgToken" placeholder="ghp_xxxxxxxxxxxxxxxxx">
@@ -555,6 +580,14 @@ let ghConfig = {
 // ============================================================
 // 初始化
 // ============================================================
+const INTERNATIONAL_MARKETS = {
+    JP: { name: '日本', currency: 'JPY', unit: '日元', suffixes: ['T'] },
+    KR: { name: '韩国', currency: 'KRW', unit: '韩元', suffixes: ['KS', 'KQ'] },
+    TW: { name: '台湾', currency: 'TWD', unit: '新台币', suffixes: ['TW', 'TWO'] }
+};
+const internationalBundleCache = new Map();
+let analysisInProgress = false;
+
 document.getElementById('endDate').value = new Date().toISOString().split('T')[0];
 document.getElementById('displayEndDate').value = new Date().toISOString().split('T')[0];
 document.getElementById('displayStartDate').value = '2016-01-01';
@@ -628,6 +661,10 @@ function getForwardFinancialEntry(finMap, year) {
     };
 }
 
+function getFinancialCurrencyUnit() {
+    return INTERNATIONAL_MARKETS[getInternationalMarket(currentStock.code)]?.unit || '元';
+}
+
 function updateCurrentStockBanner() {
     const banner = document.getElementById('currentStockBanner');
     if (!banner) return;
@@ -636,8 +673,11 @@ function updateCurrentStockBanner() {
         banner.innerHTML = '';
         return;
     }
-    banner.innerHTML = `当前股票：${currentStock.name || '-'}<span class="stock-code">(${currentStock.code})</span>`;
+    banner.textContent = `当前股票：${currentStock.name || '-'} (${currentStock.code})`;
+    const market = INTERNATIONAL_MARKETS[getInternationalMarket(currentStock.code)];
+    if (market) banner.append(` · ${market.name} · ${market.currency}（金额：亿${market.unit}）`);
     banner.style.display = 'block';
+    document.querySelectorAll('.financial-currency-unit').forEach(el => { el.textContent = getFinancialCurrencyUnit(); });
 }
 
 // ============================================================
@@ -788,7 +828,199 @@ function setProgress(pct) {
 // ============================================================
 // 搜索 API
 // ============================================================
+function getInternationalMarket(symbol) {
+    const suffix = String(symbol || '').toUpperCase().split('.').pop();
+    return Object.keys(INTERNATIONAL_MARKETS).find(key => INTERNATIONAL_MARKETS[key].suffixes.includes(suffix)) || null;
+}
+
+function internationalSymbols(input, market) {
+    const value = input.trim().toUpperCase();
+    const explicitMarket = getInternationalMarket(value);
+    if (explicitMarket) {
+        if (!/^\d[0-9A-Z]{3,5}\.(T|KS|KQ|TW|TWO)$/.test(value)) return [];
+        if (market !== 'auto' && market !== explicitMarket) throw new Error('代码后缀与所选市场不一致，请调整市场');
+        return [value];
+    }
+    if (market === 'JP' && /^\d[0-9A-Z]{3}$/.test(value)) return [value + '.T'];
+    if (market === 'KR' && /^\d{1,6}$/.test(value)) return ['KS', 'KQ'].map(suffix => value.padStart(6, '0') + '.' + suffix);
+    if (market === 'TW' && /^\d{4,6}$/.test(value)) return ['TW', 'TWO'].map(suffix => value + '.' + suffix);
+    return [];
+}
+
+// 新市场独立路由，既不改变东财/腾讯/新浪，也不把业务错误当成成功的 JSON。
+async function fetchInternationalJSON(path, validate) {
+    const hosts = ['https://query2.finance.yahoo.com', 'https://query1.finance.yahoo.com'];
+    const queryUrl = hosts[0] + path;
+    const configuredApi = localStorage.getItem('international_api') ||
+        (typeof location !== 'undefined' && ['localhost', '127.0.0.1'].includes(location.hostname) ? '/api/international' : '');
+    const routes = configuredApi ? [configuredApi + (configuredApi.includes('?') ? '&' : '?') + 'path=' + encodeURIComponent(path)] : [
+        ...hosts.map(host => host + path),
+        'https://api.cors.lol/?url=' + encodeURIComponent(queryUrl),
+        'https://api.allorigins.win/get?url=' + encodeURIComponent(queryUrl)
+    ];
+    const controllers = routes.map(() => new AbortController());
+    try {
+        return await Promise.any(routes.map(async (url, i) => {
+            const timer = setTimeout(() => controllers[i].abort(), 15000);
+            try {
+                const res = await fetch(url, { signal: controllers[i].signal, credentials: 'omit' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = safeParseJSON(await res.text());
+                if (!validate(data)) throw new Error('数据为空、证券不存在或接口受限');
+                return data;
+            } catch (e) {
+                Logger.log(`[International] 路由失败 ${url.split('?')[0]}：${e.message}`);
+                throw e;
+            } finally { clearTimeout(timer); }
+        }));
+    } catch (e) {
+        Logger.log('[International] 数据源未返回有效数据；可在设置中配置专用数据服务');
+        return null;
+    } finally { controllers.forEach(controller => controller.abort()); }
+}
+
+async function fetchInternationalChart(symbol, range = 'max') {
+    // range=max 会被 Yahoo 自动降采样为月线，长区间必须明确给出时间戳。
+    const period = range === 'max' ? `period1=0&period2=${Math.floor(Date.now() / 1000) + 86400}` : `range=${range}`;
+    const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&${period}&events=splits`;
+    const json = await fetchInternationalJSON(path, data => {
+        const result = data?.chart?.result?.[0];
+        return !data.chart.error && result?.meta?.symbol?.toUpperCase() === symbol &&
+            result.meta.instrumentType === 'EQUITY' && result.meta.dataGranularity === '1d' && result.timestamp?.length > 0;
+    });
+    return json?.chart?.result?.[0] || null;
+}
+
+function selectStock(stock) {
+    if (`${currentStock.secId}|${currentStock.code}` !== `${stock.secId}|${stock.code}`) {
+        chartRangeState = { type: 'all', min: null, max: null };
+        currentHistoricalShares = [];
+        currentTotalShares = 0;
+        globalData = [];
+        window._prefetchedFinMap = null;
+        lastKlineRequest = { stockKey: '', start: '', end: '' };
+        if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+        if (forecastHistoryChartInstance) { forecastHistoryChartInstance.destroy(); forecastHistoryChartInstance = null; }
+        document.getElementById('forecastHistoryWrap').style.display = 'none';
+        renderTable();
+    }
+    currentStock = stock;
+    document.getElementById('searchResults').hidden = true;
+    document.getElementById('btn-run').disabled = false;
+    updateCurrentStockBanner();
+    const market = INTERNATIONAL_MARKETS[getInternationalMarket(stock.code)];
+    document.getElementById('internationalInfo').hidden = !market;
+    if (market) {
+        document.getElementById('internationalDataNote').textContent =
+            `${market.name} · ${market.currency}：股价、财报及预测均按${market.unit}；金额输入单位为亿${market.unit}。Yahoo 年报通常仅覆盖近四年，缺失年份可补录；股本优先使用期末披露值，缺失时使用最近披露股本。`;
+        const saved = getLocalDB()[stock.code]?.__shares;
+        document.getElementById('internationalShares').value = saved?.shares > 0 ? saved.shares / 1e8 : '';
+    }
+    showToast(`✅ 已选定：${stock.name}（${stock.code}）`, 'ok');
+}
+
+async function searchInternational(input, market) {
+    const symbols = internationalSymbols(input, market);
+    let stocks = [];
+    if (symbols.length) {
+        const results = await Promise.all(symbols.map(symbol => fetchInternationalChart(symbol, '5d')));
+        stocks = results.filter(Boolean).map(result => ({
+            code: result.meta.symbol.toUpperCase(), name: result.meta.longName || result.meta.shortName || result.meta.symbol,
+            secId: 'YF.' + result.meta.symbol.toUpperCase()
+        }));
+    } else {
+        const path = `/v1/finance/search?q=${encodeURIComponent(input)}&quotesCount=30&newsCount=0`;
+        const json = await fetchInternationalJSON(path, data => Array.isArray(data?.quotes));
+        stocks = (json?.quotes || []).filter(item => item.quoteType === 'EQUITY' &&
+            getInternationalMarket(item.symbol) && (market === 'auto' || getInternationalMarket(item.symbol) === market))
+            .map(item => ({ code: item.symbol.toUpperCase(), name: item.longname || item.shortname || item.symbol, secId: 'YF.' + item.symbol.toUpperCase() }));
+    }
+    if (!stocks.length) throw new Error('未找到股票或国际数据源暂不可用；请使用完整代码（如 7203.T、005930.KS、2330.TW），稍后重试');
+    if (stocks.length === 1) { selectStock(stocks[0]); return; }
+    const container = document.getElementById('searchResults');
+    container.replaceChildren();
+    stocks.forEach(stock => {
+        const button = document.createElement('button');
+        button.className = 'btn-outline';
+        button.textContent = `${stock.name} (${stock.code}) · ${INTERNATIONAL_MARKETS[getInternationalMarket(stock.code)].name}`;
+        button.addEventListener('click', () => selectStock(stock));
+        container.appendChild(button);
+    });
+    container.hidden = false;
+    showToast('找到多个结果，请选择股票', 'info');
+}
+
+function parseInternationalSeries(json) {
+    const records = new Map();
+    for (const series of json?.timeseries?.result || []) {
+        const type = series.meta?.type?.[0];
+        if (!type) continue;
+        for (const item of series[type] || []) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(item.asOfDate || '')) continue;
+            if (type.startsWith('annual') && item.periodType !== '12M') continue;
+            const value = item.reportedValue?.raw;
+            if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+            if (!records.has(item.asOfDate)) records.set(item.asOfDate, { date: item.asOfDate });
+            records.get(item.asOfDate)[type] = { value, currency: normalizeCurrencyCode(item.currencyCode) };
+        }
+    }
+    return [...records.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Yahoo close 与 timeseries 普通股股本都已按拆股回溯调整。
+// 例如索尼 2023-03-31 股本已约为 61.72 亿股，不能再次乘以 2024 年的 5:1 拆股。
+function internationalShareRecords(records, chart) {
+    return records.flatMap(record => {
+        const shares = record.annualOrdinarySharesNumber?.value || record.quarterlyOrdinarySharesNumber?.value;
+        if (!(shares > 0)) return [];
+        return [{ date: record.date, shares, source: 'Yahoo 期末普通股股本（拆股调整口径）' }];
+    });
+}
+
+function getInternationalBundle(stock) {
+    if (!internationalBundleCache.has(stock.code)) {
+        const promise = (async () => {
+            const types = 'annualTotalRevenue,annualNetIncome,annualOrdinarySharesNumber,quarterlyOrdinarySharesNumber';
+            const end = Math.floor(Date.now() / 1000) + 86400;
+            const path = `/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(stock.code)}?type=${types}&period1=0&period2=${end}`;
+            const [chart, financials] = await Promise.all([
+                fetchInternationalChart(stock.code),
+                fetchInternationalJSON(path, data => !data?.timeseries?.error && Array.isArray(data?.timeseries?.result) && data.timeseries.result.some(row => row.meta?.type?.length))
+            ]);
+            if (!chart) throw new Error('国际历史行情暂不可用，请稍后重试');
+            const market = INTERNATIONAL_MARKETS[getInternationalMarket(stock.code)];
+            if (chart.meta.currency !== market.currency) throw new Error(`交易币种异常：预期 ${market.currency}，实际 ${chart.meta.currency || '未知'}`);
+            const records = parseInternationalSeries(financials);
+            return { chart, records, shares: internationalShareRecords(records, chart) };
+        })();
+        internationalBundleCache.set(stock.code, promise);
+        promise.catch(() => internationalBundleCache.delete(stock.code));
+    }
+    return internationalBundleCache.get(stock.code);
+}
+
+async function fetchInternationalFinancials(stock) {
+    const { records } = await getInternationalBundle(stock);
+    const currency = INTERNATIONAL_MARKETS[getInternationalMarket(stock.code)].currency;
+    const reports = [];
+    for (const record of records) {
+        const revenue = record.annualTotalRevenue;
+        const profit = record.annualNetIncome;
+        if (!revenue || !profit || !revenue.currency || revenue.currency !== profit.currency) continue;
+        const rate = revenue.currency === currency ? 1 : await fetchFxRate(record.date, revenue.currency, currency);
+        if (!(rate > 0)) {
+            Logger.log(`[Fin] ${record.date} 缺少有效汇率，等待以 ${currency} 手工补录`);
+            continue;
+        }
+        reports.push({ date: record.date, rev: revenue.value * rate, prof: profit.value * rate,
+            currency, inputCurrency: revenue.currency, converted: revenue.currency !== currency });
+    }
+    Logger.log(`[Fin] Yahoo ${stock.code} 有效年报 ${reports.length} 份；较早年份沿用手工补录`);
+    return reports.length ? { __rawAnnualReports: reports.sort((a, b) => b.date.localeCompare(a.date)) } : {};
+}
+
 async function runSearch() {
+    if (analysisInProgress) return;
     Logger.clear();
     const val = document.getElementById('stockInput').value.trim();
     if (!val) { showToast('请输入股票代码或名称', 'warn'); return; }
@@ -799,6 +1031,12 @@ async function runSearch() {
 
     try {
         Logger.log(`[Search] Keyword: ${val}`);
+        document.getElementById('searchResults').hidden = true;
+        const market = document.getElementById('marketSelect').value;
+        if (market !== 'auto' || getInternationalMarket(val)) {
+            await searchInternational(val, market);
+            return;
+        }
         const url = `https://searchapi.eastmoney.com/api/suggest/get?input=${encodeURIComponent(val)}&type=14,31,41&token=D43BF722C8E33BD5D50F639205545E43`;
         const json = await apiFetch(url, 'cb', 'SearchAPI');
 
@@ -815,12 +1053,7 @@ async function runSearch() {
                 else if (item.Code.startsWith('6'))   secId = `1.${item.Code}`;
                 else                                   secId = `0.${item.Code}`;
             }
-            if (currentStock.code && currentStock.code !== item.Code) {
-                chartRangeState = { type: 'all', min: null, max: null };
-                currentHistoricalShares = [];
-                lastKlineRequest = { stockKey: '', start: '', end: '' };
-            }
-            currentStock = { code: item.Code, name: item.Name, secId };
+            selectStock({ code: item.Code, name: item.Name, secId });
             Logger.log(`[Search] Found: ${currentStock.name} (SecID: ${currentStock.secId})`);
             document.getElementById('btn-run').disabled = false;
             updateCurrentStockBanner();
@@ -861,6 +1094,10 @@ function shouldRefreshMarketData(silent, beg, end) {
 }
 
 async function runAnalysis(silent = false) {
+    if (analysisInProgress || !currentStock.code) return;
+    analysisInProgress = true;
+    document.getElementById('btnSearch').disabled = true;
+    document.getElementById('marketSelect').disabled = true;
     const btn = document.getElementById('btn-run');
     const loader = document.getElementById('chartLoading');
 
@@ -881,6 +1118,7 @@ async function runAnalysis(silent = false) {
 
         if (shouldRefreshMarketData(silent, beg, end)) {
             if (!silent) showToast('正在并行获取数据…', 'info');
+            if (getInternationalMarket(currentStock.code)) internationalBundleCache.delete(currentStock.code);
 
             // 股价、当前股本、历史股本、财报并行获取。
             const [_, __, finMapResult, historicalSharesResult] = await Promise.all([
@@ -913,6 +1151,18 @@ async function runAnalysis(silent = false) {
         if (!currentTotalShares && currentStock._latestSharesFromFin) {
             Logger.log(`[Main] Overriding Shares using FinData: ${currentStock._latestSharesFromFin}`);
             currentTotalShares = currentStock._latestSharesFromFin;
+        }
+        if (!currentTotalShares && getInternationalMarket(currentStock.code)) {
+            const manualShares = Number(document.getElementById('internationalShares').value) * 1e8;
+            if (!Number.isFinite(manualShares) || manualShares <= 0) {
+                throw new Error('缺少有效股本，请在上方补录股本（亿股）后重新计算');
+            }
+            currentTotalShares = manualShares;
+            const db = getLocalDB();
+            if (!db[currentStock.code]) db[currentStock.code] = {};
+            db[currentStock.code].__shares = { shares: manualShares, ts: Date.now() };
+            localStorage.setItem(DB_KEY, JSON.stringify(db));
+            triggerSync();
         }
         if (!currentTotalShares) currentTotalShares = 1e8;
 
@@ -999,6 +1249,9 @@ async function runAnalysis(silent = false) {
         }
         setProgress(0);
     } finally {
+        analysisInProgress = false;
+        document.getElementById('btnSearch').disabled = false;
+        document.getElementById('marketSelect').disabled = false;
         if (!silent) {
             btn.disabled = false;
             btn.innerHTML = '⚡ 计算';
@@ -1522,6 +1775,11 @@ async function editYearData(year) {
 // ============================================================
 async function fetchShares() {
     currentTotalShares = 0;
+    if (getInternationalMarket(currentStock.code)) {
+        const { shares } = await getInternationalBundle(currentStock);
+        currentTotalShares = shares[shares.length - 1]?.shares || 0;
+        return;
+    }
     const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${currentStock.secId}&fields=f84,f20,f2&invt=2`;
     const json = await apiFetch(url, 'cb', 'SharesAPI');
     if (json?.data) {
@@ -1580,6 +1838,7 @@ async function resolveUsSecuCode(code) {
 }
 
 async function fetchDirectHistoricalShares(stockObj) {
+    if (getInternationalMarket(stockObj.code)) return (await getInternationalBundle(stockObj)).shares;
     const sid = stockObj?.secId || '';
     const code = stockObj?.code || '';
     let rows = [];
@@ -1912,6 +2171,19 @@ async function fetchSinaUsAdjustedKline(beg, end, code) {
 // K线获取：所有被采用的数据源必须是前复权/拆股调整口径
 // ============================================================
 async function fetchKline(beg, end) {
+    if (getInternationalMarket(currentStock.code)) {
+        globalData = [];
+        const { chart } = await getInternationalBundle(currentStock);
+        const closes = chart.indicators?.quote?.[0]?.close || [];
+        const start = compactDateToIso(beg);
+        const finish = compactDateToIso(end);
+        const rows = chart.timestamp.map((ts, i) => ({
+            date: new Date((ts + (chart.meta.gmtoffset || 0)) * 1000).toISOString().slice(0, 10),
+            price: closes[i]
+        })).filter(row => row.date >= start && row.date <= finish);
+        if (!useAdjustedKline(rows, 'Yahoo Finance 拆股调整价')) throw new Error('所选区间没有有效行情或行情未通过校验，请检查日期');
+        return;
+    }
     let success = false;
     let tencentAttempted = false;
     currentKlineSource = '';
@@ -2290,6 +2562,7 @@ async function fetchHKUSMainIndicators(sid, code) {
 // 双引擎财报抓取
 // ============================================================
 async function fetchHistoricalFinancials(stockObj) {
+    if (getInternationalMarket(stockObj.code)) return fetchInternationalFinancials(stockObj);
     const map  = {};
     const sid  = stockObj.secId;
     const code = stockObj.code;
@@ -2655,6 +2928,7 @@ function showToast(msg, type = 'ok') {
 }
 
 window.showSettings = () => {
+    document.getElementById('cfgInternationalApi').value = localStorage.getItem('international_api') || '';
     document.getElementById('cfgToken').value = ghConfig.token;
     document.getElementById('cfgUser').value  = ghConfig.user;
     document.getElementById('cfgRepo').value  = ghConfig.repo;
@@ -2662,6 +2936,15 @@ window.showSettings = () => {
 };
 window.closeSettings = () => document.getElementById('settingModal').style.display = 'none';
 window.saveConfig = () => {
+    const api = document.getElementById('cfgInternationalApi').value.trim();
+    if (api) {
+        try {
+            const url = new URL(api);
+            if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error('invalid');
+        } catch (e) { showToast('数据服务请填写完整 HTTPS 地址，不含账号密码、查询参数或片段', 'warn'); return; }
+    }
+    localStorage.setItem('international_api', api.replace(/\/$/, ''));
+    internationalBundleCache.clear();
     ghConfig.token = document.getElementById('cfgToken').value.trim();
     ghConfig.user  = document.getElementById('cfgUser').value.trim();
     ghConfig.repo  = document.getElementById('cfgRepo').value.trim();
@@ -3317,7 +3600,7 @@ function renderForecastHistoryChart() {
                 legend: { position: 'top', labels: { boxWidth: 12, font: { size: 12 } } },
                 title: {
                     display: true,
-                    text: `FW1 当年 / FW2 下一年 ${metricLabel}（单位：亿元${isElastic ? ' · 弹性视图' : ''}）`,
+                    text: `FW1 当年 / FW2 下一年 ${metricLabel}（单位：亿${getFinancialCurrencyUnit()}${isElastic ? ' · 弹性视图' : ''}）`,
                     align: 'start',
                     color: '#2c3e50',
                     font: { size: 13, weight: '600' }
