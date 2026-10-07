@@ -582,7 +582,11 @@ function isAShareStock(stock = currentStock) {
     return /^(0|1)\./.test(stock?.secId || '');
 }
 
-function getAnnualReportTargetYear(reportDate) {
+function getAnnualReportTargetYear(reportDate, fiscalYear = null) {
+    // 港美股接口的 REPORT_TYPE 如 "2024/FY" 明确标记财年；MRVL 的
+    // 2025-02-01 年报属于 FY2024，不能仅按结束月份判断。
+    const fiscalMatch = String(fiscalYear || '').match(/(?:^|\b)(\d{4})(?:\s*\/\s*FY|$)/i);
+    if (fiscalMatch) return parseInt(fiscalMatch[1]);
     const match = String(reportDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!match) return null;
     const reportYear = parseInt(match[1]);
@@ -934,7 +938,7 @@ async function runAnalysis(silent = false) {
             const reports = finMap.__rawAnnualReports;
             Logger.log(`[Fin] 报告期映射模式：按每份年报的实际截止日期确定价格年度。`);
             for (const rep of reports) {
-                const y = getAnnualReportTargetYear(rep.date);
+                const y = getAnnualReportTargetYear(rep.date, rep.fiscalYear);
                 if (!y || finMap[y]) continue;
                 const amountText = rep.converted
                     ? `金额${rep.inputCurrency || '未识别'}→${rep.currency || '未识别'}`
@@ -2481,6 +2485,7 @@ async function fetchHistoricalFinancials(stockObj) {
                 : null;
             parsed.push({
                 date: dateStr,
+                fiscalYear: item.FISCAL_YEAR || item.REPORT_TYPE || null,
                 rev: revVal,
                 prof: profVal,
                 shares,
