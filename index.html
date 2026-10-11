@@ -224,6 +224,36 @@
             border-radius: 4px; font-size: 13px;
         }
         .row-inputs input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
+
+        /* 业绩录入弹窗：FW1 / FW2 / FW3 三行并排 */
+        .fw-input-row {
+            display: grid; grid-template-columns: 104px minmax(0,1fr) minmax(0,1fr);
+            gap: 10px; align-items: end; padding: 10px 0; border-bottom: 1px dashed #eee;
+        }
+        .fw-input-row:last-child { border-bottom: none; }
+        .fw-input-meta { align-self: center; }
+        .fw-badge {
+            display: inline-block; padding: 1px 6px; border-radius: 3px;
+            font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+        }
+        .fw-badge.fw1 { background: #fdecea; color: #c0392b; }
+        .fw-badge.fw2 { background: #e8f6f3; color: #16a085; }
+        .fw-badge.fw3 { background: #f4ecf7; color: #8e44ad; }
+        .fw-input-year { font-weight: 700; color: #2c3e50; font-size: 13px; margin-top: 3px; }
+        .fw-input-note { font-size: 10px; color: #888; margin-top: 1px; line-height: 1.35; white-space: nowrap; }
+        .fw-layer-manual { color: #d35400; font-weight: 600; }
+        .fw-layer-forecast { color: #138d75; font-weight: 600; }
+        .fw-layer-none { color: #aaa; }
+        .fw-input-field label { display: block; font-size: 10px; color: #888; margin-bottom: 3px; }
+        .fw-input-field input {
+            width: 100%; height: 32px; padding: 5px 7px; border: 1px solid #ccc;
+            border-radius: 4px; font-size: 12px;
+        }
+        .fw-input-field input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 2px rgba(41,128,185,0.1); }
+        @media (max-width: 768px) {
+            .fw-input-row { grid-template-columns: 1fr 1fr; }
+            .fw-input-meta { grid-column: 1 / -1; }
+        }
         .history-record-row {
             display: grid; grid-template-columns: 118px 118px minmax(110px,1fr) minmax(110px,1fr) 64px;
             gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px dashed #e5e7eb;
@@ -316,7 +346,7 @@
             <div class="divider-v"></div>
             <div class="group-actions">
                 <button class="btn-success" id="btn-run" disabled>⚡ 计算</button>
-                <button class="btn-outline" onclick="openForecastModal()">🔮 预测</button>
+                <button class="btn-outline" onclick="openForecastModal()" title="FW1 / FW2 / FW3 三年业绩一起录入">🔮 业绩录入</button>
                 <button class="btn-outline" onclick="resetZoom()">🔄 重置</button>
             </div>
         </div>
@@ -349,7 +379,7 @@
 
     <div class="chart-container" id="forecastHistoryWrap" style="display:none;height:380px;padding-top:0;">
         <div class="forecast-history-toolbar">
-            <div class="forecast-history-title">FW1 / FW2 财务数据</div>
+            <div class="forecast-history-title">FW1 / FW2 / FW3 财务数据</div>
             <div class="forecast-history-controls">
                 <button class="btn-outline btn-sm" onclick="openHistoryManager()">🗂 管理记录</button>
                 <div class="forecast-history-switch metric-switch">
@@ -395,7 +425,7 @@
             <span>✍️ 补充财务数据</span>
         </div>
         <div style="font-size:12px;color:#c0392b;background:#fff1f0;padding:8px 10px;border-radius:4px;margin-bottom:10px;">
-            ⚠️ 以下年份未能自动获取财报，请手动补录（单位：亿元）
+            ⚠️ 以下历史年份未能自动获取财报，请手动补录（单位：亿元）。当年及之后的前瞻年度请在「业绩录入」里填。
         </div>
         <div class="modal-body" id="batchInputContainer"></div>
         <div class="modal-footer">
@@ -405,19 +435,21 @@
     </div>
 </div>
 
-<!-- 预测输入弹窗 -->
+<!-- 业绩录入弹窗（FW1 / FW2 / FW3 统一入口） -->
 <div id="forecastInputModal" class="modal-overlay">
-    <div class="modal-box">
+    <div class="modal-box" style="max-width:520px;">
         <div class="modal-header">
-            <span>🔮 预测财务数据</span>
+            <span>🔮 业绩录入（FW1 / FW2 / FW3）</span>
+            <i class="fas fa-times" onclick="closeForecastModal(false)" style="cursor:pointer;color:#999;"></i>
         </div>
         <div style="font-size:12px;color:#096dd9;background:#e6f7ff;padding:8px 10px;border-radius:4px;margin-bottom:10px;">
-            FW1 直接使用你在下方最新年份里手动录入的数据；这里仅输入下一年度的 FW2 预测（单位：亿元）。每次保存都会记录历史。
+            FW1 当年 · FW2 下一年 · FW3 第三年，三行放在一起录入（单位：亿元）。留空表示不修改该年度，每次保存都会记录历史。
+            <div id="forecastInputBase" style="color:#1f618d;margin-top:4px;"></div>
         </div>
         <div class="modal-body" id="forecastInputContainer"></div>
         <div class="modal-footer">
             <button class="btn-block btn-cancel" onclick="closeForecastModal(false)">取消</button>
-            <button class="btn-block btn-confirm" onclick="closeForecastModal(true)">💾 保存预测</button>
+            <button class="btn-block btn-confirm" onclick="closeForecastModal(true)">💾 保存录入</button>
         </div>
     </div>
 </div>
@@ -538,6 +570,8 @@ let sharedXAxisSyncFrame = null;
 let batchModalResolve = null;
 let forecastModalResolve = null;
 let latestActualYear = new Date().getFullYear();
+// 最近一个已披露真实年报的年份。FW1 = 该年份 + 1，即当前尚未走完的年度。
+let latestReportedYear = null;
 let syncTimer      = null;
 let forecastHistoryMetric = 'rev';
 let forecastHistoryScaleByMetric = { rev: 'linear', prof: 'elastic' };
@@ -604,12 +638,56 @@ function getLatestActualYear(finMap) {
     return new Date().getFullYear();
 }
 
+// 最新一个已由年报真实披露的年份；没有任何年报时返回 null。
+// 只看 source==='real'，不受手工或预测录入影响，这样 FW1 的年度口径在录入前后保持稳定。
+function getLatestReportedYear(finMap) {
+    const years = Object.entries(finMap || {})
+        .filter(([, item]) => item && item.source === 'real')
+        .map(([key]) => parseInt(key))
+        .filter(year => !isNaN(year));
+    return years.length ? Math.max(...years) : null;
+}
+
+// FW1 = 最近已披露年报年份的下一年（即当前尚未走完的年度）。完全没有年报时才退回原有口径。
+function getForwardBaseYear() {
+    if (latestReportedYear != null) return latestReportedYear + 1;
+    return latestActualYear;
+}
+
+// 前瞻年度口径：FW1 当年、FW2 下一年、FW3 第三年。只决定录入与展示的年份标签，
+// 不改变"某一年对应某一年收入/利润"的既有映射。
+function getForwardYearSet() {
+    const base = getForwardBaseYear();
+    return { fw1: base, fw2: base + 1, fw3: base + 2 };
+}
+
 function getForecastTargetYear(finMap) {
     return getLatestActualYear(finMap) + 1;
 }
 
-function getFw2Year(baseYear = latestActualYear) {
-    return baseYear + 1;
+function getFw2Year() {
+    return getForwardYearSet().fw2;
+}
+
+// 读取某个年度已经录入的业绩值。手工层优先（与估值口径一致），其次预测层。
+function getStoredFinancialEntry(code, year) {
+    if (!code || year == null) return null;
+    const manual = getFromDB(code, year);
+    if (manual && Number.isFinite(manual.rev) && Number.isFinite(manual.prof)) {
+        return { rev: manual.rev, prof: manual.prof, layer: 'manual' };
+    }
+    const forecast = getForecastLocal(code)[year];
+    if (forecast && Number.isFinite(forecast.rev) && Number.isFinite(forecast.prof)) {
+        return { rev: forecast.rev, prof: forecast.prof, layer: 'forecast' };
+    }
+    return null;
+}
+
+// FW1/FW2/FW3 中尚未录入的年度，用于计算完成后给出提示。
+function getMissingForwardYears() {
+    if (!currentStock.code) return [];
+    const { fw1, fw2, fw3 } = getForwardYearSet();
+    return [fw1, fw2, fw3].filter(year => !getStoredFinancialEntry(currentStock.code, year));
 }
 
 function getLatestManualInputYear(code) {
@@ -963,6 +1041,12 @@ async function runAnalysis(silent = false) {
 
         let missingYears = [];
 
+        // FW1/FW2/FW3 属于前瞻年度，统一在「业绩录入」里填，不再走历史缺报补录弹窗。
+        const reportedYear = getLatestReportedYear(finMap);
+        const forwardYears = new Set(reportedYear != null
+            ? [reportedYear + 1, reportedYear + 2, reportedYear + 3]
+            : []);
+
         for (const year of sortedYears) {
             const saved = getFromDB(currentStock.code, year);
             // 已披露真实财务数据优先；只有接口没有真实数据时才使用手工录入。
@@ -970,7 +1054,7 @@ async function runAnalysis(silent = false) {
                 continue;
             } else if (saved) {
                 finMap[year] = { year, rev: saved.rev, prof: saved.prof, source: 'manual', name: `★${year}` };
-            } else if (!finMap[year]) {
+            } else if (!finMap[year] && !forwardYears.has(year)) {
                 missingYears.push(year);
             }
         }
@@ -1005,9 +1089,18 @@ async function runAnalysis(silent = false) {
         renderTable();
         setProgress(100);
 
-        if (!silent) showToast(missingShares
-            ? `⚠️ ${missingShares} 个交易日缺少历史总股本，对应估值留空`
-            : `✅ ${currentStock.name} 计算完成`, missingShares ? 'warn' : 'ok');
+        if (!silent) {
+            const notes = [];
+            if (missingShares) {
+                notes.push(`${missingShares} 个交易日缺少历史总股本，对应估值留空`);
+            }
+            const missingForward = getMissingForwardYears();
+            if (missingForward.length) {
+                notes.push(`FW 年度 ${missingForward.join(' / ')} 尚未录入，点「业绩录入」补充`);
+            }
+            showToast(notes.length ? `⚠️ ${notes.join('；')}` : `✅ ${currentStock.name} 计算完成`,
+                notes.length ? 'warn' : 'ok');
+        }
         document.getElementById('stockInput').value = '';
 
     } catch (e) {
@@ -1032,6 +1125,7 @@ async function runAnalysis(silent = false) {
 function calculate(finMap) {
     if (Object.keys(finMap).length === 0) return;
     latestActualYear = getLatestActualYear(finMap);
+    latestReportedYear = getLatestReportedYear(finMap);
     const financialHistoryTimelines = buildFinancialHistoryTimelines(currentStock.code);
 
     globalData = globalData.map(item => {
@@ -1041,14 +1135,24 @@ function calculate(finMap) {
             y,
             item.date,
             finMap[y] || null,
-            `${y}-01-01`
+            `${y}-01-01`,
+            'FW1'
         );
         const forwardFin = resolveFinancialForDate(
             financialHistoryTimelines,
             y + 1,
             item.date,
             getForwardFinancialEntry(finMap, y + 1),
-            `${y}-01-01`
+            `${y}-01-01`,
+            'FW2'
+        );
+        const forwardFin3 = resolveFinancialForDate(
+            financialHistoryTimelines,
+            y + 2,
+            item.date,
+            getForwardFinancialEntry(finMap, y + 2),
+            `${y}-01-01`,
+            'FW3'
         );
         // A 股使用实际成交价与当日已生效股本。不能拿年末/当前股本
         // 回填此前交易日，也不能把累计分红后的前复权价当作历史成交价。
@@ -1091,6 +1195,24 @@ function calculate(finMap) {
             base.fw2prof = null;
             base.fw2pe = null;
             base.fw2ps = null;
+        }
+
+        if (forwardFin3 && mktCap != null) {
+            base.fw3year = forwardFin3.year;
+            base.fw3name = forwardFin3.source === 'forecast'
+                ? `FW3(${forwardFin3.year})`
+                : (forwardFin3.label || `FW3(${forwardFin3.year})`);
+            base.fw3rev = forwardFin3.rev;
+            base.fw3prof = forwardFin3.prof;
+            base.fw3pe = forwardFin3.prof > 0 ? mktCap / forwardFin3.prof : -1;
+            base.fw3ps = forwardFin3.rev > 0 ? mktCap / forwardFin3.rev : 0;
+        } else {
+            base.fw3year = null;
+            base.fw3name = null;
+            base.fw3rev = null;
+            base.fw3prof = null;
+            base.fw3pe = null;
+            base.fw3ps = null;
         }
 
         return base;
@@ -1210,7 +1332,7 @@ function findFinancialRecordForDate(timeline, date, backfillStartDate = null) {
     return null;
 }
 
-function resolveFinancialForDate(timelines, year, date, fallback = null, backfillStartDate = null) {
+function resolveFinancialForDate(timelines, year, date, fallback = null, backfillStartDate = null, sourceTag = 'FW2') {
     // 同一目标年份一旦存在真实披露数据，就不再使用手工或预测数据覆盖。
     if (fallback?.source === 'real') return fallback;
 
@@ -1225,7 +1347,7 @@ function resolveFinancialForDate(timelines, year, date, fallback = null, backfil
             source: isManual ? 'manual' : 'forecast',
             name: isManual
                 ? `★${year}（${recorded.recordedDay}录入）`
-                : `FW2(${year}，${recorded.recordedDay}录入）`
+                : `${sourceTag}(${year}，${recorded.recordedDay}录入）`
         };
     }
     // 查询日早于该序列的回填起点时保持为空；完全没有历史时才使用普通兜底值。
@@ -1294,53 +1416,128 @@ async function saveForecastToDB(code, year, rev, prof, immediateSync = true) {
     if (immediateSync) triggerSync();
 }
 
+// ============================================================
+// 业绩录入：FW1 / FW2 / FW3 三个年度放在同一个弹窗
+// FW1 仍写入手工层（与原"缺报补录"同一存储），FW2/FW3 仍写入预测层，
+// 年份与收入/利润的对应关系不变，只是把入口收拢到一处。
+// ============================================================
+function getForwardInputRows() {
+    const { fw1, fw2, fw3 } = getForwardYearSet();
+    return [
+        { year: fw1, tag: 'FW1', kind: 'fw1', desc: '当年' },
+        { year: fw2, tag: 'FW2', kind: 'fw2', desc: '下一年' },
+        { year: fw3, tag: 'FW3', kind: 'fw3', desc: '第三年' }
+    ];
+}
+
+function describeForwardLayer(layer) {
+    if (layer === 'manual') return { key: 'manual', text: '手工录入' };
+    if (layer === 'forecast') return { key: 'forecast', text: '预测录入' };
+    return { key: 'none', text: '未录入' };
+}
+
 function openForecastModal() {
-    if (!currentStock.code) return;
-    const fw2Year = getFw2Year();
-    const forecastDB = getForecastLocal(currentStock.code);
+    if (!currentStock.code) {
+        showToast('请先查询一只股票', 'warn');
+        return;
+    }
     const container = document.getElementById('forecastInputContainer');
     container.innerHTML = '';
-    const pre = forecastDB[fw2Year] || {};
-    const row = document.createElement('div');
-    row.className = 'batch-row';
-    row.dataset.year = fw2Year;
-    row.innerHTML = `
-        <div class="row-year">FW2</div>
-        <div class="row-inputs">
-            <input type="number" step="0.01" placeholder="${fw2Year}收入(亿)" class="in-rev"
-                value="${pre.rev != null ? (pre.rev / 1e8) : ''}" inputmode="decimal">
-            <input type="number" step="0.01" placeholder="${fw2Year}净利(亿)" class="in-prof"
-                value="${pre.prof != null ? (pre.prof / 1e8) : ''}" inputmode="decimal">
-        </div>`;
-    container.appendChild(row);
+
+    const baseNote = document.getElementById('forecastInputBase');
+    if (baseNote) {
+        baseNote.textContent = latestReportedYear != null
+            ? `口径：最新已披露年报为 ${latestReportedYear} 年，FW1 即 ${latestReportedYear + 1} 年。`
+            : '口径：本次未取到真实年报，FW1 按当前年度推断。';
+    }
+
+    getForwardInputRows().forEach(row => {
+        const stored = getStoredFinancialEntry(currentStock.code, row.year);
+        const layer = describeForwardLayer(stored && stored.layer);
+        const el = document.createElement('div');
+        el.className = 'fw-input-row';
+        el.dataset.year = String(row.year);
+        el.dataset.kind = row.kind;
+        el.innerHTML = `
+            <div class="fw-input-meta">
+                <span class="fw-badge ${row.kind}">${row.tag}</span>
+                <div class="fw-input-year">${row.year} 年</div>
+                <div class="fw-input-note">${row.desc} · <span class="fw-layer-${layer.key}">${layer.text}</span></div>
+            </div>
+            <div class="fw-input-field">
+                <label>收入（亿）</label>
+                <input type="number" step="0.01" inputmode="decimal" class="in-rev"
+                    placeholder="${row.year} 收入" value="${stored ? (stored.rev / 1e8) : ''}">
+            </div>
+            <div class="fw-input-field">
+                <label>净利润（亿）</label>
+                <input type="number" step="0.01" inputmode="decimal" class="in-prof"
+                    placeholder="${row.year} 净利" value="${stored ? (stored.prof / 1e8) : ''}">
+            </div>`;
+        container.appendChild(el);
+    });
 
     document.getElementById('forecastInputModal').style.display = 'flex';
     forecastModalResolve = null;
+    const firstInput = container.querySelector('input');
+    if (firstInput) setTimeout(() => firstInput.focus(), 100);
 }
 
 function closeForecastModal(isConfirm) {
-    document.getElementById('forecastInputModal').style.display = 'none';
-    if (!isConfirm) return;
+    if (!isConfirm || !currentStock.code) {
+        document.getElementById('forecastInputModal').style.display = 'none';
+        return;
+    }
 
-    const payload = {};
-    document.querySelectorAll('#forecastInputContainer .batch-row').forEach(row => {
-        const y = row.dataset.year;
-        const revV = parseFloat(row.querySelector('.in-rev').value);
-        const prV  = parseFloat(row.querySelector('.in-prof').value);
-        if (!isNaN(revV) && !isNaN(prV)) {
-            payload[y] = { rev: revV * 1e8, prof: prV * 1e8 };
+    const rows = [...document.querySelectorAll('#forecastInputContainer .fw-input-row')];
+    const filled = rows
+        .map(row => {
+            const revRaw = row.querySelector('.in-rev').value.trim();
+            const profRaw = row.querySelector('.in-prof').value.trim();
+            return { row, revRaw, profRaw, touched: Boolean(revRaw || profRaw) };
+        })
+        .filter(item => item.touched);
+
+    // 只填一侧会算错估值，直接拦下而不是静默丢弃；此时弹窗保持打开。
+    const partial = filled.find(item => !item.revRaw || !item.profRaw);
+    if (partial) {
+        showToast(`⚠️ ${partial.row.dataset.year} 年的收入和净利润需要同时填写`, 'warn');
+        return;
+    }
+    const invalid = filled.find(item =>
+        !Number.isFinite(parseFloat(item.revRaw)) || !Number.isFinite(parseFloat(item.profRaw)));
+    if (invalid) {
+        showToast(`⚠️ ${invalid.row.dataset.year} 年的数值格式不正确`, 'warn');
+        return;
+    }
+
+    // 没有变化（含预填后原样保存、留空未动）的年度不重写，避免平白多出一条历史记录。
+    const pending = filled.filter(({ row, revRaw, profRaw }) => {
+        const stored = getStoredFinancialEntry(currentStock.code, parseInt(row.dataset.year));
+        if (!stored) return true;
+        return stored.rev !== parseFloat(revRaw) * 1e8 || stored.prof !== parseFloat(profRaw) * 1e8;
+    });
+
+    document.getElementById('forecastInputModal').style.display = 'none';
+    if (!pending.length) {
+        showToast('没有需要保存的变更', 'info');
+        return;
+    }
+
+    pending.forEach(({ row, revRaw, profRaw }) => {
+        const year = parseInt(row.dataset.year);
+        const rev = parseFloat(revRaw) * 1e8;
+        const prof = parseFloat(profRaw) * 1e8;
+        if (row.dataset.kind === 'fw1') {
+            saveToDB(currentStock.code, year, rev, prof, false);
+        } else {
+            saveForecastToDB(currentStock.code, year, rev, prof, false);
         }
     });
 
-    Object.keys(payload).forEach(y => {
-        const { rev, prof } = payload[y];
-        saveForecastToDB(currentStock.code, parseInt(y), rev, prof, false);
-    });
     triggerSync();
-    showToast('✅ 预测数据已保存', 'ok');
-    if (currentStock.code) {
-        setTimeout(() => runAnalysis(true), 0);
-    }
+    showToast(`✅ 已保存 ${pending.length} 个年度的业绩录入`, 'ok');
+    setTimeout(() => runAnalysis(true), 0);
 }
 
 function getEditableFinancialHistory(code) {
@@ -1528,6 +1725,12 @@ window.saveHistoryManager = function() {
 };
 
 async function editYearData(year) {
+    // 前瞻年度（FW1 及之后）统一走「业绩录入」，避免同一年的数据有两个入口。
+    const { fw1 } = getForwardYearSet();
+    if (year >= fw1) {
+        openForecastModal();
+        return;
+    }
     const saved  = getFromDB(currentStock.code, year);
     const prefill = saved ? { [year]: saved } : {};
     const newData = await openBatchModal([year], prefill);
@@ -2975,7 +3178,7 @@ function handleValuationLegendClick(event, legendItem, legend) {
 
     if (!['y_pe', 'y_ps', 'y_price'].includes(axisId)) return;
 
-    // 同一估值指标的 FW1/FW2 共用一根独立轴，也作为一组显示或隐藏。
+    // 同一估值指标的 FW1/FW2/FW3 共用一根独立轴，也作为一组显示或隐藏。
     const xMin = chartRangeState.type === 'all'
         ? undefined
         : (chart.options.scales.x.min ?? chartRangeState.min);
@@ -3114,7 +3317,10 @@ function drawChart() {
     const priceData = globalData.map(d => (d.price != null && d.price > 0) ? +d.price.toFixed(2) : null);
     const forecastPeData = globalData.map(d => (d.fw2pe != null && d.fw2pe > 0) ? +d.fw2pe.toFixed(2) : null);
     const forecastPsData = globalData.map(d => (d.fw2ps != null && d.fw2ps > 0) ? +d.fw2ps.toFixed(2) : null);
-    const hasForecastLine = forecastPeData.some(v => v != null) || forecastPsData.some(v => v != null);
+    const forecastPe3Data = globalData.map(d => (d.fw3pe != null && d.fw3pe > 0) ? +d.fw3pe.toFixed(2) : null);
+    const forecastPs3Data = globalData.map(d => (d.fw3ps != null && d.fw3ps > 0) ? +d.fw3ps.toFixed(2) : null);
+    const hasForecastLine = forecastPeData.some(v => v != null) || forecastPsData.some(v => v != null) ||
+        forecastPe3Data.some(v => v != null) || forecastPs3Data.some(v => v != null);
     const forecastDatasets = hasForecastLine ? [
         {
             label          : 'FW2 PE',
@@ -3135,6 +3341,30 @@ function drawChart() {
             backgroundColor: 'rgba(142,68,173,0.08)',
             borderWidth    : 1.4,
             borderDash     : [2, 3],
+            yAxisID        : 'y_ps',
+            pointRadius    : 0,
+            pointHoverRadius: 4,
+            spanGaps       : true
+        },
+        {
+            label          : 'FW3 PE',
+            data           : forecastPe3Data,
+            borderColor    : '#e67e22',
+            backgroundColor: 'rgba(230,126,34,0.08)',
+            borderWidth    : 1.4,
+            borderDash     : [2, 3],
+            yAxisID        : 'y_pe',
+            pointRadius    : 0,
+            pointHoverRadius: 4,
+            spanGaps       : true
+        },
+        {
+            label          : 'FW3 PS',
+            data           : forecastPs3Data,
+            borderColor    : '#34495e',
+            backgroundColor: 'rgba(52,73,94,0.08)',
+            borderWidth    : 1.4,
+            borderDash     : [10, 3, 2, 3],
             yAxisID        : 'y_ps',
             pointRadius    : 0,
             pointHoverRadius: 4,
@@ -3306,6 +3536,7 @@ function renderForecastHistoryChart() {
 
     const metric = forecastHistoryMetric === 'prof' ? 'prof' : 'rev';
     const fw2Metric = metric === 'rev' ? 'fw2rev' : 'fw2prof';
+    const fw3Metric = metric === 'rev' ? 'fw3rev' : 'fw3prof';
     // calculate() 已统一执行“真实数据优先、录入数据补缺”的年份映射，
     // 此处直接使用同一结果，避免下方图再次套历史记录而覆盖真实财务数据。
     const fw1RawData = globalData.map(item =>
@@ -3314,7 +3545,11 @@ function renderForecastHistoryChart() {
     const fw2RawData = globalData.map(item =>
         item[fw2Metric] != null ? +(item[fw2Metric] / 1e8).toFixed(2) : null
     );
-    const hasData = fw1RawData.some(value => value != null) || fw2RawData.some(value => value != null);
+    const fw3RawData = globalData.map(item =>
+        item[fw3Metric] != null ? +(item[fw3Metric] / 1e8).toFixed(2) : null
+    );
+    const hasData = fw1RawData.some(value => value != null) || fw2RawData.some(value => value != null) ||
+        fw3RawData.some(value => value != null);
 
     wrap.style.display = hasData ? 'block' : 'none';
     if (forecastHistoryChartInstance) {
@@ -3328,6 +3563,7 @@ function renderForecastHistoryChart() {
     const isElastic = scaleMode === 'elastic';
     const fw1Data = isElastic ? fw1RawData.map(toElasticScale) : fw1RawData;
     const fw2Data = isElastic ? fw2RawData.map(toElasticScale) : fw2RawData;
+    const fw3Data = isElastic ? fw3RawData.map(toElasticScale) : fw3RawData;
     const metricAxisLabel = `${metricLabel}(亿${isElastic ? '，弹性刻度' : ''})`;
     const btnRev = document.getElementById('btn-history-rev');
     const btnProf = document.getElementById('btn-history-prof');
@@ -3366,6 +3602,18 @@ function renderForecastHistoryChart() {
                     pointRadius: 0,
                     pointHoverRadius: 4,
                     spanGaps: true
+                },
+                {
+                    label: `FW3 ${metricLabel}（第三年）`,
+                    data: fw3Data,
+                    borderColor: '#8e44ad',
+                    backgroundColor: 'rgba(142,68,173,0.08)',
+                    borderWidth: 1.8,
+                    borderDash: [2, 3],
+                    stepped: 'before',
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    spanGaps: true
                 }
             ]
         },
@@ -3377,7 +3625,7 @@ function renderForecastHistoryChart() {
                 legend: { position: 'top', labels: { boxWidth: 12, font: { size: 12 } } },
                 title: {
                     display: true,
-                    text: `FW1 当年 / FW2 下一年 ${metricLabel}（单位：亿元${isElastic ? ' · 弹性视图' : ''}）`,
+                    text: `FW1 当年 / FW2 下一年 / FW3 第三年 ${metricLabel}（单位：亿元${isElastic ? ' · 弹性视图' : ''}）`,
                     align: 'start',
                     color: '#2c3e50',
                     font: { size: 13, weight: '600' }
@@ -3387,20 +3635,36 @@ function renderForecastHistoryChart() {
                         title: items => items[0]?.label || '',
                         label: item => {
                             const row = globalData[item.dataIndex];
-                            const year = item.datasetIndex === 0 ? row?.year : row?.fw2year;
-                            const rawValue = item.datasetIndex === 0
-                                ? fw1RawData[item.dataIndex]
-                                : fw2RawData[item.dataIndex];
+                            const year = [row?.year, row?.fw2year, row?.fw3year][item.datasetIndex];
+                            const rawValue = [fw1RawData, fw2RawData, fw3RawData][item.datasetIndex]?.[item.dataIndex];
                             return `${item.dataset.label}: ${rawValue?.toLocaleString('zh-CN') ?? '-'} 亿（${year || '-'}年）`;
                         },
                         afterBody: items => {
                             const index = items[0]?.dataIndex;
+                            const row = globalData[index];
+                            if (!row) return '';
                             const fw1 = fw1RawData[index];
                             const fw2 = fw2RawData[index];
-                            if (!(fw1 > 0) || !(fw2 > 0)) return '';
-                            const multiple = fw2 / fw1;
-                            const growth = (multiple - 1) * 100;
-                            return `下一年 / 当年：${multiple.toFixed(2)} 倍（${growth >= 0 ? '+' : ''}${growth.toFixed(0)}%）`;
+                            const fw3 = fw3RawData[index];
+                            const unit = metric === 'rev' ? '收入' : '净利润';
+                            const comparisons = [
+                                { from: 'FW1', to: 'FW2', a: fw2, b: fw1, aYear: row.fw2year, bYear: row.year },
+                                { from: 'FW2', to: 'FW3', a: fw3, b: fw2, aYear: row.fw3year, bYear: row.fw2year },
+                                { from: 'FW1', to: 'FW3', a: fw3, b: fw1, aYear: row.fw3year, bYear: row.year }
+                            ];
+                            // 比例一律写成"高/低 X%，A 对 B"，并同时给出两个绝对值。
+                            const lines = [];
+                            comparisons.forEach(({ from, to, a, b, aYear, bYear }) => {
+                                if (!(a > 0) || !(b > 0)) return;
+                                const diff = (a / b - 1) * 100;
+                                const word = diff >= 0 ? '高' : '低';
+                                lines.push({
+                                    text: `${to}(${aYear || '-'}) 比 ${from}(${bYear || '-'}) ${word} ${Math.abs(diff).toFixed(1)}%，`
+                                        + `${unit} ${a.toFixed(1)} 亿 对 ${b.toFixed(1)} 亿`,
+                                    color: diff >= 0 ? '#c0392b' : '#27ae60'
+                                });
+                            });
+                            return lines;
                         }
                     }
                 },
