@@ -3215,26 +3215,22 @@ function handleValuationLegendClick(event, legendItem, legend) {
     const chart = legend.chart;
     const clickedIndex = legendItem.datasetIndex;
     const clickedDataset = chart.data.datasets[clickedIndex];
-    const axisId = clickedDataset?.yAxisID;
+    if (!clickedDataset) return;
 
-    if (!['y_pe', 'y_ps', 'y_price'].includes(axisId)) return;
+    // 每次只切换被点击的那一条线：FW1 / FW2 / FW3 之间互不牵连，
+    // PE 与 PS 也可以单独收起。某根轴上的线全部隐藏时，
+    // 下面的 refreshValuationAxes 会自动把该轴一起收起来。
+    chart.setDatasetVisibility(clickedIndex, !chart.isDatasetVisible(clickedIndex));
 
-    // 同一估值指标的 FW1/FW2/FW3 共用一根独立轴，也作为一组显示或隐藏。
     const xMin = chartRangeState.type === 'all'
         ? undefined
         : (chart.options.scales.x.min ?? chartRangeState.min);
     const xMax = chartRangeState.type === 'all'
         ? undefined
         : (chart.options.scales.x.max ?? chartRangeState.max);
-    const shouldShow = !chart.isDatasetVisible(clickedIndex);
-    chart.data.datasets.forEach((dataset, index) => {
-        if (dataset.yAxisID === axisId) chart.setDatasetVisibility(index, shouldShow);
-    });
-    chart.options.scales[axisId].display = shouldShow;
     chart.options.scales.x.min = xMin;
     chart.options.scales.x.max = xMax;
     refreshValuationAxes(chart, xMin, xMax);
-    chart.options.scales.y_price.display = false;
     chart.update('none');
     updateRangeSelector(chartRangeState.type, chartRangeState.min, chartRangeState.max);
     scheduleSharedXAxisLayout();
