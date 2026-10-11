@@ -425,7 +425,7 @@
             <span>✍️ 补充财务数据</span>
         </div>
         <div style="font-size:12px;color:#c0392b;background:#fff1f0;padding:8px 10px;border-radius:4px;margin-bottom:10px;">
-            ⚠️ 以下历史年份未能自动获取财报，请手动补录（单位：亿元）。当年及之后的前瞻年度请在「业绩录入」里填。
+            ⚠️ 以下历史年份缺真实财报，请手动补录（单位：亿元）。留空的年份其估值曲线会保持为空。
         </div>
         <div class="modal-body" id="batchInputContainer"></div>
         <div class="modal-footer">
@@ -447,6 +447,10 @@
             <div id="forecastInputBase" style="color:#1f618d;margin-top:4px;"></div>
         </div>
         <div class="modal-body" id="forecastInputContainer"></div>
+        <div id="forecastMissingBlock" style="display:none;font-size:12px;color:#c0392b;background:#fff1f0;border:1px solid #ffccc7;padding:8px 10px;border-radius:4px;margin-bottom:12px;">
+            <div id="forecastMissingText" style="margin-bottom:6px;"></div>
+            <button class="btn-outline btn-sm" onclick="fillMissingYears()">手工补录这些年份</button>
+        </div>
         <div class="modal-footer">
             <button class="btn-block btn-cancel" onclick="closeForecastModal(false)">取消</button>
             <button class="btn-block btn-confirm" onclick="closeForecastModal(true)">💾 保存录入</button>
@@ -572,6 +576,8 @@ let forecastModalResolve = null;
 let latestActualYear = new Date().getFullYear();
 // 最近一个已披露真实年报的年份。FW1 = 该年份 + 1，即当前尚未走完的年度。
 let latestReportedYear = null;
+// 本次计算中缺真实财报的历史年份，供「业绩录入」弹窗按需提供补录入口。
+let lastMissingYears = [];
 let syncTimer      = null;
 let forecastHistoryMetric = 'rev';
 let forecastHistoryScaleByMetric = { rev: 'linear', prof: 'elastic' };
@@ -1041,7 +1047,7 @@ async function runAnalysis(silent = false) {
 
         let missingYears = [];
 
-        // FW1/FW2/FW3 属于前瞻年度，统一在「业绩录入」里填，不再走历史缺报补录弹窗。
+        // FW1/FW2/FW3 属于前瞻年度，统一在「业绩录入」里填；这里只统计历史缺报年份。
         const reportedYear = getLatestReportedYear(finMap);
         const forwardYears = new Set(reportedYear != null
             ? [reportedYear + 1, reportedYear + 2, reportedYear + 3]
@@ -1059,24 +1065,9 @@ async function runAnalysis(silent = false) {
             }
         }
 
-        if (missingYears.length > 0 && !silent) {
-            loader.classList.remove('show');
-            showToast(`⚠️ ${missingYears.length} 个年份缺少财报，请手动补录`, 'warn');
-            const batchData = await openBatchModal(missingYears);
-            loader.classList.add('show');
-
-            if (batchData && Object.keys(batchData).length > 0) {
-                for (const y in batchData) {
-                    const { rev, prof } = batchData[y];
-                    const yearInt = parseInt(y);
-                    await saveToDB(currentStock.code, yearInt, rev, prof, false);
-                    finMap[yearInt] = { year: yearInt, rev, prof, source: 'manual', name: `★${yearInt}` };
-                }
-                triggerSync();
-            } else {
-                showToast('未录入数据，部分年份估值将为空', 'warn');
-            }
-        }
+        // 不再自动弹出补录窗口：缺数据的年份对应曲线直接留空，只做一次文字提示，
+        // 需要补录时从「业绩录入」里按需进入。
+        lastMissingYears = missingYears;
 
         setProgress(85);
         calculate(finMap);
@@ -1094,12 +1085,17 @@ async function runAnalysis(silent = false) {
             if (missingShares) {
                 notes.push(`${missingShares} 个交易日缺少历史总股本，对应估值留空`);
             }
+            if (lastMissingYears.length) {
+                notes.push(`${lastMissingYears.join(' / ')} 年无财务数据，对应曲线留空`);
+            }
             const missingForward = getMissingForwardYears();
             if (missingForward.length) {
-                notes.push(`FW 年度 ${missingForward.join(' / ')} 尚未录入，点「业绩录入」补充`);
+                notes.push(`FW 年度 ${missingForward.join(' / ')} 尚未录入，对应曲线留空`);
             }
-            showToast(notes.length ? `⚠️ ${notes.join('；')}` : `✅ ${currentStock.name} 计算完成`,
-                notes.length ? 'warn' : 'ok');
+            const canFill = lastMissingYears.length > 0 || missingForward.length > 0;
+            showToast(notes.length
+                ? `⚠️ ${notes.join('；')}${canFill ? '，可在「业绩录入」补录' : ''}`
+                : `✅ ${currentStock.name} 计算完成`, notes.length ? 'warn' : 'ok');
         }
         document.getElementById('stockInput').value = '';
 
@@ -1451,6 +1447,18 @@ function openForecastModal() {
             : '口径：本次未取到真实年报，FW1 按当前年度推断。';
     }
 
+    // 历史缺报年份不自动弹窗，需要时在这里按需进入补录。
+    const missingBlock = document.getElementById('forecastMissingBlock');
+    const missingText = document.getElementById('forecastMissingText');
+    if (missingBlock && missingText) {
+        if (lastMissingYears.length) {
+            missingText.textContent = `历史年份 ${lastMissingYears.join('、')} 缺真实财报，这些年份的估值曲线当前为空。`;
+            missingBlock.style.display = 'block';
+        } else {
+            missingBlock.style.display = 'none';
+        }
+    }
+
     getForwardInputRows().forEach(row => {
         const stored = getStoredFinancialEntry(currentStock.code, row.year);
         const layer = describeForwardLayer(stored && stored.layer);
@@ -1539,6 +1547,26 @@ function closeForecastModal(isConfirm) {
     showToast(`✅ 已保存 ${pending.length} 个年度的业绩录入`, 'ok');
     setTimeout(() => runAnalysis(true), 0);
 }
+
+// 历史年份缺真实财报时的手工补录入口。计算流程不再自动弹窗，
+// 由用户从「业绩录入」里按需触发，补录结果仍写入手工层。
+window.fillMissingYears = async function() {
+    const years = [...lastMissingYears];
+    if (!years.length || !currentStock.code) return;
+    document.getElementById('forecastInputModal').style.display = 'none';
+
+    const entered = await openBatchModal(years);
+    const savedYears = Object.keys(entered || {});
+    if (!savedYears.length) return;
+
+    for (const year of savedYears) {
+        const { rev, prof } = entered[year];
+        await saveToDB(currentStock.code, parseInt(year), rev, prof, false);
+    }
+    triggerSync();
+    showToast(`✅ 已补录 ${savedYears.length} 个历史年度`, 'ok');
+    await runAnalysis(true);
+};
 
 function getEditableFinancialHistory(code) {
     const rows = [];

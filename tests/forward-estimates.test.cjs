@@ -171,7 +171,7 @@ test('历史交易日的 FW3 回落到真实年报，不套用未来预测值', 
   assert.equal(row.fw3pe, (10 * 1e9) / 3e9);
 });
 
-test('前瞻年度不再触发历史缺报补录弹窗', async () => {
+test('缺数据的年份一律不弹补录窗口，只记录待补录年份', async () => {
   const { run, context, toastMessages, restoreRunAnalysis } = app();
   restoreRunAnalysis();
   const captured = [];
@@ -195,13 +195,17 @@ test('前瞻年度不再触发历史缺报补录弹窗', async () => {
 
   await run('runAnalysis(false)');
 
-  // 2020 年缺真实财报仍要补录；2025 / 2026 属于 FW 前瞻年度，不再走这个弹窗。
-  assert.deepEqual(captured, [2020]);
+  // 2020 缺真实财报、2025 / 2026 属于前瞻年度：都不弹窗，只登记待补录年份。
+  assert.deepEqual(captured, []);
+  assert.deepEqual(JSON.parse(JSON.stringify(run('lastMissingYears'))), [2020]);
   assert.equal(run('latestReportedYear'), 2024);
   assert.ok(
-    toastMessages.some(msg => typeof msg === 'string' && msg.includes('业绩录入')),
-    `期望提示指向业绩录入，实际：${JSON.stringify(toastMessages)}`
+    toastMessages.some(msg => typeof msg === 'string' && msg.includes('2020 年无财务数据') && msg.includes('业绩录入')),
+    `期望提示缺报年份并指向业绩录入，实际：${JSON.stringify(toastMessages)}`
   );
+  // 缺数据的年份估值留空，而不是被相邻年度顶替。
+  assert.equal(run('globalData.find(row => row.date === "2020-06-01").pe'), null);
+  assert.equal(run('globalData.find(row => row.date === "2020-06-01").year'), undefined);
 });
 
 test('录入弹窗把 FW1 / FW2 / FW3 三行放在一起，并预填已录入值', () => {
@@ -316,4 +320,52 @@ test('原样保存不产生任何历史噪音', () => {
   assert.equal(db['601899'].__forecastHistory['2027'].length, 1);
   assert.equal(db['601899'].__forecast['2027'].ts, 2);
   assert.ok(toastMessages.some(msg => typeof msg === 'string' && msg.includes('没有需要保存的变更')));
+});
+
+test('历史缺报年份只在「业绩录入」里按需露出补录入口', () => {
+  const harness = app();
+  const { run } = harness;
+  const block = () => run('document.getElementById("forecastMissingBlock").style.display');
+
+  run('latestReportedYear = 2025; lastMissingYears = []; openForecastModal();');
+  assert.notEqual(block(), 'block');
+  assert.equal(run('lastMissingYears.length'), 0);
+
+  run('closeForecastModal(false); lastMissingYears = [2019, 2021]; openForecastModal();');
+  assert.equal(block(), 'block');
+  assert.equal(
+    run('document.getElementById("forecastMissingText").textContent'),
+    '历史年份 2019、2021 缺真实财报，这些年份的估值曲线当前为空。'
+  );
+});
+
+test('补录入口按待补录年份打开录入窗口，并把结果写进手工层', async () => {
+  const harness = app();
+  const { run, context } = harness;
+  const captured = [];
+  context.openBatchModal = async years => {
+    captured.push(...years);
+    return { 2019: { rev: 1.2e10, prof: 1.5e9 } };
+  };
+  context.runAnalysis = async () => {};
+
+  run('latestReportedYear = 2025; lastMissingYears = [2019]; openForecastModal();');
+  await run('fillMissingYears()');
+
+  assert.deepEqual(captured, [2019]);
+  const db = harness.db();
+  assert.equal(db['601899']['2019'].rev, 1.2e10);
+  assert.equal(db['601899'].__manualHistory['2019'][0].prof, 1.5e9);
+  assert.equal(run('document.getElementById("forecastInputModal").style.display'), 'none');
+});
+
+test('没有待补录年份时补录入口不会打开任何窗口', async () => {
+  const harness = app();
+  const { run, context } = harness;
+  let called = 0;
+  context.openBatchModal = async () => { called++; return null; };
+
+  run('latestReportedYear = 2025; lastMissingYears = [];');
+  await run('fillMissingYears()');
+  assert.equal(called, 0);
 });
