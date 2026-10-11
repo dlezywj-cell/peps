@@ -1150,6 +1150,15 @@ function calculate(finMap) {
             `${y}-01-01`,
             'FW3'
         );
+        // 上一年的实际数，只用于给 FW1 算同比。
+        const previousFin = resolveFinancialForDate(
+            financialHistoryTimelines,
+            y - 1,
+            item.date,
+            finMap[y - 1] || null,
+            `${y}-01-01`,
+            'FW0'
+        );
         // A 股使用实际成交价与当日已生效股本。不能拿年末/当前股本
         // 回填此前交易日，也不能把累计分红后的前复权价当作历史成交价。
         const shares = isAShareStock()
@@ -1210,6 +1219,10 @@ function calculate(finMap) {
             base.fw3pe = null;
             base.fw3ps = null;
         }
+
+        // 仅供 tooltip 显示 FW1 同比，不参与估值计算。
+        base.prevrev = previousFin ? previousFin.rev : null;
+        base.prevprof = previousFin ? previousFin.prof : null;
 
         return base;
     });
@@ -3557,6 +3570,14 @@ function formatFinancialAxisValue(value) {
     return value.toLocaleString('zh-CN', { maximumFractionDigits: digits });
 }
 
+// 同比增速文案，例如 "  yoy +30.4%" / "  yoy -20.0%"。缺少可比基数时返回空串。
+function formatYoyGrowth(current, base) {
+    if (!Number.isFinite(current) || !Number.isFinite(base) || base <= 0) return '';
+    const diff = (current / base - 1) * 100;
+    const digits = Math.abs(diff) >= 100 ? 0 : 1;
+    return `  yoy ${diff >= 0 ? '+' : '-'}${Math.abs(diff).toFixed(digits)}%`;
+}
+
 function renderForecastHistoryChart() {
     const wrap = document.getElementById('forecastHistoryWrap');
     const canvas = document.getElementById('forecastHistoryChart');
@@ -3565,6 +3586,7 @@ function renderForecastHistoryChart() {
     const metric = forecastHistoryMetric === 'prof' ? 'prof' : 'rev';
     const fw2Metric = metric === 'rev' ? 'fw2rev' : 'fw2prof';
     const fw3Metric = metric === 'rev' ? 'fw3rev' : 'fw3prof';
+    const prevMetric = metric === 'rev' ? 'prevrev' : 'prevprof';
     // calculate() 已统一执行“真实数据优先、录入数据补缺”的年份映射，
     // 此处直接使用同一结果，避免下方图再次套历史记录而覆盖真实财务数据。
     const fw1RawData = globalData.map(item =>
@@ -3575,6 +3597,10 @@ function renderForecastHistoryChart() {
     );
     const fw3RawData = globalData.map(item =>
         item[fw3Metric] != null ? +(item[fw3Metric] / 1e8).toFixed(2) : null
+    );
+    // 只用于算 FW1 的同比，不单独出线。
+    const prevRawData = globalData.map(item =>
+        item[prevMetric] != null ? +(item[prevMetric] / 1e8).toFixed(2) : null
     );
     const hasData = fw1RawData.some(value => value != null) || fw2RawData.some(value => value != null) ||
         fw3RawData.some(value => value != null);
@@ -3609,7 +3635,7 @@ function renderForecastHistoryChart() {
             labels: globalData.map(item => item.date),
             datasets: [
                 {
-                    label: `FW1 ${metricLabel}（当年）`,
+                    label: `FW1 ${metricLabel}`,
                     data: fw1Data,
                     borderColor: '#d35400',
                     backgroundColor: 'rgba(211,84,0,0.08)',
@@ -3620,7 +3646,7 @@ function renderForecastHistoryChart() {
                     spanGaps: true
                 },
                 {
-                    label: `FW2 ${metricLabel}（下一年）`,
+                    label: `FW2 ${metricLabel}`,
                     data: fw2Data,
                     borderColor: '#16a085',
                     backgroundColor: 'rgba(22,160,133,0.08)',
@@ -3632,7 +3658,7 @@ function renderForecastHistoryChart() {
                     spanGaps: true
                 },
                 {
-                    label: `FW3 ${metricLabel}（第三年）`,
+                    label: `FW3 ${metricLabel}`,
                     data: fw3Data,
                     borderColor: '#8e44ad',
                     backgroundColor: 'rgba(142,68,173,0.08)',
@@ -3661,38 +3687,18 @@ function renderForecastHistoryChart() {
                 tooltip: {
                     callbacks: {
                         title: items => items[0]?.label || '',
+                        // 同比直接跟在每一年后面，Chart.js 的 tooltip 行只接受字符串，
+                        // 不要返回对象，否则会渲染成 [object Object]。
                         label: item => {
                             const row = globalData[item.dataIndex];
-                            const year = [row?.year, row?.fw2year, row?.fw3year][item.datasetIndex];
-                            const rawValue = [fw1RawData, fw2RawData, fw3RawData][item.datasetIndex]?.[item.dataIndex];
-                            return `${item.dataset.label}: ${rawValue?.toLocaleString('zh-CN') ?? '-'} 亿（${year || '-'}年）`;
-                        },
-                        afterBody: items => {
-                            const index = items[0]?.dataIndex;
-                            const row = globalData[index];
                             if (!row) return '';
-                            const fw1 = fw1RawData[index];
-                            const fw2 = fw2RawData[index];
-                            const fw3 = fw3RawData[index];
-                            const unit = metric === 'rev' ? '收入' : '净利润';
-                            const comparisons = [
-                                { from: 'FW1', to: 'FW2', a: fw2, b: fw1, aYear: row.fw2year, bYear: row.year },
-                                { from: 'FW2', to: 'FW3', a: fw3, b: fw2, aYear: row.fw3year, bYear: row.fw2year },
-                                { from: 'FW1', to: 'FW3', a: fw3, b: fw1, aYear: row.fw3year, bYear: row.year }
-                            ];
-                            // 比例一律写成"高/低 X%，A 对 B"，并同时给出两个绝对值。
-                            const lines = [];
-                            comparisons.forEach(({ from, to, a, b, aYear, bYear }) => {
-                                if (!(a > 0) || !(b > 0)) return;
-                                const diff = (a / b - 1) * 100;
-                                const word = diff >= 0 ? '高' : '低';
-                                lines.push({
-                                    text: `${to}(${aYear || '-'}) 比 ${from}(${bYear || '-'}) ${word} ${Math.abs(diff).toFixed(1)}%，`
-                                        + `${unit} ${a.toFixed(1)} 亿 对 ${b.toFixed(1)} 亿`,
-                                    color: diff >= 0 ? '#c0392b' : '#27ae60'
-                                });
-                            });
-                            return lines;
+                            const year = [row.year, row.fw2year, row.fw3year][item.datasetIndex];
+                            const value = [fw1RawData, fw2RawData, fw3RawData][item.datasetIndex]?.[item.dataIndex];
+                            // 上一期：FW1 比上一年实际数，FW2 比 FW1，FW3 比 FW2。
+                            const prev = [prevRawData, fw1RawData, fw2RawData][item.datasetIndex]?.[item.dataIndex];
+                            const valueText = value?.toLocaleString('zh-CN') ?? '-';
+                            // 形如「FW1 收入 2025: 1,500 亿  yoy +650%」，年份直接跟数值，末尾只加同比。
+                            return `${item.dataset.label} ${year || '-'}: ${valueText} 亿${formatYoyGrowth(value, prev)}`;
                         }
                     }
                 },
