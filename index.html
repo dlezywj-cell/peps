@@ -3093,13 +3093,20 @@ function getVisibleAxisBounds(chart, axisId, min, max) {
     };
 }
 
+// 某根估值轴上是否还有可见的数据集。轴的显示 / 收起，以及轴上的数值标签，
+// 都只以这个判断为准，不看具体是哪一条线（FW1 / FW2 / FW3 一视同仁）。
+function hasVisibleDatasetOnAxis(chart, axisId) {
+    if (!chart || !Array.isArray(chart.data?.datasets)) return false;
+    return chart.data.datasets.some((dataset, index) =>
+        dataset.yAxisID === axisId && chart.isDatasetVisible(index)
+    );
+}
+
 function refreshValuationAxes(chart, min, max) {
     if (!chart || chart !== chartInstance) return;
     ['y_ps', 'y_pe'].forEach(axisId => {
         const scaleOptions = chart.options.scales[axisId];
-        const hasVisibleDataset = chart.data.datasets.some((dataset, index) =>
-            dataset.yAxisID === axisId && chart.isDatasetVisible(index)
-        );
+        const hasVisibleDataset = hasVisibleDatasetOnAxis(chart, axisId);
         const bounds = hasVisibleDataset ? getVisibleAxisBounds(chart, axisId, min, max) : null;
         scaleOptions.display = Boolean(bounds);
         if (bounds) {
@@ -3317,12 +3324,9 @@ const crosshairPlugin = {
 
         const psScale = chart.scales.y_ps;
         const peScale = chart.scales.y_pe;
-        const peDatasetIndex = chart.data.datasets.findIndex(dataset => dataset.label === 'PE（右轴）');
-        const psDatasetIndex = chart.data.datasets.findIndex(dataset => dataset.label === 'PS（左轴）');
-        const isPeVisible = peDatasetIndex >= 0 && chart.isDatasetVisible(peDatasetIndex);
-        const isPsVisible = psDatasetIndex >= 0 && chart.isDatasetVisible(psDatasetIndex);
-
-        if (psScale?.options?.display !== false && isPsVisible) {
+        // 轴标签跟随"这根轴上还有没有可见的线"，而不是只认 FW1 当年那一条：
+        // 图例按条切换后，只留 FW2 或 FW3 时轴仍然在，数值也必须读得出来。
+        if (psScale && psScale.options?.display !== false && hasVisibleDatasetOnAxis(chart, 'y_ps')) {
             drawAxisTag({
                 text: `PS ${psScale.getValueForPixel(y).toFixed(2)}`,
                 centerX: left - 3,
@@ -3331,7 +3335,7 @@ const crosshairPlugin = {
                 align: 'right'
             });
         }
-        if (peScale?.options?.display !== false && isPeVisible) {
+        if (peScale && peScale.options?.display !== false && hasVisibleDatasetOnAxis(chart, 'y_pe')) {
             drawAxisTag({
                 text: `PE ${peScale.getValueForPixel(y).toFixed(2)}`,
                 centerX: right + 3,

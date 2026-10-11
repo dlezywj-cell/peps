@@ -21,7 +21,8 @@
 - 缺数据的年份**一律不自动弹出补录窗口**：对应曲线直接留空，计算完成时只用一行文字说明哪些年份缺数据。需要补录时从「业绩录入」里按需进入；历史年份缺真实财报的补录入口也只在该弹窗里出现。
 - 财务数据图的 tooltip 每行只给「年份 + 数值 + 同比」，形如 `FW1 收入 2025: 1,500 亿  yoy +25.0%`。FW1 比上一年实际数，FW2 比 FW1，FW3 比 FW2；缺少可比基数时不显示同比段。Chart.js 的 tooltip 回调只能返回字符串，不要返回对象，否则会渲染成 `[object Object]`。
 - 估值图图例**按条切换**：点某一条线只显示或隐藏这一条，FW1 / FW2 / FW3 之间互不牵连，PE 与 PS 也可以单独收起。某根轴上的线全部隐藏时该轴自动收起，重新点开任意一条后自动回来；轴的上下界始终按当前可见数据重算。
+- 十字光标的纵轴数值标签只看「这根轴上还有没有可见的线」，不看具体是哪一条：只留 FW2 或只留 FW3 时，`PE x.xx` / `PS x.xx` 照常显示。判断集中在 `hasVisibleDatasetOnAxis()`，轴的收起与数值标签共用同一份口径。
 
 ## 回归验证
 
-运行 `node --test tests/*.test.cjs`。`a-share-valuation.test.cjs` 覆盖紫金低基数误判、真实拆股前后市值连续、股本生效日、缺失数据、分页失败和备用源价格口径；`us-fiscal-year.test.cjs` 覆盖美股跨年财年；`forward-estimates.test.cjs` 覆盖 FW1 / FW2 / FW3 的年度口径、估值字段、录入弹窗三行结构与保存分层；`valuation-legend.test.cjs` 覆盖图例按条切换、PE 与 PS 互不牵连、轴自动收起与恢复。
+运行 `node --test tests/*.test.cjs`。`a-share-valuation.test.cjs` 覆盖紫金低基数误判、真实拆股前后市值连续、股本生效日、缺失数据、分页失败和备用源价格口径；`us-fiscal-year.test.cjs` 覆盖美股跨年财年；`forward-estimates.test.cjs` 覆盖 FW1 / FW2 / FW3 的年度口径、估值字段、录入弹窗三行结构与保存分层；`valuation-legend.test.cjs` 覆盖图例按条切换、PE 与 PS 互不牵连、轴自动收起与恢复；`crosshair-axis-tag.test.cjs` 覆盖十字光标纵轴数值标签的显示条件。
