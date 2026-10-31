@@ -566,6 +566,9 @@ let currentStock   = { code: '', name: '', secId: '' };
 let globalData     = [];
 let currentTotalShares = 0;
 let currentHistoricalShares = [];
+// 本次分析识别到的拆股事件（Yahoo 事件表 + 价格跳变识别）。价格按 1/比例 回溯、
+// 股本按 比例 放大，两边共用这张表才不会在拆股日错位。
+let currentSplitEvents = [];
 let currentKlineSource = '';
 let lastKlineRequest = { stockKey: '', start: '', end: '' };
 let chartInstance  = null;
@@ -977,19 +980,34 @@ async function runAnalysis(silent = false) {
             if (!silent) showToast('正在并行获取数据…', 'info');
             globalData = [];
             currentHistoricalShares = [];
+            currentSplitEvents = [];
             window._prefetchedFinMap = null;
 
-            // 股价、当前股本、历史股本、财报并行获取。
+            // 股价、当前股本、历史股本、财报并行获取；拆股事件单独走一路。
+            // 拆股事件按全历史取，用户只查拆股前区间时也能拿到换算因子。
+            const splitEventsPromise = fetchSplitEvents(currentStock);
+            const yahooSharesPromise = fetchYahooShareRecords(currentStock);
             const [_, __, finMapResult, historicalSharesResult] = await Promise.all([
                 fetchShares(),
-                fetchKline(beg, end),
+                fetchKline(beg, end, splitEventsPromise),
                 fetchHistoricalFinancials(currentStock),
                 fetchDirectHistoricalShares(currentStock)
             ]);
 
             // 将财报结果存入闭包变量，后续直接使用
             window._prefetchedFinMap = finMapResult;
-            currentHistoricalShares = historicalSharesResult;
+            // 价格路由识别到的拆股事件与 Yahoo 事件表合并后，再把股本换算到最新口径：
+            // 价格回溯除以 k、股本同步乘以 k，市值在拆股日前后才能连续。
+            currentSplitEvents = mergeSplitEvents(currentSplitEvents, await splitEventsPromise);
+            currentHistoricalShares = isAShareStock()
+                // A 股 END_DATE 是股本变动生效日，真实股数直接用，不做拆股换算。
+                ? normalizeHistoricalShareRecords(historicalSharesResult.rows, historicalSharesResult.sourceName, false)
+                : buildHistoricalShareTimeline(
+                    historicalSharesResult.rows,
+                    historicalSharesResult.sourceName,
+                    await yahooSharesPromise,
+                    currentSplitEvents
+                );
             lastKlineRequest = {
                 stockKey: `${currentStock.secId}|${currentStock.code}`,
                 start: compactDateToIso(beg),
@@ -1008,8 +1026,11 @@ async function runAnalysis(silent = false) {
         applyDirectHistoricalShares(finMap, currentHistoricalShares);
 
         if (!currentTotalShares && currentStock._latestSharesFromFin) {
-            Logger.log(`[Main] Overriding Shares using FinData: ${currentStock._latestSharesFromFin}`);
-            currentTotalShares = currentStock._latestSharesFromFin;
+            // EPS 反推的股数是披露时口径，需按该报告期之后发生的拆股换算到最新口径。
+            const basisDate = currentStock._latestReportDate || '';
+            const factor = basisDate ? splitFactorSince(basisDate, currentSplitEvents) : 1;
+            currentTotalShares = currentStock._latestSharesFromFin * factor;
+            Logger.log(`[Main] Overriding Shares using FinData: ${currentStock._latestSharesFromFin}${factor !== 1 ? ` × ${factor}（拆股换算）` : ''}`);
         }
         if (!currentTotalShares) currentTotalShares = 1e8;
 
@@ -1159,11 +1180,13 @@ function calculate(finMap) {
             `${y}-01-01`,
             'FW0'
         );
-        // A 股使用实际成交价与当日已生效股本。不能拿年末/当前股本
-        // 回填此前交易日，也不能把累计分红后的前复权价当作历史成交价。
+        // 市值必须用「当日已生效股本 × 当日成交价」：
+        // A 股用东财股本变动表，港美股用报告期股本（已按拆股换算到最新口径）。
+        // 不再用「日历年份对应年报股本」——那会在每年 1 月 1 日凭空跳一级，
+        // 遇到拆股更是直接差出整数倍。
         const shares = isAShareStock()
             ? findEffectiveHistoricalShares(currentHistoricalShares, item.date)?.shares || null
-            : fin?.shares || currentTotalShares;
+            : resolveHistoricalSharesForDate(currentHistoricalShares, item.date) || fin?.shares || currentTotalShares;
         const mktCap = shares ? item.price * shares : null;
         const base = {
             ...item,
@@ -1800,7 +1823,41 @@ async function fetchShares() {
 
 const COMMON_SPLIT_FACTORS = [2, 3, 4, 5, 7, 10, 20, 50, 100];
 
-function normalizeHistoricalShareRecords(rows, sourceName, adjustSplits = true) {
+// 拆股事件登记表。价格与股本必须共用同一组因子：价格回溯除以 k，股本同步乘以 k，
+// 市值才能在拆股日前后保持连续。
+function mergeSplitEvents(...groups) {
+    const byDate = new Map();
+    groups.flat().forEach(event => {
+        const date = String(event?.date || '').slice(0, 10);
+        const ratio = Number(event?.ratio);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(ratio) || ratio <= 0) return;
+        const existing = byDate.get(date);
+        // Yahoo 拆股事件给的是精确 ratio，优先于按价格跳变猜出来的整数倍。
+        if (!existing || (existing.source !== 'Yahoo 拆股事件' && event.source === 'Yahoo 拆股事件')) {
+            byDate.set(date, { date, ratio, source: event.source || '价格跳变识别' });
+        }
+    });
+    return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// 把某个历史日期换算到「最新股本口径」需要乘上的累计拆股因子。
+function splitFactorSince(date, events = currentSplitEvents) {
+    return (events || []).reduce((factor, event) =>
+        event.date > date ? factor * event.ratio : factor, 1);
+}
+
+// 数据商给的股数多为「披露时口径」：拆股前的年报还是拆股前股数。统一乘到最新口径后，
+// 才能与已回溯调整的股价相乘。
+function scaleShareRecordsToLatestBasis(records, events = currentSplitEvents) {
+    if (!Array.isArray(events) || events.length === 0) return records;
+    return (records || []).map(record => {
+        const factor = splitFactorSince(record.date, events);
+        if (factor === 1) return record;
+        return { ...record, shares: record.shares * factor, basisConverted: factor };
+    });
+}
+
+function normalizeHistoricalShareRecords(rows, sourceName, adjustSplits = true, splits = null) {
     const byDate = new Map();
     (rows || []).forEach(item => {
         const date = normalizeReportDate(item) || String(item?.date || '').slice(0, 10);
@@ -1813,20 +1870,141 @@ function normalizeHistoricalShareRecords(rows, sourceName, adjustSplits = true) 
     // A 股 END_DATE 是股本变动生效日，保留真实股数，包括送转股/增发。
     if (!adjustSplits) return normalized;
 
-    // 数据商可能从某个年度开始把历史股数切换到拆股后口径。识别近似整数倍
-    // 跳变，将更早的股数同步换算到最新口径，使其能与前复权股价相乘。
-    for (let i = 1; i < normalized.length; i++) {
-        const previous = normalized[i - 1];
-        const current = normalized[i];
-        const ratio = Math.max(previous.shares, current.shares) / Math.min(previous.shares, current.shares);
-        const matchedSplit = COMMON_SPLIT_FACTORS.find(candidate => Math.abs(ratio - candidate) / candidate <= 0.12);
-        if (!matchedSplit) continue;
-
-        const previousScale = previous.shares < current.shares ? matchedSplit : 1 / matchedSplit;
-        for (let j = 0; j < i; j++) normalized[j].shares *= previousScale;
-        Logger.log(`[Shares-History] ${sourceName} 口径校正：${previous.date}→${current.date} 约 ${matchedSplit}:1，早期股本×${previousScale.toFixed(6)}。`);
+    // 港美股：按已知拆股事件把「披露时口径」统一换算到最新口径。
+    // 不能再用「相邻年份股数近似整数倍」去猜拆股——IPO、增发、大额回购都会造成
+    // 类似倍数（CRWD 2019 年上市当年股数增长 3.3 倍），猜错会把整段历史股本放大。
+    const events = Array.isArray(splits) ? splits : currentSplitEvents;
+    if (!events.length) {
+        Logger.log(`[Shares-History] ${sourceName} 未识别到拆股事件，股数按原披露口径使用。`);
+        return normalized;
     }
-    return normalized;
+
+    const scaled = scaleShareRecordsToLatestBasis(normalized, events);
+    const changed = scaled.filter(item => item.basisConverted).length;
+    if (changed) {
+        Logger.log(`[Shares-History] ${sourceName} 拆股口径换算：${changed}/${scaled.length} 条记录换到最新股本口径（拆股事件 ${events.map(e => `${e.date} ${e.ratio}:1`).join('、')}）。`);
+    }
+    return scaled;
+}
+
+// 拆股比例能组合出的全部倍数（1、2、4、10、40…），用于识别「口径切换」的台阶。
+function splitProductCandidates(events) {
+    const products = new Set([1]);
+    (events || []).forEach(event => {
+        Array.from(products).forEach(value => products.add(value * event.ratio));
+    });
+    return Array.from(products).filter(value => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
+}
+
+// 数据商给的美股年报股数并非统一口径：CRWD 是全程披露时口径，NVDA 则是
+// 2008–2019 披露时口径、2020–2022 回溯了 4:1、2023 起回溯到 40 倍。
+// 这里把相邻记录的台阶按已知拆股倍数抹平，得到一条内部自洽的序列。
+function alignVendorShareBasis(records, events) {
+    if (!Array.isArray(records) || records.length === 0) return records;
+    const candidates = splitProductCandidates(events).filter(value => value !== 1);
+    const aligned = records.map(item => ({ ...item }));
+    let scale = 1;
+    for (let i = 1; i < aligned.length; i++) {
+        const previousRaw = Number(records[i - 1].shares);
+        const current = Number(records[i].shares);
+        if (!Number.isFinite(current) || !Number.isFinite(previousRaw) || previousRaw <= 0) continue;
+        // 必须用「两条记录的原始披露值」做比值，不能用归一后的值：归一后的值
+        // 已经除过前面的倍数，再拿去比会连锁放大。
+        const ratio = current / previousRaw;
+        const matched = candidates.find(candidate => Math.abs(ratio / candidate - 1) <= 0.15);
+        if (matched) {
+            scale *= matched;
+            Logger.log(`[Shares-History] 口径切换：${records[i - 1].date}→${records[i].date} 约 ${matched}:1，其后记录按 1/${scale} 归一。`);
+        }
+        aligned[i].shares = current / scale;
+    }
+    return aligned;
+}
+
+// 归一后的序列还缺一个「绝对口径」。用最近一条 Yahoo 报告期股数（已按拆股回溯）
+// 或当前总股本做锚，把整条序列乘到最新口径上——倍数取最接近的拆股倍数，避免
+// 把加权平均与存量股数之间的几个百分点差异当成口径差。
+function anchorSharesToLatestBasis(records, yahooRows, events) {
+    if (!Array.isArray(records) || records.length === 0) return records;
+    const last = records[records.length - 1];
+    const lastTs = Date.parse(last.date);
+    const nearestYahoo = (yahooRows || [])
+        .filter(item => Number.isFinite(item.shares) && item.shares > 0 && Math.abs(Date.parse(item.date) - lastTs) <= 400 * 86400000)
+        .sort((a, b) => Math.abs(Date.parse(a.date) - lastTs) - Math.abs(Date.parse(b.date) - lastTs))[0];
+    let anchor = nearestYahoo ? nearestYahoo.shares : null;
+    if (!anchor && currentTotalShares > 0 && Math.abs(Date.now() - lastTs) <= 400 * 86400000) {
+        anchor = currentTotalShares;
+    }
+    if (!anchor) {
+        Logger.log('[Shares-History] 缺少最新口径锚点，股数保持归一后口径。');
+        return records;
+    }
+
+    const raw = anchor / last.shares;
+    if (Math.abs(raw - 1) <= 0.1) return records;
+    const candidates = splitProductCandidates(events);
+    const closest = candidates.reduce((best, value) =>
+        Math.abs(raw / value - 1) < Math.abs(raw / best - 1) ? value : best, 1);
+    const scale = Math.abs(raw / closest - 1) <= 0.2 ? closest : raw;
+    Logger.log(`[Shares-History] 口径锚定：${last.date} 记录 ${Math.round(last.shares)} → ×${scale.toFixed(4)}（锚点 ${Math.round(anchor)}）。`);
+    return records.map(item => ({ ...item, shares: item.shares * scale }));
+}
+
+// 港美股统一股本科时表：东财披露值（多为加权平均）＋ Yahoo 报告期存量股数。
+// Yahoo 的基本面数据统一按拆股回溯，直接作为最新口径；东财序列先抹平台阶、
+// 再锚到同一口径，最后按日期合并，同日以 Yahoo 领先（更接近当日真实存量股本）。
+function buildHistoricalShareTimeline(filedRows, sourceName, yahooRows, events) {
+    const filed = normalizeHistoricalShareRecords(filedRows, sourceName || '历史股本', false);
+    const yahoo = (yahooRows || [])
+        .map(item => ({ date: item.date, shares: Number(item.shares), source: item.source }))
+        .filter(item => item.date && Number.isFinite(item.shares) && item.shares > 0)
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (!filed.length && !yahoo.length) return [];
+    if (!Array.isArray(events) || events.length === 0) {
+        const merged = new Map();
+        [...filed, ...yahoo].forEach(item => merged.set(item.date, item));
+        return Array.from(merged.values()).sort((a, b) => a.date.localeCompare(b.date));
+    }
+
+    const filedReady = anchorSharesToLatestBasis(alignVendorShareBasis(filed, events), yahoo, events);
+    const merged = new Map();
+    [...filedReady, ...yahoo].forEach(item => merged.set(item.date, item));
+    const timeline = Array.from(merged.values()).sort((a, b) => a.date.localeCompare(b.date));
+    warnAboutUnexplainedShareSteps(timeline, events);
+    return guardTimelineAgainstCurrentShares(timeline, events);
+}
+
+// 拆股已解释的台阶之外，剩余的大台阶只可能来自股本口径本身（美股年报给的是
+// 加权平均股数，IPO 当年只统计上市后的普通股）。这里只提示、不篡改数据。
+function warnAboutUnexplainedShareSteps(records, events) {
+    for (let i = 1; i < (records || []).length; i++) {
+        const previous = records[i - 1];
+        const current = records[i];
+        const ratio = current.shares / previous.shares;
+        if (ratio <= 1.8 && ratio >= 0.55) continue;
+        const hasSplitBetween = (events || []).some(event => event.date > previous.date && event.date <= current.date);
+        if (hasSplitBetween) continue;
+        Logger.log(`[Shares-History] ⚠️ ${previous.date}→${current.date} 股本跳变 ${ratio.toFixed(2)} 倍且无拆股，` +
+            `疑为加权平均/前 IPO 口径造成，该段市值请谨慎参考。`);
+    }
+}
+
+// 最后一道保险：整条序列的末端若与「当前总股本」差出整数倍，说明前面的锚点口径
+// 取错了（例如锚点自身未按拆股回溯），整体再校正一次，避免历史市值系统性差一个倍数。
+function guardTimelineAgainstCurrentShares(records, events) {
+    if (!Array.isArray(records) || records.length === 0 || !(currentTotalShares > 0)) return records;
+    const last = records[records.length - 1];
+    if (Math.abs(Date.now() - Date.parse(last.date)) > 400 * 86400000) return records;
+
+    const raw = currentTotalShares / last.shares;
+    const candidates = splitProductCandidates(events);
+    const closest = candidates.reduce((best, value) =>
+        Math.abs(raw / value - 1) < Math.abs(raw / best - 1) ? value : best, 1);
+    if (Math.abs(raw / closest - 1) > 0.2 || closest === 1) return records;
+
+    Logger.log(`[Shares-History] 末端股本与当前总股本相差约 ${closest}:1，整条序列按该倍数校正。`);
+    return records.map(item => ({ ...item, shares: item.shares * closest }));
 }
 
 const usSecuCodePromiseCache = {};
@@ -1844,6 +2022,95 @@ async function resolveUsSecuCode(code) {
         })();
     }
     return usSecuCodePromiseCache[normalizedCode];
+}
+
+const splitEventPromiseCache = {};
+
+function getYahooSymbol(secId, code) {
+    const sid = String(secId || '');
+    if (sid.startsWith('1.')) return code + '.SS';
+    if (sid.startsWith('0.')) return code + '.SZ';
+    if (sid.startsWith('116.')) return (String(code).replace(/^0+/, '') || '0').padStart(4, '0') + '.HK';
+    if (sid.startsWith('105.') || sid.startsWith('106.') || sid.startsWith('107.')) return String(code).toUpperCase();
+    return '';
+}
+
+// 拆股事件的权威来源：Yahoo 的 splits 事件表（含生效日与精确比例）。
+// 价格路由可能只覆盖用户选中的区间，所以这里单独按全历史取一次，
+// 保证即使查询拆股前的年份，也能把股本换算到最新口径。
+async function fetchSplitEvents(stockObj) {
+    const sid = stockObj?.secId || '';
+    const symbol = getYahooSymbol(sid, stockObj?.code || '');
+    // A 股送转股由东财 END_DATE 的真实总股本直接体现，无需外部拆股事件。
+    if (!symbol || isAShareStock(stockObj)) return [];
+    if (splitEventPromiseCache[symbol]) return splitEventPromiseCache[symbol];
+
+    splitEventPromiseCache[symbol] = (async () => {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1mo&range=max&events=splits`;
+        const json = await apiFetch(url, null, 'SplitEvents');
+        const raw = json?.chart?.result?.[0]?.events?.splits || {};
+        const events = Object.values(raw).map(item => ({
+            date: new Date(Number(item.date) * 1000).toISOString().slice(0, 10),
+            ratio: Number(item.numerator) / Number(item.denominator),
+            source: 'Yahoo 拆股事件'
+        })).filter(item => Number.isFinite(item.ratio) && item.ratio > 0);
+        if (events.length) {
+            Logger.log(`[Split] ${symbol} 拆股事件：${events.map(e => `${e.date} ${e.ratio}:1`).join('、')}`);
+        } else {
+            Logger.log(`[Split] ${symbol} 未取得拆股事件（或该标的从未拆股）。`);
+        }
+        return mergeSplitEvents(events);
+    })().catch(e => {
+        Logger.error('[Split] 拆股事件获取失败，将退回按价格跳变识别', e);
+        return [];
+    });
+
+    return splitEventPromiseCache[symbol];
+}
+
+const yahooSharePromiseCache = {};
+
+// 港美股按报告期披露的「普通股股数」，比东财的加权平均股数更贴近当日市值口径：
+// 前者是资产负债表日的存量股数，后者是全年平均，跨年时会出现与股价无关的台阶。
+// Yahoo 的基本面数据统一按拆股回溯，与回溯后的股价同口径。
+async function fetchYahooShareRecords(stockObj) {
+    const sid = stockObj?.secId || '';
+    const symbol = getYahooSymbol(sid, stockObj?.code || '');
+    if (!symbol || isAShareStock(stockObj)) return [];
+    if (yahooSharePromiseCache[symbol]) return yahooSharePromiseCache[symbol];
+
+    yahooSharePromiseCache[symbol] = (async () => {
+        const now = Math.floor(Date.now() / 1000);
+        const from = now - 12 * 365 * 86400;
+        const url = `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}`
+            + `?symbol=${encodeURIComponent(symbol)}&type=annualOrdinarySharesNumber,quarterlyOrdinarySharesNumber`
+            + `&period1=${from}&period2=${now}`;
+        const json = await apiFetch(url, null, 'ShareBasis');
+        const rows = [];
+        (json?.timeseries?.result || []).forEach(block => {
+            const type = block?.meta?.type?.[0] || '';
+            (block?.[type] || []).forEach(item => {
+                const date = String(item?.asOfDate || '').slice(0, 10);
+                const shares = Number(item?.reportedValue?.raw);
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(shares) || shares <= 0) return;
+                rows.push({
+                    date,
+                    shares,
+                    source: type.startsWith('quarterly') ? 'Yahoo 季度普通股股数' : 'Yahoo 年度普通股股数'
+                });
+            });
+        });
+        rows.sort((a, b) => a.date.localeCompare(b.date));
+        Logger.log(rows.length
+            ? `[Shares-History] Yahoo 报告期股数：${rows.length} 条（${rows[0].date} ~ ${rows[rows.length - 1].date}）。`
+            : '[Shares-History] Yahoo 报告期股数不可用，仅使用东财口径。');
+        return rows;
+    })().catch(e => {
+        Logger.error('[Shares-History] Yahoo 报告期股数获取失败', e);
+        return [];
+    });
+
+    return yahooSharePromiseCache[symbol];
 }
 
 async function fetchDirectHistoricalShares(stockObj) {
@@ -1884,15 +2151,16 @@ async function fetchDirectHistoricalShares(stockObj) {
         Logger.error('[Shares-History] Direct shares exception', e);
     }
 
-    const normalized = normalizeHistoricalShareRecords(rows, sourceName || '历史股本', !isAShareStock(stockObj));
-    if (normalized.length) {
-        Logger.log(`[Shares-History] ${sourceName} Success: ${normalized.length} records.`);
+    // 这里只返回原始记录：拆股口径要等拆股事件（Yahoo 事件表 / 价格跳变识别）
+    // 齐备后才能换算，由调用方统一做 normalizeHistoricalShareRecords。
+    if (rows.length) {
+        Logger.log(`[Shares-History] ${sourceName} Raw: ${rows.length} records.`);
     } else {
         Logger.log(isAShareStock(stockObj)
             ? '[Shares-History] A 股历史总股本不可用，对应历史估值将留空。'
             : '[Shares-History] 直接股本不可用，将使用财报EPS反推值兜底。');
     }
-    return normalized;
+    return { rows, sourceName: sourceName || '历史股本' };
 }
 
 function findEffectiveHistoricalShares(records, date) {
@@ -1901,6 +2169,18 @@ function findEffectiveHistoricalShares(records, date) {
         if (record.date <= date && (!effective || record.date > effective.date)) effective = record;
     }
     return effective;
+}
+
+// 港美股取「当日已生效」的股本，而不是日历年度对应年报的股本。
+// 采用报告期本身作为生效日，跨年时就不会凭空出现一个年初跳变；
+// 最新一期披露之后的时间段才切到当前总股本（已含此后回购/增发）。
+function resolveHistoricalSharesForDate(records, date) {
+    if (!Array.isArray(records) || records.length === 0 || !date) return null;
+    const effective = findEffectiveHistoricalShares(records, date);
+    if (!effective) return records[0].shares;
+    const latest = records[records.length - 1];
+    if (date > latest.date && currentTotalShares > 0) return currentTotalShares;
+    return effective.shares;
 }
 
 function findHistoricalSharesForDate(records, date) {
@@ -1991,26 +2271,47 @@ function useAShareRawKline(rows, sourceName) {
     return true;
 }
 
-// 港股腾讯 day / 美股新浪日线是未复权原始价。按常见拆股比例修正拆股日前
+// 在原始日线里识别拆股：单日价格出现近似整数倍跳变。
+// 识别结果同时登记进拆股事件表，股本侧再用同一组因子反向放大，
+// 两边口径才不会一拆就错位。
+function detectPriceSplitEvents(rows) {
+    const events = [];
+    for (let i = 1; i < rows.length; i++) {
+        const previous = rows[i - 1];
+        const current = rows[i];
+        const factor = Math.max(previous.price, current.price) / Math.min(previous.price, current.price);
+        const matchedSplit = COMMON_SPLIT_FACTORS.find(candidate => Math.abs(factor - candidate) / candidate <= 0.12);
+        if (!matchedSplit) continue;
+        events.push({
+            date: current.date,
+            ratio: previous.price > current.price ? matchedSplit : 1 / matchedSplit,
+            source: '价格跳变识别'
+        });
+    }
+    return events;
+}
+
+// 港股腾讯 day / 美股新浪日线是未复权原始价。按拆股比例修正拆股日前
 // 的所有价格，再交给 normalizeAdjustedKline 做第二次连续性校验。
-function repairRawSplitKline(rows, sourceName) {
+// splits 缺省时从价格自身识别；无论哪种来源都会登记进 currentSplitEvents。
+function repairRawSplitKline(rows, sourceName, splits = null) {
     const repaired = (rows || [])
         .map(item => ({ date: item.date, price: Number(item.price) }))
         .filter(item => /^\d{4}-\d{2}-\d{2}$/.test(item.date || '') && Number.isFinite(item.price) && item.price > 0)
         .sort((a, b) => a.date.localeCompare(b.date));
 
-    for (let i = 1; i < repaired.length; i++) {
-        const previous = repaired[i - 1];
-        const current = repaired[i];
-        const factor = Math.max(previous.price, current.price) / Math.min(previous.price, current.price);
-        const matchedSplit = COMMON_SPLIT_FACTORS.find(candidate => Math.abs(factor - candidate) / candidate <= 0.12);
-        if (!matchedSplit) continue;
+    const detected = detectPriceSplitEvents(repaired);
+    const events = mergeSplitEvents(currentSplitEvents, Array.isArray(splits) ? splits : [], detected);
+    currentSplitEvents = events;
 
-        const previousScale = previous.price > current.price ? 1 / matchedSplit : matchedSplit;
-        for (let j = 0; j < i; j++) repaired[j].price *= previousScale;
-        Logger.log(`[Kline] ${sourceName} split repair: ${previous.date}→${current.date}, applied ${previousScale.toFixed(6)} to prior prices.`);
+    if (detected.length) {
+        Logger.log(`[Kline] ${sourceName} split repair: ${detected.map(e => `${e.date} ${e.ratio}:1`).join('、')}，拆股日前价格按 1/比例 回溯。`);
     }
-    return repaired;
+
+    return repaired.map(item => {
+        const scale = events.reduce((factor, event) => event.date > item.date ? factor / event.ratio : factor, 1);
+        return scale === 1 ? item : { date: item.date, price: item.price * scale };
+    });
 }
 
 async function fetchYahooAdjustedKline(beg, end, sid, code) {
@@ -2039,6 +2340,14 @@ async function fetchYahooAdjustedKline(beg, end, sid, code) {
             // Yahoo 的历史 close 已按拆股回溯调整，但不扣除现金分红，适合计算历史市值。
             price: closes[i] == null ? null : parseFloat(closes[i].toFixed(4))
         }));
+        // 顺手把区间内的拆股事件并入事件表：股本换算需要和回溯后的价格用同一组因子。
+        const yahooSplits = result?.events?.splits || {};
+        const rangeSplits = Object.values(yahooSplits).map(item => ({
+            date: new Date(Number(item.date) * 1000).toISOString().slice(0, 10),
+            ratio: Number(item.numerator) / Number(item.denominator),
+            source: 'Yahoo 拆股事件'
+        })).filter(item => Number.isFinite(item.ratio) && item.ratio > 0);
+        if (rangeSplits.length) currentSplitEvents = mergeSplitEvents(currentSplitEvents, rangeSplits);
         return useAdjustedKline(rows, 'Yahoo Finance');
     } catch(e) {
         Logger.error(`[Kline] Yahoo adjusted route Exception`, e);
@@ -2209,12 +2518,18 @@ async function fetchSinaUsAdjustedKline(beg, end, code) {
 // ============================================================
 // K线获取：A 股用未复权成交价配对当日股本；港美股沿用拆股调整口径。
 // ============================================================
-async function fetchKline(beg, end) {
+async function fetchKline(beg, end, splitEventsPromise = null) {
     let success = false;
     let tencentAttempted = false;
     currentKlineSource = '';
     const sid  = currentStock.secId;
     const code = currentStock.code;
+
+    // 拆股事件先就位：所有「原始价 + 拆股回溯」路由都要用同一组因子，
+    // 否则用户只查拆股前区间时会漏掉区间外的拆股。
+    if (splitEventsPromise) {
+        currentSplitEvents = mergeSplitEvents(currentSplitEvents, await splitEventsPromise);
+    }
 
     const isAShare = sid.startsWith('1.') || sid.startsWith('0.');
     const isHK     = sid.startsWith('116.');
@@ -2246,7 +2561,9 @@ async function fetchKline(beg, end) {
             let pending = emDomains.length;
             emDomains.forEach(async domain => {
                 try {
-                    const url = `https://${domain}/api/qt/stock/kline/get?secid=${sid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=${isAShare ? 0 : 1}&beg=${beg}&end=${end}&lmt=100000`;
+                    // 统一取未复权价：市值 = 当日真实成交价 × 当日股本。
+                    // 前复权会连累计分红一起扣掉，历史市值会被系统性低估。
+                    const url = `https://${domain}/api/qt/stock/kline/get?secid=${sid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=0&beg=${beg}&end=${end}&lmt=100000`;
                     const json = await apiFetch(url, 'cb', `Kline-EM-${domain.split('.')[0]}`);
                     if (!settled && json?.data?.klines?.length > 0) {
                         settled = true;
@@ -2271,7 +2588,7 @@ async function fetchKline(beg, end) {
             });
             success = isAShare
                 ? useAShareRawKline(rows, 'EastMoney 未复权')
-                : useAdjustedKline(rows, 'EastMoney 前复权');
+                : useAdjustedKline(repairRawSplitKline(rows, 'EastMoney raw', currentSplitEvents), 'EastMoney 未复权＋拆股校正');
         }
     }
 

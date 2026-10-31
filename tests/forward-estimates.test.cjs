@@ -191,7 +191,10 @@ test('缺数据的年份一律不弹补录窗口，只记录待补录年份', as
     2016: { year: 2016, rev: 1e10, prof: 1e9, source: 'real' },
     2024: { year: 2024, rev: 2e10, prof: 2e9, source: 'real' }
   });
-  context.fetchDirectHistoricalShares = async () => [{ date: '2015-01-01', shares: 1e9 }];
+  context.fetchDirectHistoricalShares = async () => ({
+    rows: [{ date: '2015-01-01', shares: 1e9 }],
+    sourceName: 'test'
+  });
 
   await run('runAnalysis(false)');
 
